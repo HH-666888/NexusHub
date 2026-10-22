@@ -1,0 +1,14 @@
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { RegisterForm } from "@/components/auth/register-form";
+import { getCurrentUser } from "@/server/auth-context";
+
+export const metadata: Metadata = {
+  title: "注册 · Nexus",
+  description: "创建 Nexus 账号，你的构建记录会被保存下来。",
+};
+
+export default async function RegisterPage() {
+  if (await getCurrentUser()) redirect("/studio");
+  return <RegisterForm />;
+}
