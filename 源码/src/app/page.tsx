@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { STAGES, type StageStatus } from "@/shared/stages";
+import { STAGES, type StageStatus } from "@/core/pipeline/stages";
 
 /**
  * Nexus 驾驶舱
