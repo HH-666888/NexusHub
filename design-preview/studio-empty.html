@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-backdrop="glow">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>参考稿 · 工作台空状态</title>
+<!--
+  ════════════════════════════════════════════════════════════
+  参考稿：工作台「还没有任何构建」时
+  ════════════════════════════════════════════════════════════
+  这是给你看效果的独立文件，不是项目源码。
+  ★ 颜色、字体、组件样式完全沿用现有的，一处没改。
+  ★ 只改了「没内容时显示什么」。
+
+  你截图里那两块大空白，根因是两处**固定高度**：
+
+    ① 底部工作区写死 h-[22rem]
+       —— 不管有没有东西都占 352px。没选中运行时，它就是一大片空白。
+
+    ② 中间「构建记录」空状态只说一句「还没有任何构建记录」
+       —— 占着 400px 高，却不提供任何下一步动作。
+
+  这次改的三件事：
+    ① 底部工作区**没有运行时收成一条 48px 的窄条**，
+       说出「选中之后这里会出现什么」，而不是留白。
+    ② 空状态给**三个可点的示例提示词** —— 点一下就填进输入框。
+       空状态不是「没内容」，它是引导用户做第一个动作的地方。
+    ③ 右侧在没运行时给出**契约说明**，而不是一片「¥0.0000」。
+  ════════════════════════════════════════════════════════════
+-->
+<style>
+:root{
+  --ink-1:#f1f5f9; --ink-2:#e2e8f0; --ink-3:#cbd5e1; --ink-4:#94a3b8;
+  --ink-5:#64748b; --ink-6:#475569; --ink-7:#334155;
+  --color-canvas:#08090c; --color-surface:#101114; --color-surface-2:#16181d;
+  --color-border-soft:#2a2f3a;
+  --app-accent:#2563eb; --app-accent-soft:#60a5fa; --app-accent-glow:37,99,235;
+  --app-radius:12px;
+  --tint-1:34,211,238; --tint-2:59,130,246; --tint-3:139,92,246;
+  --tint-4:236,72,153; --tint-5:217,70,239; --tint-6:16,185,129;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--color-canvas); color:var(--ink-2); overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+.shell{display:flex;flex-direction:column;height:100vh}
+
+/* ═══ 顶栏（未改动） ═══ */
+.top{display:flex;align-items:center;gap:16px;padding:16px 24px;
+  border-bottom:1px solid var(--color-border-soft)}
+.brand i{width:8px;height:8px;border-radius:99px;background:var(--app-accent);display:inline-block}
+.brand b{font-size:18px;font-weight:600;margin-left:8px;letter-spacing:-.01em}
+.brand span{display:block;font-size:12px;color:var(--ink-4);margin-top:2px}
+.inp{flex:1;min-width:0;background:var(--color-surface);border:1px solid var(--color-border-soft);
+  border-radius:10px;padding:10px 16px;font-size:14px;color:var(--ink-5)}
+.actions{display:flex;align-items:center;gap:12px;flex-shrink:0;
+  border-left:1px solid var(--color-border-soft);padding-left:16px}
+.btn{padding:10px 20px;border-radius:10px;background:var(--app-accent);color:#fff;
+  font-size:14px;font-weight:500}
+.small{padding:6px 12px;border:1px solid var(--color-border-soft);border-radius:10px;
+  font-size:12px;color:var(--ink-4)}
+.who{text-align:right}
+.who b{display:block;font-size:14px;font-weight:500;color:var(--ink-2)}
+.who span{font-size:11px;color:var(--ink-5)}
+
+/* ═══ 主体三栏 ═══ */
+main{display:grid;grid-template-columns:280px 1fr 320px;min-height:0;flex:1}
+aside,section{overflow-y:auto}
+aside:first-child{border-right:1px solid var(--color-border-soft);padding:12px}
+section{padding:16px;display:flex;flex-direction:column}
+aside:last-child{border-left:1px solid var(--color-border-soft);padding:12px}
+
+.pane-title{font-size:12px;color:var(--ink-4);font-weight:500;padding:0 4px;margin-bottom:8px}
+
+/* 直通模式提示（未改动） */
+.notice{border:1px solid var(--color-border-soft);background:rgba(16,17,20,.5);
+  border-radius:10px;padding:10px;font-size:10.5px;line-height:1.7;color:var(--ink-5);margin-bottom:12px}
+.notice b{color:var(--ink-3);font-weight:500}
+.notice u{color:var(--ink-4);text-decoration:none}
+
+/* 工序卡（未改动） */
+.stage{border:1px solid var(--color-border-soft);background:var(--color-surface);
+  border-radius:10px;padding:12px;margin-bottom:8px}
+.stage.dim{opacity:.6}
+.stage .r{display:flex;align-items:center;justify-content:space-between}
+.stage .nm{font-size:13.5px;font-weight:500;color:var(--ink-2)}
+.pill{font-size:10px;border:1px solid var(--ink-7);color:var(--ink-5);
+  border-radius:6px;padding:1px 6px}
+.stage p{margin-top:6px;font-size:11px;line-height:1.7;color:var(--ink-4)}
+.stage .m{margin-top:8px;display:flex;gap:12px;font-size:10px;color:var(--ink-5);
+  font-family:ui-monospace,monospace}
+
+/* ═══ 中间：标签 + 空状态 ═══ */
+.tabs{display:flex;align-items:center;gap:4px;margin-bottom:12px}
+.tab{padding:5px 10px;border-radius:8px;font-size:11.5px;color:var(--ink-5)}
+.tab.on{background:rgba(51,65,85,.6);color:var(--ink-1)}
+.tabs .right{margin-left:auto;font-size:11px;color:var(--ink-5)}
+
+/* ★ 改动一：空状态不再是「一句话 + 一大片留白」，
+   而是一张**有内容的卡**：说明 + 三个可点的示例。
+   卡的高度由内容决定，不再撑满。 */
+.empty{border:1px dashed var(--color-border-soft);border-radius:var(--app-radius);
+  padding:24px;max-width:520px}
+.empty h4{font-size:13.5px;font-weight:500;color:var(--ink-3)}
+.empty .sub{margin-top:6px;font-size:11.5px;line-height:1.7;color:var(--ink-5)}
+.empty .label{margin-top:20px;font-size:10.5px;color:var(--ink-6);
+  letter-spacing:.08em;font-family:ui-monospace,monospace}
+.samples{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+/* 示例行做成「可点的行」而不是「提示文字」——
+   参考 MiMo 首页那种一行一个箭头，一看就知道能点 */
+.sample{display:flex;align-items:center;gap:10px;border:1px solid var(--color-border-soft);
+  background:var(--color-surface);border-radius:10px;padding:10px 12px;font-size:12px;
+  color:var(--ink-3);cursor:pointer;transition:border-color .15s,transform .15s}
+.sample:hover{border-color:rgb(var(--t) / .55);transform:translateX(2px)}
+.sample i{width:6px;height:6px;border-radius:99px;background:rgb(var(--t));flex-shrink:0;
+  box-shadow:0 0 10px 1px rgb(var(--t) / .55)}
+.sample span{flex:1}
+.sample u{color:var(--ink-6);text-decoration:none;font-size:11px}
+
+/* 空状态下面补一句「产品是什么」，把剩余空间用起来 */
+.aside-note{margin-top:auto;padding-top:24px;font-size:11px;line-height:1.8;color:var(--ink-6)}
+.aside-note b{color:var(--ink-5);font-weight:400}
+
+/* ═══ 右侧：没运行时给契约说明，而不是一片 ¥0.0000 ═══ */
+.costbox{border:1px solid var(--color-border-soft);background:rgba(16,17,20,.5);
+  border-radius:10px;padding:14px;margin-bottom:12px}
+.costbox .k{font-size:11.5px;color:var(--ink-4)}
+.costbox .v{margin-top:6px;font-size:30px;font-weight:600;color:var(--ink-1);
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.costbox .hint{margin-top:10px;padding-top:10px;border-top:1px solid var(--color-border-soft);
+  font-size:10.5px;line-height:1.7;color:var(--ink-6)}
+
+.contract{border:1px solid var(--color-border-soft);background:var(--color-surface);
+  border-radius:10px;padding:12px;margin-bottom:8px}
+.contract .r{display:flex;align-items:center;justify-content:space-between}
+.contract .f{font-size:11px;font-weight:500;color:var(--ink-3);font-family:ui-monospace,monospace}
+.contract ul{margin-top:6px;list-style:none}
+.contract li{font-size:10px;line-height:1.8;color:var(--ink-5)}
+.contract li::before{content:"· "}
+.tail{padding:4px;font-size:10px;line-height:1.8;color:var(--ink-6)}
+
+/* ═══ ★ 改动二：底部工作区 ═══
+   原来固定 h-[22rem]（352px），没内容时就是一大片空白。
+   现在没有选中运行时，收成一条 48px 的窄条 ——
+   说出「选中之后这里会出现什么」，占位但不说废话。 */
+.workbench{border-top:1px solid var(--color-border-soft);flex-shrink:0}
+.wb-collapsed{height:48px;display:flex;align-items:center;gap:12px;padding:0 16px;
+  font-size:11.5px;color:var(--ink-5)}
+.wb-collapsed .tabs2{display:flex;gap:4px}
+.wb-collapsed .tab{opacity:.45}
+.wb-collapsed .msg{margin-left:auto;display:flex;align-items:center;gap:8px}
+.wb-collapsed .msg i{width:5px;height:5px;border-radius:99px;background:var(--ink-6);display:block}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- 顶栏 -->
+  <div class="top">
+    <div class="brand"><i></i><b>Nexus</b><span>一个网页里的软件工厂</span></div>
+    <div class="inp">用一句话描述你要做的软件，例如：做一个团队任务看板，能拖拽卡片、能标记完成、刷新后数据还在</div>
+    <div class="actions">
+      <a class="btn" href="#">开始构建</a>
+      <span class="small">☾ 黑</span>
+      <span class="small">设置</span>
+      <div class="who"><b>demo</b><span>@demo</span></div>
+      <span class="small">退出</span>
+    </div>
+  </div>
+
+  <main>
+    <!-- 左：流水线 -->
+    <aside>
+      <div class="pane-title">流水线 · 六道工序</div>
+      <div class="notice">
+        当前为<b>直通模式</b>：跳过规格化 / 架构定型 / 界面设计，直接生成。<u>4 道工序尚未接入</u>，标为「未接入」的工序暂时不产出契约文件。
+      </div>
+
+      <div class="stage dim"><div class="r"><span class="nm">1. 规格化</span><span class="pill">未接入</span></div>
+        <p>验收标准必须从这里产生。没有它，整条流水线没有判定依据，最终验收无从谈起。</p>
+        <div class="m"><span>契约 spec.json</span><span>¥0.0000</span></div></div>
+      <div class="stage dim"><div class="r"><span class="nm">2. 架构定型</span><span class="pill">未接入</span></div>
+        <p>全流程技术含量最高的决策点：模块怎么切，直接决定下一阶段的并行度与返工率。</p>
+        <div class="m"><span>契约 arch.json</span><span>¥0.0000</span></div></div>
+      <div class="stage dim"><div class="r"><span class="nm">3. 界面设计</span><span class="pill">未接入</span></div>
+        <p>设计变量是并行开发时视觉一致性的唯一保障。没有它，N 个执行 Agent 会做出 N 种风格。</p>
+        <div class="m"><span>契约 ui-spec.json</span><span>¥0.0000</span></div></div>
+      <div class="stage"><div class="r"><span class="nm">4. 并行构建</span><span class="pill" style="border-color:#16a34a;color:#4ade80">待执行</span></div>
+        <p>并行的粒度是「模块」而不是「文件」。文件级并行会产生大量合并冲突，收益为负。</p>
+        <div class="m"><span>契约 modules/*.json</span><span>¥0.0000</span></div></div>
+      <div class="stage dim"><div class="r"><span class="nm">5. 集成装配</span><span class="pill">未接入</span></div>
+        <p>第一次看到完整的东西，也是上下文最重的一刻 —— 必须做上下文裁剪。</p>
+        <div class="m"><span>契约 manifest.json</span><span>¥0.0000</span></div></div>
+      <div class="stage"><div class="r"><span class="nm">6. 验收与交付</span><span class="pill" style="border-color:#16a34a;color:#4ade80">待执行</span></div>
+        <p>把第①阶段产出的验收标准翻译成可执行断言。这一步是整条流水线闭环的证明。</p>
+        <div class="m"><span>契约 verdict.json</span><span>¥0.0000</span></div></div>
+    </aside>
+
+    <!-- 中：构建记录（空状态） -->
+    <section>
+      <div class="tabs">
+        <span class="tab on">构建记录</span>
+        <span class="tab">任务图</span>
+        <span class="right">还没有选中</span>
+      </div>
+
+      <!-- ★ 改动：空状态由「一句话」变成「一张有内容的卡」 -->
+      <div class="empty">
+        <h4>还没有任何构建记录</h4>
+        <p class="sub">在上面输入一句话，点「开始构建」就会出现在这里。不确定说什么的话，下面这三句可以直接用 —— 点一下就填进去。</p>
+
+        <div class="label">试 试 这 三 句</div>
+        <div class="samples">
+          <div class="sample" style="--t:var(--tint-1)"><i></i><span>做一个团队任务看板，能拖拽卡片、刷新后数据还在</span><u>→</u></div>
+          <div class="sample" style="--t:var(--tint-2)"><i></i><span>做一个记账小工具，能分类统计、能导出</span><u>→</u></div>
+          <div class="sample" style="--t:var(--tint-3)"><i></i><span>做一个番茄钟，能记录每天专注了多久</span><u>→</u></div>
+        </div>
+      </div>
+
+      <!-- 把下方剩余空间用一句「这是什么」收掉，而不是留白 -->
+      <p class="aside-note">
+        <b>每次构建都会留下完整的过程记录</b> —— 模型写了什么、花了多少钱、七项自检过了几项、产物是什么。
+        这些不是日志，是可以点开复查的。
+      </p>
+    </section>
+
+    <!-- 右：契约与成本 -->
+    <aside>
+      <div class="pane-title">产物契约与实时成本</div>
+
+      <!-- ★ 改动：没运行时不说「¥0.0000」这种废话，而是解释这里会出现什么 -->
+      <div class="costbox">
+        <div class="k">本次运行花费</div>
+        <div class="v">——</div>
+        <div class="hint">还没开始跑。开始之后这里会实时跳动：<br>输入 / 输出 token、思考 token、缓存命中、峰谷计价。</div>
+      </div>
+
+      <div class="contract">
+        <div class="r"><span class="f">modules/*.json</span><span class="pill">直通</span></div>
+        <ul><li>每个模块的模块级自测通过</li><li>编译通过</li><li>导出的接口与架构契约一致</li></ul>
+      </div>
+      <div class="contract">
+        <div class="r"><span class="f">verdict.json</span><span class="pill">直通</span></div>
+        <ul><li>覆盖率达标</li><li>关键路径全绿</li><li>裁决表里没有「无法判定」项</li><li>敏感信息扫描通过（API 密钥不得出现在交付物中）</li></ul>
+      </div>
+      <p class="tail">其余 4 道工序的契约（spec.json / arch.json / ui-spec.json / manifest.json）尚未产出，正在接入中。</p>
+    </aside>
+  </main>
+
+  <!-- ★ 改动：底部工作区。没选中运行时收成 48px，不再是 352px 的空盒子 -->
+  <div class="workbench">
+    <div class="wb-collapsed">
+      <div class="tabs2">
+        <span class="tab on">生成过程</span>
+        <span class="tab">成品预览</span>
+        <span class="tab">源码</span>
+      </div>
+      <div class="msg"><i></i>选中一条构建记录后，这里会出现实时生成过程、成品预览和源码</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

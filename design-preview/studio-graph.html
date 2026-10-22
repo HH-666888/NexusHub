@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-backdrop="glow">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>参考稿 · 工作台（流水线成为主体）</title>
+<!--
+  ════════════════════════════════════════════════════════════
+  参考稿：把「六道工序」从侧栏文字变成中央主体
+  ════════════════════════════════════════════════════════════
+  独立文件，不是项目源码。颜色令牌完全沿用现有的。
+
+  ── 这份稿子要解决的问题 ──
+  现在的界面「没有主角」：
+    · 中间是一列卡片  → 看起来像后台管理系统
+    · 而产品主张「六道工序的流水线」被压在左边 280px 窄栏里，
+      渲染成六段中文说明文（那是答辩材料，不是运行时界面）
+
+  ── 改的五件事（全部基于真实数据，没有一条是装的）──
+    ① 工序流水线移到中央，横向铺开，成为视觉主体
+    ② 工序之间加连线 + 流动光点 —— 有拓扑才有「系统」感
+    ③ 每个节点显示运行时的真数据：状态 / 耗时 / 花费 / 产物
+       （不再显示「为什么要有这一阶段」那种说明文）
+    ④ 顶部加状态条：完成 / 进行中 / 待执行 / 未接入 / 耗时 / 花费
+    ⑤ 左栏收窄成纯记录列表，不再和主体抢注意力
+
+  ── 刻意没有做什么 ──
+    没有画 Agent 组织图、没有分波调度、没有通讯流。
+    那些的前提是真的有多个 agent 在并行干活。
+    现在画出来就是假的 —— 评委一问就穿帮。
+  ════════════════════════════════════════════════════════════
+-->
+<style>
+:root{
+  --ink-1:#f1f5f9; --ink-2:#e2e8f0; --ink-3:#cbd5e1; --ink-4:#94a3b8;
+  --ink-5:#64748b; --ink-6:#475569; --ink-7:#334155;
+  --color-canvas:#08090c; --color-surface:#101114; --color-surface-2:#16181d;
+  --color-border-soft:#2a2f3a;
+  --app-accent:#2563eb; --app-accent-soft:#60a5fa; --app-accent-glow:37,99,235;
+  --app-radius:12px;
+  --tint-1:34,211,238; --tint-2:59,130,246; --tint-3:139,92,246;
+  --tint-4:236,72,153; --tint-5:217,70,239; --tint-6:16,185,129;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--color-canvas);color:var(--ink-2);overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:inherit;text-decoration:none}
+.shell{display:flex;flex-direction:column;height:100vh}
+
+/* ═══ 顶栏 ═══ */
+.top{display:flex;align-items:center;gap:16px;padding:14px 22px;
+  border-bottom:1px solid var(--color-border-soft)}
+.brand i{width:8px;height:8px;border-radius:99px;background:var(--app-accent);display:inline-block}
+.brand b{font-size:17px;font-weight:600;margin-left:8px;letter-spacing:-.01em}
+.brand u{display:block;font-size:11.5px;color:var(--ink-4);margin-top:1px;text-decoration:none}
+.inp{flex:1;min-width:0;background:var(--color-surface);border:1px solid var(--color-border-soft);
+  border-radius:10px;padding:10px 15px;font-size:13.5px;color:var(--ink-5);white-space:nowrap;overflow:hidden}
+.actions{display:flex;align-items:center;gap:10px;flex-shrink:0;
+  border-left:1px solid var(--color-border-soft);padding-left:16px}
+.btn{padding:10px 20px;border-radius:10px;background:var(--app-accent);color:#fff;
+  font-size:13.5px;font-weight:500}
+.small{padding:6px 11px;border:1px solid var(--color-border-soft);border-radius:9px;
+  font-size:11.5px;color:var(--ink-4)}
+.who{text-align:right;line-height:1.25}
+.who b{display:block;font-size:13.5px;font-weight:500;color:var(--ink-2)}
+.who span{font-size:11px;color:var(--ink-5)}
+
+/* ═══ ★ 新增①：状态条 ═══
+   一行把整次运行的状况说完。参考 cc-haha 顶部那条
+   「完成 3/6 · 进行中 2 · 待领 0 · 阻塞 1」。
+   数字全部来自数据库，不是装饰。 */
+.statusbar{display:flex;align-items:center;gap:0;padding:0 22px;
+  border-bottom:1px solid var(--color-border-soft);background:rgba(16,17,20,.5);height:46px}
+.st{display:flex;align-items:center;gap:7px;padding:0 18px;height:100%;
+  border-right:1px solid var(--color-border-soft);font-size:12px}
+.st:first-child{padding-left:0}
+.st i{width:7px;height:7px;border-radius:99px;display:block;flex-shrink:0}
+.st b{font-weight:600;color:var(--ink-1);font-variant-numeric:tabular-nums}
+.st span{color:var(--ink-5)}
+.st .live{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.8)}}
+.st.right{margin-left:auto;border-right:0;padding-right:0;gap:16px}
+.st.right div{display:flex;align-items:baseline;gap:5px}
+.st.right b{font-size:14px}
+.st.right em{font-style:normal;font-size:11px;color:var(--ink-5)}
+
+/* ═══ 主体 ═══ */
+main{display:grid;grid-template-columns:212px 1fr 300px;min-height:0;flex:1}
+aside,section{overflow-y:auto}
+aside:first-child{border-right:1px solid var(--color-border-soft);padding:14px 12px}
+aside:last-child{border-left:1px solid var(--color-border-soft);padding:14px 12px}
+.pane{font-size:11.5px;color:var(--ink-4);font-weight:500;padding:0 4px;margin-bottom:10px;
+  display:flex;align-items:center;justify-content:space-between}
+
+/* ── 左：记录列表（收窄，不抢戏） ── */
+.rec{border:1px solid var(--color-border-soft);background:var(--color-surface);border-radius:10px;
+  padding:10px;margin-bottom:7px}
+.rec.on{border-color:rgb(var(--app-accent-glow) / .8);
+  box-shadow:0 0 0 1px rgb(var(--app-accent-glow) / .25)}
+.rec p{font-size:12px;line-height:1.55;color:var(--ink-3);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rec .m{margin-top:7px;display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--ink-5);
+  font-variant-numeric:tabular-nums}
+.tag{font-size:9.5px;border-radius:5px;padding:1px 5px;border:1px solid}
+.tag.ok{border-color:#166534;background:rgba(22,101,52,.22);color:#4ade80}
+.tag.wait{border-color:var(--color-border-soft);color:var(--ink-5)}
+
+/* ═══ ★ 改动②③：中央 —— 工序流水线成为主体 ═══ */
+section{padding:20px 24px;display:flex;flex-direction:column;gap:16px}
+
+.flow{position:relative;padding:8px 0 4px}
+/* 分三行排：①②③ / 汇合 / ④⑤⑥ —— 用 grid 而不是绝对定位，
+   换行时不会错位 */
+.row{display:grid;gap:10px;align-items:stretch}
+.row.a{grid-template-columns:repeat(3,minmax(0,1fr));padding-right:14%}
+.row.b{grid-template-columns:repeat(3,minmax(0,1fr));padding-left:14%}
+
+.node{position:relative;border-radius:var(--app-radius);border:1px solid;
+  background-color:var(--color-surface);padding:12px 13px;overflow:hidden;
+  display:flex;flex-direction:column;gap:7px;
+  border-color:rgb(var(--t / .42));
+  background-image:linear-gradient(160deg,rgb(var(--t) / .16) 0%,rgb(var(--t) / .04) 52%,transparent 100%);
+  box-shadow:0 0 22px -11px rgb(var(--t) / .7)}
+.node::before{content:"";position:absolute;inset:0 0 auto 0;height:1px;
+  background:linear-gradient(90deg,transparent,rgb(var(--t) / .85),transparent)}
+.node.pending{opacity:.5;box-shadow:none}
+.node.pending::before{opacity:.35}
+
+.node .hd{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.node .no{display:flex;align-items:center;gap:6px;font-family:ui-monospace,monospace;
+  font-size:10.5px;font-weight:600;color:rgb(var(--t))}
+.node .no i{width:6px;height:6px;border-radius:99px;background:rgb(var(--t));
+  box-shadow:0 0 10px 1px rgb(var(--t) / .6);display:block}
+.node .pill{font-size:9.5px;border-radius:5px;padding:1px 6px;border:1px solid;
+  border-color:rgb(var(--t) / .5);color:rgb(var(--t));background:rgb(var(--t) / .12)}
+.node.pending .pill{border-color:var(--ink-7);color:var(--ink-5);background:none}
+.node .nm{font-size:13.5px;font-weight:500;color:var(--ink-1)}
+.node .ar{font-family:ui-monospace,monospace;font-size:10px;color:var(--ink-5)}
+
+/* ★ 改动②：运行时真数据，取代「为什么要有这一阶段」的说明文 */
+.node .metrics{display:flex;gap:12px;font-size:10.5px;color:var(--ink-4);
+  font-variant-numeric:tabular-nums;border-top:1px solid rgb(var(--t) / .16);padding-top:7px}
+.node .metrics b{font-weight:600;color:var(--ink-3)}
+
+/* 正在运行的节点：一圈脉冲光环。只动 opacity / transform */
+.node.running{box-shadow:0 0 26px -6px rgb(var(--t) / .85)}
+.node.running::after{content:"";position:absolute;inset:-1px;border-radius:inherit;
+  border:1px solid rgb(var(--t) / .9);animation:halo 1.8s ease-out infinite;pointer-events:none}
+@keyframes halo{0%{opacity:.9;transform:scale(1)}70%{opacity:0;transform:scale(1.035)}100%{opacity:0;transform:scale(1.035)}}
+
+/* ★ 改动②：连线。用 SVG 画，带流动的光点 */
+.links{position:absolute;inset:0;pointer-events:none;overflow:visible}
+.links .wire{stroke:var(--color-border-soft);stroke-width:1;fill:none}
+.links .wire.live{stroke:rgb(var(--tint-4) / .55)}
+.links .spark{fill:rgb(var(--tint-4));filter:drop-shadow(0 0 4px rgb(var(--tint-4)))}
+.merge{display:flex;align-items:center;justify-content:center;gap:10px;
+  padding:9px 0;font-size:10.5px;color:var(--ink-6);font-family:ui-monospace,monospace}
+.merge .bar{flex:1;height:1px;background:var(--color-border-soft)}
+
+/* ═══ 过程流 ═══ */
+.log{flex:1;min-height:0;border:1px solid var(--color-border-soft);border-radius:var(--app-radius);
+  background:var(--color-surface);display:flex;flex-direction:column;overflow:hidden}
+.log .lb{display:flex;align-items:center;gap:10px;padding:9px 14px;
+  border-bottom:1px solid var(--color-border-soft);font-size:11.5px}
+.log .lb b{font-weight:500;color:var(--ink-3)}
+.log .lb .sp{margin-left:auto;display:flex;gap:14px;font-size:11px;color:var(--ink-5);
+  font-variant-numeric:tabular-nums}
+.log pre{flex:1;overflow:auto;padding:12px 14px;font-size:11px;line-height:1.75;
+  color:var(--ink-4);white-space:pre-wrap;
+  font-family:"JetBrains Mono",Consolas,monospace}
+.log pre em{font-style:normal;color:rgb(var(--tint-1))}
+
+/* ═══ 右：产物与成本 ═══ */
+.money{border:1px solid var(--color-border-soft);background:rgba(16,17,20,.5);
+  border-radius:10px;padding:13px;margin-bottom:12px}
+.money .k{font-size:11.5px;color:var(--ink-4)}
+.money .v{margin-top:5px;font-size:28px;font-weight:600;color:var(--ink-1);
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.money .grid{margin-top:9px;display:grid;grid-template-columns:1fr 1fr;gap:5px;
+  font-size:10.5px;color:var(--ink-5);font-variant-numeric:tabular-nums}
+.ct{border:1px solid var(--color-border-soft);background:var(--color-surface);border-radius:10px;
+  padding:11px;margin-bottom:7px}
+.ct .r{display:flex;align-items:center;justify-content:space-between}
+.ct .f{font-family:ui-monospace,monospace;font-size:10.5px;color:var(--ink-3)}
+.ct ul{margin-top:5px;list-style:none}
+.ct li{font-size:10px;line-height:1.75;color:var(--ink-5)}
+.ct li::before{content:"· "}
+.ct li.done{color:rgb(var(--tint-6))}
+.ct li.done::before{content:"✓ "}
+
+/* ═══ 底部 ═══ */
+.wb{border-top:1px solid var(--color-border-soft);height:190px;display:flex;flex-direction:column}
+.wb .tabs{display:flex;align-items:center;gap:3px;padding:8px 14px;
+  border-bottom:1px solid var(--color-border-soft)}
+.wb .tab{padding:5px 11px;border-radius:8px;font-size:11.5px;color:var(--ink-5)}
+.wb .tab.on{background:rgba(51,65,85,.6);color:var(--ink-1)}
+.wb .tabs .r{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:11px;color:var(--ink-5)}
+.wb .body{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:14px 16px}
+.kcol h5{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--ink-4);font-weight:400;margin-bottom:7px}
+.kcol h5 u{width:6px;height:6px;border-radius:99px;display:block;text-decoration:none}
+.kcard{height:25px;border-radius:7px;background:var(--color-surface-2);margin-bottom:5px}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- 顶栏 -->
+  <div class="top">
+    <div class="brand"><i></i><b>Nexus</b><u>一个网页里的软件工厂</u></div>
+    <div class="inp">做一个团队任务看板，能拖拽卡片、能标记完成、刷新后数据还在</div>
+    <div class="actions">
+      <a class="btn" href="#">开始构建</a>
+      <span class="small">☾ 黑</span>
+      <span class="small">设置</span>
+      <div class="who"><b>demo</b><span>@demo</span></div>
+      <span class="small">退出</span>
+    </div>
+  </div>
+
+  <!-- ★ 新增①：状态条 -->
+  <div class="statusbar">
+    <div class="st"><i class="live" style="background:#4ade80"></i><b>1</b><span>正在运行</span></div>
+    <div class="st"><i style="background:#16a34a"></i><b>0</b><span>已完成</span></div>
+    <div class="st"><i style="background:#64748b"></i><b>1</b><span>待执行</span></div>
+    <div class="st"><i style="background:#334155"></i><b>4</b><span>未接入</span></div>
+    <div class="st right">
+      <div><b>8.2</b><em>秒</em></div>
+      <div><b>¥0.0256</b><em>本次花费</em></div>
+      <div><b>1</b><em>次模型调用</em></div>
+    </div>
+  </div>
+
+  <main>
+    <!-- 左：记录列表（收窄） -->
+    <aside>
+      <div class="pane"><span>构建记录</span><span>2</span></div>
+      <div class="rec on">
+        <p>做一个团队任务看板，能拖拽卡片改变状态、能标记完成、刷新后数据还在</p>
+        <div class="m"><span class="tag ok">已完成</span><span>2 小时前</span><span>¥0.0256</span></div>
+      </div>
+      <div class="rec">
+        <p>做一个记账小工具，能分类统计、能导出</p>
+        <div class="m"><span class="tag wait">待执行</span><span>刚刚</span><span>¥0.0000</span></div>
+      </div>
+    </aside>
+
+    <!-- ★ 中央主体：工序流水线 -->
+    <section>
+      <div class="pane" style="padding:0"><span>流水线 · 六道工序</span>
+        <span style="color:var(--ink-6)">点节点可查看该阶段的产物</span></div>
+
+      <div class="flow">
+        <!-- 连线：纯装饰，用 SVG 画，带流动光点 -->
+        <svg class="links" viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true">
+          <!-- ①→② ②→③ -->
+          <path class="wire" d="M170 62 H300" /><path class="wire" d="M500 62 H630" />
+          <!-- ③ 下行到汇合线 -->
+          <path class="wire" d="M830 62 V150" />
+          <!-- 汇合线 → ④ -->
+          <path class="wire live" d="M830 150 H260" stroke-dasharray="3 3" />
+          <path class="wire live" d="M260 150 V178" />
+          <!-- ④→⑤ ⑤→⑥ -->
+          <path class="wire" d="M430 208 H560" /><path class="wire" d="M730 208 H860" />
+          <!-- 流动光点：只在「已接入且有流转」的线上跑 -->
+          <circle class="spark" r="2.5"><animateMotion dur="2.4s" repeatCount="indefinite"
+            path="M830 150 H260 V178" /></circle>
+        </svg>
+
+        <div class="row a">
+          <div class="node pending" style="--t:var(--tint-1)">
+            <div class="hd"><span class="no"><i></i>01</span><span class="pill">未接入</span></div>
+            <div class="nm">规格化</div><div class="ar">spec.json</div>
+            <div class="metrics"><span>验收标准来源</span></div>
+          </div>
+          <div class="node pending" style="--t:var(--tint-2)">
+            <div class="hd"><span class="no"><i></i>02</span><span class="pill">未接入</span></div>
+            <div class="nm">架构定型</div><div class="ar">arch.json</div>
+            <div class="metrics"><span>模块切分</span></div>
+          </div>
+          <div class="node pending" style="--t:var(--tint-3)">
+            <div class="hd"><span class="no"><i></i>03</span><span class="pill">未接入</span></div>
+            <div class="nm">界面设计</div><div class="ar">ui-spec.json</div>
+            <div class="metrics"><span>设计变量</span></div>
+          </div>
+        </div>
+
+        <div class="merge"><span class="bar"></span>前三道未接入，直通到构建<span class="bar"></span></div>
+
+        <div class="row b">
+          <div class="node running" style="--t:var(--tint-4)">
+            <div class="hd"><span class="no"><i></i>04</span><span class="pill">运行中</span></div>
+            <div class="nm">并行构建</div><div class="ar">modules/*.json</div>
+            <div class="metrics">
+              <span><b>8.2</b> 秒</span><span><b>¥0.0256</b></span><span><b>7/7</b> 自检</span>
+            </div>
+          </div>
+          <div class="node pending" style="--t:var(--tint-5)">
+            <div class="hd"><span class="no"><i></i>05</span><span class="pill">待执行</span></div>
+            <div class="nm">集成装配</div><div class="ar">manifest.json</div>
+            <div class="metrics"><span>—</span></div>
+          </div>
+          <div class="node pending" style="--t:var(--tint-6)">
+            <div class="hd"><span class="no"><i></i>06</span><span class="pill">待执行</span></div>
+            <div class="nm">验收与交付</div><div class="ar">verdict.json</div>
+            <div class="metrics"><span>—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 过程流 -->
+      <div class="log">
+        <div class="lb">
+          <b>实时过程</b>
+          <span style="color:var(--ink-6);font-size:11px">事件流 · 边跑边存，可回放</span>
+          <span class="sp"><span>3 162 条事件</span><span>9.5 秒</span><span style="color:#4ade80">7/7 通过</span></span>
+        </div>
+        <pre>&lt;!DOCTYPE html&gt;
+&lt;html lang="zh-CN"&gt;
+&lt;head&gt;&lt;meta charset="UTF-8"&gt;
+&lt;style&gt;<em>:root{--bg:#0f172a;--card:#1e293b}</em>
+.board{display:grid;grid-template-columns:repeat(3,1fr)}
+…</pre>
+      </div>
+    </section>
+
+    <!-- 右：产物与成本 -->
+    <aside>
+      <div class="pane"><span>产物与成本</span></div>
+
+      <div class="money">
+        <div class="k">本次运行花费</div>
+        <div class="v">¥0.0256</div>
+        <div class="grid">
+          <div>输入 198</div><div>输出 6 345</div>
+          <div>思考 0</div><div>缓存命中 0</div>
+        </div>
+      </div>
+
+      <div class="ct">
+        <div class="r"><span class="f">modules/*.json</span><span class="pill" style="font-size:9.5px;border:1px solid rgb(var(--tint-4)/.5);color:rgb(var(--tint-4));border-radius:5px;padding:1px 6px">直通</span></div>
+        <ul>
+          <li class="done">每个模块的模块级自测通过</li>
+          <li class="done">编译通过</li>
+          <li class="done">导出的接口与架构契约一致</li>
+        </ul>
+      </div>
+      <div class="ct">
+        <div class="r"><span class="f">verdict.json</span><span class="pill" style="font-size:9.5px;border:1px solid rgb(var(--tint-6)/.5);color:rgb(var(--tint-6));border-radius:5px;padding:1px 6px">7/7</span></div>
+        <ul>
+          <li class="done">完整 HTML 结构</li>
+          <li class="done">内联样式 / 脚本</li>
+          <li class="done">完全自包含</li>
+          <li class="done">数据能持久化</li>
+        </ul>
+      </div>
+      <p style="font-size:10px;line-height:1.75;color:var(--ink-6);padding:0 4px">
+        其余 4 道工序的契约（spec / arch / ui-spec / manifest）尚未产出，正在接入中。
+      </p>
+    </aside>
+  </main>
+
+  <!-- 底部 -->
+  <div class="wb">
+    <div class="tabs">
+      <span class="tab">生成过程</span><span class="tab on">成品预览</span><span class="tab">源码</span>
+      <span class="r"><span>成品 23.3 KB</span><span>新标签打开</span><span>下载</span></span>
+    </div>
+    <div class="body">
+      <div class="kcol"><h5><u style="background:#fbbf24"></u>待办 · 2</h5>
+        <div class="kcard"></div><div class="kcard" style="width:72%"></div></div>
+      <div class="kcol"><h5><u style="background:#60a5fa"></u>进行中 · 1</h5>
+        <div class="kcard"></div></div>
+      <div class="kcol"><h5><u style="background:#4ade80"></u>已完成 · 1</h5>
+        <div class="kcard" style="width:84%"></div></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
