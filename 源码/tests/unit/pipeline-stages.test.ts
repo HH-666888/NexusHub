@@ -6,7 +6,103 @@ import {
   STAGE_MAP,
   STAGE_ORDER,
   type FaultClass,
+  type StageId,
 } from "@/core/pipeline/stages";
+import {
+  computeStageStatuses,
+  countPlanned,
+  wiredStages,
+} from "@/core/pipeline/progress";
+
+/* ============================================================
+   进度推算 —— 这里钉住的是一条「不能骗人」的规则
+   ============================================================ */
+describe("流水线进度推算", () => {
+  const allStages = STAGES.map((s) => s.id);
+
+  it("每道工序都有实现状态，且取值合法", () => {
+    for (const s of STAGES) {
+      expect(
+        ["wired", "direct", "planned"],
+        `工序 ${s.id} 的实现状态不合法`,
+      ).toContain(s.implementation);
+    }
+  });
+
+  /* ------------------------------------------------------------
+     这一条是整个文件里最重要的一条
+     ------------------------------------------------------------ */
+  it("【关键】未接入的工序永远不能显示成「已通过」", () => {
+    const planned = STAGES.filter((s) => s.implementation === "planned");
+    expect(planned.length).toBeGreaterThan(0); // 当前确实还有没接入的
+
+    // 把所有可能的进度组合都试一遍：无论跑到哪一步、什么状态，
+    // 未接入的工序都不能变成「已通过」
+    const statuses = ["running", "paused", "done", "failed"] as const;
+    for (const stage of allStages) {
+      for (const status of statuses) {
+        const result = computeStageStatuses({ stage, status });
+        for (const p of planned) {
+          expect(
+            result[p.id],
+            `运行到 ${stage}/${status} 时，未接入的 ${p.id} 竟然显示为 ${result[p.id]}`,
+          ).not.toBe("passed");
+        }
+      }
+    }
+  });
+
+  it("运行完成时，已接入且已跑过的工序才显示「已通过」", () => {
+    const done = computeStageStatuses({ stage: "verify", status: "done" });
+    // 构建与验收是已接入的，应当显示已通过
+    expect(done.build).toBe("passed");
+    expect(done.verify).toBe("passed");
+    // 没接入的一律 pending
+    expect(done.spec).toBe("pending");
+    expect(done.arch).toBe("pending");
+    expect(done.ui).toBe("pending");
+    expect(done.assemble).toBe("pending");
+  });
+
+  it("没有选中运行时，所有工序都是待执行", () => {
+    const none = computeStageStatuses(null);
+    for (const id of allStages) expect(none[id]).toBe("pending");
+  });
+
+  it("停在构建阶段时，验收阶段是待执行而不是已通过", () => {
+    const mid = computeStageStatuses({ stage: "build", status: "running" });
+    expect(mid.build).toBe("running");
+    expect(mid.verify).toBe("pending");
+  });
+
+  it("运行失败时，当前工序显示失败，后续仍是待执行", () => {
+    const failed = computeStageStatuses({ stage: "build", status: "failed" });
+    expect(failed.build).toBe("failed");
+    expect(failed.verify).toBe("pending");
+  });
+
+  it("需要人工介入时显示为「需人工」而不是失败", () => {
+    const paused = computeStageStatuses({ stage: "build", status: "paused" });
+    expect(paused.build).toBe("blocked");
+  });
+
+  it("countPlanned 与实际未接入数量一致", () => {
+    expect(countPlanned()).toBe(
+      STAGES.filter((s) => s.implementation === "planned").length,
+    );
+  });
+
+  it("wiredStages 只返回真正有产物的工序", () => {
+    const wired = wiredStages();
+    expect(wired.length).toBeGreaterThan(0);
+    for (const s of wired) expect(s.implementation).not.toBe("planned");
+    // 未接入的工序不该出现在这个列表里 ——
+    // 界面右侧用它来决定列哪些契约，列出来会让人以为产物已经存在
+    for (const s of STAGES.filter((x) => x.implementation === "planned")) {
+      expect(wired.map((w) => w.id as StageId)).not.toContain(s.id);
+    }
+  });
+});
 
 /**
  * 这些测试不是为了覆盖率，是为了把「架构不变量」固化下来。

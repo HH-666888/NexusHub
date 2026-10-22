@@ -34,6 +34,22 @@ export type FaultClass =
   | "model" // 模型错：改错文件、幻觉接口、同一错修两次仍在
   | "spec"; // 规格错：需求矛盾或不可实现
 
+/**
+ * 阶段的实现状态
+ * ------------------------------------------------------------
+ * 这个字段存在的唯一理由：**不要在界面上把「规划中」显示成「已通过」**。
+ *
+ * 六阶段流水线是完整形态，但实现是逐步推进的。如果界面上无条件地把
+ * 当前阶段之前的工序都标成「已通过」，就会造成一种很糟的情况 ——
+ * 评委问「规格化阶段的产物给我看看」，而我们根本拿不出来。
+ * 写着「已通过」但交不出产物，比直接写「未接入」严重得多。
+ *
+ *   wired   —— 真正按契约实现并有产物
+ *   direct  —— 直通模式下的简化实现（做了这件事，但没走完整的契约链路）
+ *   planned —— 还没接，界面上如实标注
+ */
+export type StageImplementation = "wired" | "direct" | "planned";
+
 export interface StageDef {
   id: StageId;
   order: number;
@@ -48,6 +64,8 @@ export interface StageDef {
   fallbackTo: StageId[];
   /** 是否设人工门禁 */
   humanGate?: boolean;
+  /** 当前实现到什么程度。见上面 StageImplementation 的说明 */
+  implementation: StageImplementation;
 }
 
 export const STAGES: readonly StageDef[] = [
@@ -66,6 +84,7 @@ export const STAGES: readonly StageDef[] = [
     ],
     fallbackTo: [],
     humanGate: true, // 全流程唯一需要人的地方
+    implementation: "planned",
   },
   {
     id: "arch",
@@ -80,6 +99,7 @@ export const STAGES: readonly StageDef[] = [
       "模块依赖图无环",
     ],
     fallbackTo: ["spec"],
+    implementation: "planned",
   },
   {
     id: "ui",
@@ -94,6 +114,7 @@ export const STAGES: readonly StageDef[] = [
       "页面用到的数据都能在接口契约里找到",
     ],
     fallbackTo: ["arch", "spec"],
+    implementation: "planned",
   },
   {
     id: "build",
@@ -108,6 +129,8 @@ export const STAGES: readonly StageDef[] = [
       "导出的接口与架构契约一致",
     ],
     fallbackTo: ["arch", "ui"],
+    // 直通模式下确实在生成代码，但没有经过①②③的契约输入
+    implementation: "direct",
   },
   {
     id: "assemble",
@@ -118,6 +141,7 @@ export const STAGES: readonly StageDef[] = [
     artifact: "manifest.json",
     acceptance: ["能启动", "端口可访问", "冒烟脚本能走通主流程"],
     fallbackTo: ["build", "arch"],
+    implementation: "planned",
   },
   {
     id: "verify",
@@ -133,8 +157,17 @@ export const STAGES: readonly StageDef[] = [
       "敏感信息扫描通过（API 密钥不得出现在交付物中）",
     ],
     fallbackTo: ["assemble", "build", "ui", "arch", "spec"],
+    // 七项自检在跑，但断言不是从①的验收标准翻译来的 —— 是通用规则
+    implementation: "direct",
   },
 ] as const;
+
+/** 界面用的实现状态标签 */
+export const IMPLEMENTATION_LABEL: Record<StageImplementation, string> = {
+  wired: "已接入",
+  direct: "直通",
+  planned: "未接入",
+};
 
 export const STAGE_MAP: Record<StageId, StageDef> = Object.fromEntries(
   STAGES.map((s) => [s.id, s]),
