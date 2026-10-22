@@ -12,6 +12,23 @@
  * 注意：本文件只在服务端使用，不要在任何 "use client" 组件里引入。
  */
 
+import fs from "node:fs";
+
+/**
+ * 让命令行脚本也能读到 .env.local
+ * ============================================================
+ * Next.js 会自动加载 .env.local，但用 tsx 直接跑的脚本不会 ——
+ * 于是「页面上能跑、脚本里说密钥缺失」这种困惑就会出现。
+ *
+ * 这里统一解决：非 Next.js 环境下自己加载一次。
+ * 判断依据是 NEXT_RUNTIME —— 它是 Next.js 注入的标志，
+ * 有这个标志说明 Next 已经加载过了，不必重复加载，
+ * 也避免在真实部署环境里用本地文件覆盖掉容器注入的环境变量。
+ */
+if (!process.env.NEXT_RUNTIME && fs.existsSync(".env.local")) {
+  process.loadEnvFile(".env.local");
+}
+
 function str(name: string, fallback: string): string {
   const v = process.env[name];
   return v === undefined || v === "" ? fallback : v;
@@ -50,6 +67,13 @@ export const env = {
   paths: {
     database: str("DATABASE_PATH", "./data/nexus.db"),
     workspaceRoot: str("WORKSPACE_ROOT", "./data/workspace"),
+  },
+  /** 能力探测脚本用。留成可配置是为了做对照实验（换档位、换预算再跑一次） */
+  probe: {
+    effort: str("PROBE_EFFORT", "high"),
+    maxOutputTokens: num("PROBE_MAX_TOKENS", 16384),
+    /** 去掉代码块外壳，只留正文，便于把整段 HTML 贴进命令行 */
+    systemPromptOverride: str("PROBE_SYSTEM_PROMPT", ""),
   },
 } as const;
 

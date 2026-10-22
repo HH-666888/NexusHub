@@ -1,0 +1,88 @@
+{
+  "//": "VS Code 任务：把这些常用命令变成菜单里的一个点击项。",
+  "//npm": "一律用 npm.cmd 而不是 npm —— PowerShell 的执行策略默认禁止运行 npm.ps1，而 npm.cmd 不受影响。",
+  "//dev": "启动开发服务器不使用 isBackground / problemMatcher：开发服务器本来就永不退出，",
+  "//dev2": "用后台任务那套状态机会被误判成「任务出错」而弹黄色警告。终端里出现 ✓ Ready 就是就绪信号。",
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "▶ 启动并打开页面",
+      "detail": "启动服务器，等它就绪后自动在浏览器打开 http://localhost:3000",
+      "dependsOrder": "parallel",
+      "dependsOn": ["启动开发服务器", "（内部）稍后打开浏览器"],
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "启动开发服务器",
+      "detail": "只启动服务，不打开浏览器。停就在终端里按 Ctrl+C",
+      "type": "shell",
+      "command": "npm.cmd",
+      "args": ["run", "dev"],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "（内部）稍后打开浏览器",
+      "detail": "等服务器就绪再调用系统默认浏览器。单独跑它没有意义，所以隐藏起来。",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "Start-Sleep -Seconds 5; Start-Process 'http://localhost:3000'"
+      ],
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "dedicated", "close": true },
+      "hide": true
+    },
+    {
+      "label": "在浏览器打开页面",
+      "detail": "服务器已经在跑的时候，用这个把页面调出来",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-Command", "Start-Process 'http://localhost:3000'"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "dedicated", "close": true }
+    },
+    {
+      "label": "跑全部检查（类型+规范+测试+构建）",
+      "detail": "提交代码前跑一遍，四项必须全绿",
+      "type": "shell",
+      "command": "npm.cmd",
+      "args": ["run", "verify"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "跑单元测试",
+      "type": "shell",
+      "command": "npm.cmd",
+      "args": ["run", "test"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "看数据库结构",
+      "type": "shell",
+      "command": "npm.cmd",
+      "args": ["run", "db:inspect"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "能力探测：一句话生成一个应用",
+      "detail": "会真的调用模型并产生费用（约 ¥0.03）",
+      "type": "shell",
+      "command": "npm.cmd",
+      "args": ["run", "probe"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    }
+  ]
+}
