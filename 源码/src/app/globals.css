@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Nexus 设计变量（Design Tokens）
+   这是「界面设计」阶段的产物在自身产品上的体现：
+   所有颜色、间距、圆角、字号都从这里取，不允许散落在组件里。
+   ============================================================ */
+@theme {
+  /* 阶段状态色 */
+  --color-stage-pending: #94a3b8;
+  --color-stage-running: #2563eb;
+  --color-stage-passed: #16a34a;
+  --color-stage-failed: #dc2626;
+  --color-stage-attention: #d97706;
+
+  /* 失败归因四分类色 */
+  --color-fault-env: #0891b2;
+  --color-fault-code: #dc2626;
+  --color-fault-model: #7c3aed;
+  --color-fault-spec: #d97706;
+
+  /* 底色 */
+  --color-canvas: #0b1220;
+  --color-surface: #111827;
+  --color-surface-2: #1f2937;
+  --color-border-soft: #334155;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: #e2e8f0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+    "Segoe UI", sans-serif;
+}
