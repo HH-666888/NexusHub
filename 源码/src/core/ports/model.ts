@@ -13,10 +13,17 @@ export type ModelTier =
 
 /**
  * 思考投入档位。
- * deepseek-flash 支持 low / high / max，默认 high。
- * 这是成本与质量的第二个旋钮 —— 不只选模型，还能选「用多少脑力」。
+ *
+ * 这一档的取值来自实测与官方文档，不是拍脑袋：
+ *   - 官方文档：思考模式默认打开，强度默认 high
+ *   - 实测：关闭思考后，输入 token 从 36 降到 10（服务端不再注入思考引导提示词），
+ *           同一问题耗时从 1114 毫秒降到 646 毫秒
+ *
+ * "none" 对应 API 的 thinking.type = "disabled"。
+ * 它存在的意义：机械任务（重命名、样板代码、格式化）不需要思考，
+ * 关掉能同时省时间和省钱 —— 输出侧的价格是输入侧的 4 倍，而思考 token 算作输出。
  */
-export type ModelEffort = "low" | "high" | "max";
+export type ModelEffort = "none" | "low" | "high" | "max";
 
 export type ModelContentPart =
   | { type: "text"; text: string }
@@ -53,9 +60,30 @@ export interface ModelResult {
   usage: TokenUsage;
   /** 本次调用折算人民币 */
   costCny: number;
+  /**
+   * 计价档位。峰谷价差一倍，不记下来的话，
+   * 事后复盘会以为「同样的活儿这次怎么贵了一倍」是模型变笨了。
+   *
+   * 为什么交给适配器报出来而不是内核自己算：
+   *   价格表是供应商的数据，属于适配器，内核不该认识任何一家的价目表。
+   *   内核只负责把「花了多少、按什么价」记进流水。
+   */
+  priceTier: "peak" | "offPeak";
   /** 实际使用的模型名 */
   model: string;
   latencyMs: number;
+  /**
+   * 是否因为输出长度上限被截断。
+   *
+   * 这个字段来自一次真实的踩坑：
+   *   思考 token 计入输出预算。若 maxOutputTokens 设得过小，
+   *   模型会把预算全花在思考上，content 返回空串、finish_reason 为 "length"。
+   *   把这种情况显式标记出来，编排层才能识别「是预算不够，不是模型不会」，
+   *   从而做出正确的处置（提高预算重试），而不是误判为模型能力问题。
+   */
+  truncated: boolean;
+  /** 供应商返回的原始结束原因，便于归因 */
+  finishReason: string;
 }
 
 export type ModelChunk =
