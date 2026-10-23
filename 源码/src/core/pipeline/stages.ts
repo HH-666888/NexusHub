@@ -11,6 +11,14 @@
  * 本文件位于 core/ 层：纯数据与纯类型，不依赖任何 IO。
  */
 
+import {
+  explainAuthority,
+  requiredApproval,
+  type AccessMode,
+  type ActionScope,
+  type ActorKind,
+} from "./authority";
+
 export type StageId =
   | "spec" // ① 规格化
   | "arch" // ② 架构定型
@@ -50,6 +58,21 @@ export type FaultClass =
  */
 export type StageImplementation = "wired" | "direct" | "planned";
 
+/**
+ * 一个"数"。这一阶段的判断依据是什么。
+ *
+ * 参考图上每个角色底下都有一行小字：「流量 · 订单 · 上架」。
+ * 那一行不是装饰 —— 它回答的是**"你凭什么做判断"**。
+ * 一个不看数的角色等于一个凭感觉拍脑袋的人。
+ *
+ * 工序也一样：说不清自己看什么数的工序，多半只是"走个过场"。
+ */
+export interface StageMetric {
+  label: string;
+  /** 补充说明。可以没有 */
+  hint?: string;
+}
+
 export interface StageDef {
   id: StageId;
   order: number;
@@ -62,8 +85,44 @@ export interface StageDef {
   acceptance: string[];
   /** 失败时可退回的阶段（回退回路，使它不是瀑布） */
   fallbackTo: StageId[];
-  /** 是否设人工门禁 */
+
+  /* ============================================================
+     下面四个字段来自「研发团队运转图」那套纪律
+     ============================================================
+     它们本来是一个独立能力的产物 —— 一张画着"谁做、能改什么、
+     谁点头、看什么数"的图。
+     后来发现那是在**并排造第二套"工作怎么发生"的描述**：
+     用户看完两张图还得自己猜什么关系。
+     所以那张图整个删了，只把这四个维度留下，长到工序上。
+     规则在 core/pipeline/authority.ts。
+     ============================================================ */
+
+  /** 谁在做这一阶段 */
+  actor: ActorKind;
+  /** 能不能改东西。见 authority.ts 里关于读写的说明 */
+  access: AccessMode;
+  /**
+   * 碰什么。**不填就按保守的推**（见 resolveScope）：
+   * 涉及写的按"对外"处理，于是需要人点头。
+   */
+  scope?: ActionScope;
+  /** 这一阶段的判断依据 */
+  watches: StageMetric[];
+
+  /**
+   * 强制设一道人工门禁 —— 在"算出来的权限"之上再加一道。
+   *
+   * ── 为什么需要一个"加码"的字段，而不是直接改 access/scope ──
+   *   规格化这一阶段按规则算出来是"不用人批"（AI 写自己这边的产物）。
+   *   但我们**故意**让它停下来问 —— 因为规格错了，后面五道全白做。
+   *
+   *   所以这里的语义是：**规则给出下限，这个字段可以抬高它。**
+   *   反过来不行 —— 它不能用来把"必须人批"降成"不用批"。
+   *   减少权限要走 access/scope，那两处改了会同时影响告警和界面徽章；
+   *   一个只想加一道门的人不会顺手把权限也放开。
+   */
   humanGate?: boolean;
+
   /** 当前实现到什么程度。见上面 StageImplementation 的说明 */
   implementation: StageImplementation;
 }
@@ -84,6 +143,24 @@ export const STAGES: readonly StageDef[] = [
     ],
     fallbackTo: [],
     humanGate: true, // 全流程唯一需要人的地方
+
+    /*
+      ---------- 权限 ----------
+      规格化是 AI 在写自己的产物（spec.json），按规则算出来
+      "不用人批" —— 它改的是自己这边的东西。
+      但上面 humanGate 故意加了一道门：**规格错了，后面五道全白做。**
+      这正是"规则给下限、字段可抬高"那个设计的用处。
+    */
+    actor: "ai",
+    access: "write",
+    scope: "internal",
+    /*
+      看什么数：**用户的原话**。
+      它不是从别处算出来的 —— 这一阶段的全部依据就是那句话本身。
+      所以 acceptance 里那条「每条结论都带有用户原话依据」
+      不是形式要求，而是这一阶段的定义。
+    */
+    watches: [{ label: "用户原话" }, { label: "含糊词", hint: "需要追问的" }],
     /*
       改为 wired：执行与门禁都接上了。
 
@@ -111,6 +188,11 @@ export const STAGES: readonly StageDef[] = [
       "模块依赖图无环",
     ],
     fallbackTo: ["spec"],
+    actor: "ai",
+    access: "write",
+    scope: "internal",
+    // 看什么数：上一阶段的产物。数不出来就说明规格没写清
+    watches: [{ label: "规格条目" }, { label: "依赖可用性" }],
     implementation: "planned",
   },
   {
@@ -126,6 +208,10 @@ export const STAGES: readonly StageDef[] = [
       "页面用到的数据都能在接口契约里找到",
     ],
     fallbackTo: ["arch", "spec"],
+    actor: "ai",
+    access: "write",
+    scope: "internal",
+    watches: [{ label: "功能条目" }, { label: "设计变量引用" }],
     implementation: "planned",
   },
   {
@@ -141,6 +227,10 @@ export const STAGES: readonly StageDef[] = [
       "导出的接口与架构契约一致",
     ],
     fallbackTo: ["arch", "ui"],
+    actor: "ai",
+    access: "write",
+    scope: "internal",
+    watches: [{ label: "编译错误" }, { label: "模块自测" }],
     // 直通模式下确实在生成代码，但没有经过①②③的契约输入
     implementation: "direct",
   },
@@ -153,6 +243,10 @@ export const STAGES: readonly StageDef[] = [
     artifact: "manifest.json",
     acceptance: ["能启动", "端口可访问", "冒烟脚本能走通主流程"],
     fallbackTo: ["build", "arch"],
+    actor: "ai",
+    access: "write",
+    scope: "internal",
+    watches: [{ label: "启动" }, { label: "端口" }, { label: "冒烟" }],
     implementation: "planned",
   },
   {
@@ -169,6 +263,35 @@ export const STAGES: readonly StageDef[] = [
       "敏感信息扫描通过（API 密钥不得出现在交付物中）",
     ],
     fallbackTo: ["assemble", "build", "ui", "arch", "spec"],
+
+    /*
+      ---------- 权限：这一道是**只读**的 ----------
+      六道工序里只有它不写东西 —— 它只判断，不生产。
+
+      这不是随便标的，是一条要守住的规矩：
+
+        **判定者不参与生产。**
+
+      验收如果也能改代码，"没过就顺手修一下"会变得极其自然，
+      而它一旦开始修，就不再是独立检查了 ——
+      自己修完自己判过，和"说做完就算完"没有区别，
+      而后者正是这一阶段存在的理由（rationale）。
+
+      所以 access 是 read，scope 是 observe：
+      按规则算出来它**不需要人批**（只看不改，弄不坏东西），
+      但那不是"没人管"，是"它本来就没有能造成后果的手"。
+
+      有一条单测钉着这件事 —— 谁哪天把 access 改成 write，它会红。
+    */
+    actor: "ai",
+    access: "read",
+    scope: "observe",
+    watches: [
+      { label: "验收标准通过率" },
+      { label: "无法判定项", hint: "必须为 0" },
+      { label: "敏感信息扫描" },
+    ],
+
     // 七项自检在跑，但断言不是从①的验收标准翻译来的 —— 是通用规则
     implementation: "direct",
   },
@@ -180,6 +303,35 @@ export const IMPLEMENTATION_LABEL: Record<StageImplementation, string> = {
   direct: "直通",
   planned: "未接入",
 };
+
+/* ============================================================
+   权限
+   ============================================================ */
+
+/**
+ * 一道工序最终要不要人点头。
+ *
+ * **规则给下限，humanGate 可以抬高它。**
+ * 反过来不行 —— 那个字段不能用来把"必须人批"降成"不用批"。
+ * 减少权限要走 access/scope，那两处改了会同时影响告警和界面徽章；
+ * 而一个只想加一道门的人，不会顺手把权限也放开。
+ *
+ * 这条"只能抬高不能降低"的性质有单测钉着（见 stages-authority.test.ts）。
+ */
+export function stageApproval(stage: StageDef): "none" | "human" {
+  if (requiredApproval(stage) === "human") return "human";
+  return stage.humanGate ? "human" : "none";
+}
+
+/** 一道工序的人类可读权限说明 */
+export function stageAuthorityNote(stage: StageDef): string {
+  const base = explainAuthority(stage);
+  if (stageApproval(stage) === "human" && requiredApproval(stage) === "none") {
+    // 规则说不用批，是 humanGate 加上去的 —— 得说清楚为什么
+    return `${base}；但这一步**故意**加了一道人工门禁：它的产物决定后面每一道怎么做`;
+  }
+  return base;
+}
 
 export const STAGE_MAP: Record<StageId, StageDef> = Object.fromEntries(
   STAGES.map((s) => [s.id, s]),

@@ -727,6 +727,72 @@ body {
 }
 
 /* ════════════════════════════════════════════════════════════
+   五之后、正在干活的边框
+   ------------------------------------------------------------
+   参考图的图例里有一句「边框转圈＝正在干活」。
+   说的是这张图上"哪一块现在正在被生成"。
+
+   ── 怎么画的 ──
+   一段锥形渐变（conic-gradient）沿着边框跑，中间掏空 ——
+   看起来就是边框上有一段光在转。
+   掏空用 mask 的 exclude 合成：外框填满、内容区挖掉，
+   剩下的正好是一圈边。
+
+   ── 为什么要 @property ──
+   锥形渐变的**起始角度**默认不能做动画（它是一个普通值）。
+   注册成 <angle> 类型的自定义属性之后，浏览器才知道
+   这个值可以在 0deg→360deg 之间插值。
+   不注册的话，`from var(--angle)` 不会动 —— 边框是静止的，
+   而且**不会有任何报错**，只是一个不转的"转圈"。
+
+   这条只在现代 Chromium / Safari 上成立。不支持时退化成
+   一圈静止的亮边 —— 仍然能区分"在干活"和"没在干活"，
+   只是不动。这是可以接受的降级。
+   ════════════════════════════════════════════════════════════ */
+
+@property --ring-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.working-ring {
+  position: relative;
+}
+
+.working-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px; /* 边的粗细 */
+  /* 转的那一段光。颜色由调用方通过 --ring-color 给 */
+  background: conic-gradient(
+    from var(--ring-angle),
+    transparent 0deg,
+    var(--ring-color, rgb(56, 189, 248)) 60deg,
+    var(--ring-color, rgb(56, 189, 248)) 110deg,
+    transparent 170deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: ring-spin 1.6s linear infinite;
+}
+
+@keyframes ring-spin {
+  to {
+    --ring-angle: 360deg;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════
    六、无障碍：尊重「减少动态效果」偏好
    ------------------------------------------------------------
    这不是可选项。系统里开了这个开关的用户，往往是
@@ -744,6 +810,23 @@ body {
     animation: none !important;
     opacity: 1;
     will-change: auto;
+  }
+
+  /*
+    正在干活的那个转圈：关掉动画之后**要留一圈静止的亮边**，
+    而不是整个不见。
+    因为它的职责是"表达状态"，不是"好看" ——
+    关掉动画等于把状态也一起关掉了，那是把无障碍做成了功能缺失。
+    静止的亮边仍然能区分"在干活"和"没在干活"。
+
+    注意这里**没有**把它放进上面那组 `animation: none` 里 ——
+    那一组是纯装饰性的动画，关掉不可惜。
+  */
+  .working-ring::after {
+    animation: none !important;
+    /* 静止时让整圈都亮，比只剩一段光更容易看见 */
+    background: var(--ring-color, rgb(56, 189, 248)) !important;
+    opacity: 0.85;
   }
 
   .animate-rise {
