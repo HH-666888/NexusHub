@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GenerateEvent, GeneratePhase } from "@/core/generate/service";
 import type { CheckResult } from "@/core/domain/check";
+import { RunTimeline } from "./run-timeline";
 
 /**
  * 实时生成控制台
@@ -54,6 +55,12 @@ export function GenerationConsole({
   onSettled: () => void;
 }) {
   const [running, setRunning] = useState(false);
+  /*
+    每跑完一次生成就加一，用来让时间轴重新拉取事件。
+    刚跑完那一刻事件才写进库，不重新拉的话时间轴还是空的 ——
+    用户会以为「录像没录上」，其实只是没去取。
+  */
+  const [refreshKey, setRefreshKey] = useState(0);
   const [phase, setPhase] = useState<GeneratePhase | null>(null);
   const [phaseLabel, setPhaseLabel] = useState("");
   const [text, setText] = useState("");
@@ -104,6 +111,8 @@ export function GenerationConsole({
     }
     flush();
     setRunning(false);
+    // 让时间轴重新拉一次事件：刚跑完这一刻事件才落库
+    setRefreshKey((k) => k + 1);
   }, [flush]);
 
   // 组件卸载时一定要断开，否则离开页面后连接还挂着
@@ -346,6 +355,16 @@ export function GenerationConsole({
           </span>
         )}
       </pre>
+
+      {/*
+        时间轴回放。放在实时日志下面，因为它是同一件事的「事后」形态：
+        上面是正在发生，下面是已经发生过、可以来回拖。
+        只有真正调用过模型的那一次生成才会有录像，
+        重新生成之前这里是空的 —— 空的时候会说明原因，不留一块白。
+      */}
+      <div className="border-t border-[var(--color-border-soft)] px-4 py-2.5">
+        <RunTimeline runId={runId} refreshKey={refreshKey} />
+      </div>
     </div>
   );
 }

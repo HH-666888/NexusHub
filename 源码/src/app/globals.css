@@ -611,6 +611,43 @@ body {
   color: var(--ink-7);
 }
 
+/* 时间轴滑块
+   ------------------------------------------------------------
+   浏览器默认的 range 样式在深色底上非常突兀（浅灰轨道 + 白色圆钮）。
+   这里只保留轨道由组件内联的渐变控制，圆钮自己画。 */
+.nexus-scrubber {
+  outline: none;
+}
+
+.nexus-scrubber::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 99px;
+  background: var(--ink-1);
+  border: 2px solid var(--color-canvas);
+  box-shadow: 0 0 8px rgb(var(--tint-4) / 0.7);
+  cursor: pointer;
+  transition: transform 0.12s ease-out;
+}
+
+.nexus-scrubber::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.nexus-scrubber::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 99px;
+  background: var(--ink-1);
+  border: 2px solid var(--color-canvas);
+  cursor: pointer;
+}
+
+.nexus-scrubber:focus-visible {
+  box-shadow: 0 0 0 2px rgb(var(--app-accent-glow) / 0.6);
+}
+
 /* ════════════════════════════════════════════════════════════
    六、无障碍：尊重「减少动态效果」偏好
    ------------------------------------------------------------

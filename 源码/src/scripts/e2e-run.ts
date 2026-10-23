@@ -385,8 +385,50 @@ async function main() {
     "生成区没有空状态说明",
   );
 
-  /* ---------- 10. 清理 ---------- */
-  heading("第十步 · 清理测试数据");
+  /* ---------- 11. 过程记录接口 ---------- */
+  heading("第十一步 · 过程记录（时间轴回放的数据源）");
+
+  const eventsRes = await fetch(`${BASE}/api/runs/${runIdA}/events`, {
+    headers: { cookie: cookieA },
+  });
+  expect_(eventsRes.status === 200, "本人可以取自己的过程记录", `返回 ${eventsRes.status}`);
+
+  const eventsJson = (await eventsRes.json()) as {
+    runId: string;
+    count: number;
+    durationMs: number;
+    events: unknown[];
+  };
+  expect_(
+    eventsJson.runId === runIdA,
+    "返回的是这次运行的过程记录",
+    "返回的 runId 对不上",
+  );
+  expect_(
+    Array.isArray(eventsJson.events) && eventsJson.count === eventsJson.events.length,
+    "count 与实际条数一致",
+    "count 与 events 长度对不上",
+  );
+  // 这条运行没有真正调用过模型，所以事件应当为空。
+  // 空的含义是「还没跑过」，不是「跑过但没记上」—— 界面上要说清楚区别。
+  expect_(
+    eventsJson.count === 0,
+    "没有调用过模型的运行没有过程记录（而不是返回假数据）",
+    "没有生成却返回了过程记录",
+  );
+
+  // 归属校验：别人的运行取不到
+  const otherEvents = await fetch(`${BASE}/api/runs/${runIdA}/events`, {
+    headers: { cookie: cookieB },
+  });
+  expect_(
+    otherEvents.status === 404,
+    "别人拿着 id 也取不到过程记录（当作不存在处理）",
+    `返回 ${otherEvents.status}，可能泄露了记录是否存在`,
+  );
+
+  /* ---------- 12. 清理 ---------- */
+  heading("第十二步 · 清理测试数据");
   for (const username of [userA, userB]) {
     const u = db.select().from(users).where(eq(users.username, username)).get();
     if (u) {
