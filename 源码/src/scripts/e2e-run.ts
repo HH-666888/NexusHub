@@ -94,25 +94,36 @@ function readSessionCookie(res: Response): string | null {
 }
 
 /**
- * 剥掉 Next.js 的 RSC 水合载荷，只留真正渲染出来的 HTML。
+ * 把响应整理成"可以直接拿来做字符串匹配"的样子。
  *
- * ── 为什么必须剥 ──
+ * 做两件事：
+ *
+ * ── 一、剥掉 Next.js 的 RSC 水合载荷 ──
  *   App Router 会把整棵组件树序列化进几个
  *   <script>self.__next_f.push(...)</script> 标签里，供客户端水合。
- *   于是同一个属性在响应里出现两次：一次在正文，一次在载荷里。
- *
+ *   于是同一个属性在响应里出现两次。
  *   这个坑**只对无值属性发作**：
- *     data-step-card="s1"   载荷里是 "data-step-card":"s1" —— 形式不同，不会重复计数
- *     data-rationale        载荷里形式相同 —— 被数了两遍
- *   所以「7 张卡带原理条」被数成了 14 张。
+ *     data-step-card="s1"   载荷里是 "data-step-card":"s1"，形式不同，不会重复计数
+ *     data-rationale        载荷里形式相同，被数了两遍
  *
- *   这类错很阴：测试红了，但页面完全正常。
- *   而且它只在无值属性上发作，同一个文件里别的断言却好好的 ——
- *   很容易被当成"这条断言写错了"而改错地方。
- *   统一剥掉载荷之后就都不必操心了。
+ * ── 二、删掉 HTML 注释 ──
+ *   React 会在**相邻的两个文本节点之间**插一个 `<!-- -->`。
+ *   于是 JSX 里写的
+ *       <span>往下：{label}</span>
+ *   渲染出来是
+ *       <span>往下：<!-- -->派活</span>
+ *   肉眼看着是"往下：派活"，字符串匹配却不是。
+ *   这一条比上一条更阴：它只在"文字和表达式挨着写"的地方发作，
+ *   同一份文件里别的断言好好的。
+ *   （※ 组件那边也顺手改成模板字符串了，两边都堵上。）
+ *
+ * 两件事都是"页面对、测试红"。不整理的话，很容易被当成
+ * "这条断言写错了"而去改错地方。
  */
-function stripFlightPayload(html: string): string {
-  return html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, "");
+function readableHtml(html: string): string {
+  return html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, "")
+    .replace(/<!--[\s\S]*?-->/g, "");
 }
 
 /** 注册一个账号，返回会话 Cookie */
@@ -580,7 +591,7 @@ async function main() {
 
   const bpRes = await fetch(`${BASE}/blueprint`, { headers: { cookie: cookieA } });
   expect_(bpRes.status === 200, "登录后可以打开蓝图页", `返回 ${bpRes.status}`);
-  const bpHtml = stripFlightPayload(await bpRes.text());
+  const bpHtml = readableHtml(await bpRes.text());
 
   expect_(bpHtml.includes("7 步转一圈"), "蓝图页有闭环标题", "蓝图页缺闭环标题");
 
@@ -622,6 +633,41 @@ async function main() {
 
   const humanBadges = (bpHtml.match(/data-actor-badge="人"/g) ?? []).length;
   expect_(humanBadges === 1, "只有一步标着「人」", `有 ${humanBadges} 步标着「人」`);
+
+  /*
+    组织结构图也在同一页上。
+    断言节点数 —— 骨架是 1 人 + 1 总管 + 4 领域 + 4 资产 = 10 个。
+    少一个就说明布局把某类节点漏掉了，而那在画面上可能只是"看起来稀一点"。
+  */
+  const orgNodes = [...bpHtml.matchAll(/data-org-node="([^"]+)"/g)].map((m) => m[1]);
+  expect_(
+    orgNodes.length === 10,
+    `组织结构图渲染了 10 个节点（${orgNodes.join(" ")}）`,
+    `组织结构图的节点数不对：${orgNodes.length} 个`,
+  );
+
+  /*
+    图例必须说得出这两个方向。
+    它表达的是"这条关系是双向的"（往下一份活、往上一份进展），
+    少了它，图上就只剩一堆长得一样的线。
+  */
+  expect_(
+    bpHtml.includes("往下：派活") && bpHtml.includes("往上：日报"),
+    "组织结构图有方向图例",
+    "组织结构图缺方向图例",
+  );
+
+  /*
+    ⚠️ 图例里**不该**出现「边框转圈＝正在干活」。
+    那个状态要等接上真实生成过程才有意义（任务 1.7），
+    现在写上去就是一句做不到的承诺。
+    这条断言是给未来的自己上的锁：接上之后再把它改成"应该有"。
+  */
+  expect_(
+    !bpHtml.includes("边框转圈"),
+    "图例里没有还没做出来的「边框转圈」",
+    "图例里出现了还没做出来的状态 —— 那是做不到的承诺",
+  );
 
   /* ---------- 15. 清理 ---------- */
   heading("第十五步 · 清理测试数据");

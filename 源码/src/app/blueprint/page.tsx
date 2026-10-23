@@ -1,4 +1,5 @@
 import { LoopMap } from "@/components/blueprint/loop-map";
+import { OrgMap } from "@/components/blueprint/org-map";
 import { HomeNav } from "@/components/home/home-nav";
 import { ThemeToggleServer } from "@/components/theme-toggle-server";
 import { sqliteCostStore } from "@/adapters/store/cost-repo";
@@ -71,8 +72,18 @@ export default async function BlueprintPage() {
           )}
         </header>
 
+        {/* ---------- 组织结构 ---------- */}
+        <section className="mt-10">
+          <h2 className="mb-3 text-[13px] font-medium text-slate-300">
+            这支团队有 {bp.org.root.children[0]?.children.length ?? 0} 块分工
+          </h2>
+          <div className="scroll-hint overflow-x-auto pb-2">
+            <OrgMap tree={bp.org} />
+          </div>
+        </section>
+
         {/* ---------- 闭环主图 ---------- */}
-        <section>
+        <section className="mt-10">
           <h2 className="mb-3 text-[13px] font-medium text-slate-300">
             这一圈有 {steps.length} 步
           </h2>
