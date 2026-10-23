@@ -1,4 +1,4 @@
-import { StepCard } from "@/components/blueprint/step-card";
+import { LoopMap } from "@/components/blueprint/loop-map";
 import { HomeNav } from "@/components/home/home-nav";
 import { ThemeToggleServer } from "@/components/theme-toggle-server";
 import { sqliteCostStore } from "@/adapters/store/cost-repo";
@@ -71,15 +71,18 @@ export default async function BlueprintPage() {
           )}
         </header>
 
-        {/* ---------- 七步 ---------- */}
+        {/* ---------- 闭环主图 ---------- */}
         <section>
           <h2 className="mb-3 text-[13px] font-medium text-slate-300">
             这一圈有 {steps.length} 步
           </h2>
-          <div className="grid grid-cols-3 gap-3">
-            {steps.map((s, i) => (
-              <StepCard key={s.id} step={s} tintIndex={i} />
-            ))}
+          {/*
+            主图横向可能超出一屏（三列共 800 多像素），
+            窄屏上允许横向滚动 —— 而不是把卡片压小，
+            因为"一屏看得见整圈"是这张图的意义。
+          */}
+          <div className="scroll-hint overflow-x-auto pb-2">
+            <LoopMap loop={bp.loop} />
           </div>
         </section>
       </main>

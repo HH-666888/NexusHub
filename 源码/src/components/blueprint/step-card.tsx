@@ -31,6 +31,16 @@ export interface StepCardProps {
   active?: boolean;
   /** 变暗。有别的步骤被选中时，其余降透明度 */
   dimmed?: boolean;
+  /**
+   * 要不要显示"这一步看什么数"那排小标签。
+   *
+   * 默认不显示 —— **参考图上的闭环卡片本来就没有它们**，
+   * 那一排只出现在组织结构图的叶子上。
+   * 一屏里塞七张卡时，多这一排会让卡片高出一截，
+   * 而这一屏要的是"一眼看完整圈"。
+   * 放大看某一步时（点格放大）再显示，那时地方够。
+   */
+  showWatches?: boolean;
   className?: string;
 }
 
@@ -39,6 +49,7 @@ export function StepCard({
   tintIndex = 0,
   active = false,
   dimmed = false,
+  showWatches = false,
   className = "",
 }: StepCardProps) {
   const tint = tintVarAt(tintIndex);
@@ -72,8 +83,8 @@ export function StepCard({
       {/* ---------- 正文：这一步具体干什么 ---------- */}
       <p className="mt-2 text-[11.5px] leading-relaxed text-slate-400">{step.duty}</p>
 
-      {/* ---------- 看什么数（有的步骤有） ---------- */}
-      {step.watches && step.watches.length > 0 && (
+      {/* ---------- 看什么数（放大看某一步时才显示） ---------- */}
+      {showWatches && step.watches && step.watches.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {step.watches.map((w) => (
             <span
