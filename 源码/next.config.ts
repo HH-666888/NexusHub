@@ -4,26 +4,31 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
 
   /**
-   * 关掉开发模式左下角那个 Next.js 浮标
+   * 开发模式左下角那个 Next.js 浮标 —— 留着，固定在左下角
    * ============================================================
-   * 它显示的是「Route: Dynamic / Bundler: Turbopack / Route Info /
-   * Preferences」——**全是写死的英文，改不了语言**：
-   * 那几句写死在 node_modules/next/dist/compiled/next-devtools/index.js
-   * 的编译产物里，Next.js 没有提供任何 locale / i18n 机制，
-   * 配置项也只有两个：
+   * 它显示「Route: Dynamic / Bundler: Turbopack / Route Info / Preferences」。
+   *
+   * ── 关于语言：改不了 ──
+   *   那几句**写死在编译产物里**：
+   *     node_modules/next/dist/compiled/next-devtools/index.js
+   *   而 Next.js 没提供任何 locale / i18n 机制，配置项只有两个：
    *     devIndicators?: false | { position?: 'top-left' | ... }
-   * 也就是说「翻译它」这条路不存在，只有「关掉」和「留着」两种选择。
+   *   也就是「关掉」和「留着（可换角）」两种选择，**没有翻译这条路**。
    *
-   * 所以关掉。理由：
-   *   · 它是 Next.js 自己的标记，不是我们产品的一部分
-   *   · 它只在开发模式出现（跑过生产构建确认：产物里 0 个文件含这些词），
-   *     所以关掉它**不会影响任何线上行为**
-   *   · 但演示时如果用 dev 起服务，角上挂着一块英文浮标
-   *     会像是没收尾的脚手架
+   * ── 一度关掉过，又打开了 ──
+   *   关掉的理由是「角上挂一块英文像是没收尾的脚手架」。
+   *   打开的理由是它确实让项目看起来更像正经的 Next.js 工程。
+   *   两者都成立，最后选了留着 —— 这是产品决定，不是技术限制。
    *
-   * 想找回来：把这一行删掉或改成 { position: "bottom-left" }。
+   * ── ⚠️ 一个必须知道的事实 ──
+   *   **它只在 `npm run dev` 时出现。** 跑生产构建确认过：
+   *   `.next/static` 里含这些文案的文件是 0 个。
+   *   所以演示时如果用 `npm run build` + `npm start` 起的服务，
+   *   角上是不会有它的 —— 想让它出现，得用 dev 起服务。
+   *
+   * 想关掉：把这一行改成 devIndicators: false。
    */
-  devIndicators: false,
+  devIndicators: { position: "bottom-left" },
 
   /**
    * better-sqlite3 是原生模块（含 .node 二进制），不能被打包进服务端产物，
