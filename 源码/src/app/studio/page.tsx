@@ -3,8 +3,10 @@ import { Cockpit } from "@/components/cockpit/cockpit";
 import type { RunView } from "@/components/cockpit/run-list";
 import { ThemeToggleServer } from "@/components/theme-toggle-server";
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
+import { sqliteCostStore } from "@/adapters/store/cost-repo";
 import { sqliteRunStore } from "@/adapters/store/run-repo";
 import { describeTime } from "@/core/domain/run";
+import { groupCostByStage, type CostByStage } from "@/core/domain/stage-cost";
 import { getOwnedRun, listRuns } from "@/core/run/service";
 import { requireUser } from "@/server/auth-context";
 import { serverNow } from "@/server/clock";
@@ -64,12 +66,26 @@ export default async function StudioPage({
     ? await fsArtifactStore.findLatest(selectedRun.id, "html")
     : null;
 
+  /*
+    分阶段的花费。
+    cost_records 的每一行本来就带 stage —— 也就是说「钱花在哪道工序」
+    一直记着，只是界面上没用上，于是摆了两个假数字：
+    写死的 ¥0.0000，以及把整次运行的总数挂在某一个阶段旁边。
+    在服务端算好再传下去，客户端就不用为了这一件事再去请求一次。
+  */
+  let costByStage: CostByStage = {};
+  if (selectedRun) {
+    const records = await sqliteCostStore.listByRun(selectedRun.id);
+    costByStage = groupCostByStage(records);
+  }
+
   return (
     <Cockpit
       user={{ displayName: user.displayName, username: user.username }}
       runs={runs}
       selectedRun={selectedRun}
       artifactBytes={artifact?.bytes ?? null}
+      costByStage={costByStage}
       themeToggle={<ThemeToggleServer />}
     />
   );

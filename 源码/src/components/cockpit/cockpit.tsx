@@ -8,7 +8,11 @@ import {
   countPlanned,
   wiredStages,
 } from "@/core/pipeline/progress";
-import { attributeCost } from "@/core/pipeline/graph";
+import {
+  describePriceTier,
+  describeStageCost,
+  type CostByStage,
+} from "@/core/domain/stage-cost";
 import { STAGES, type StageStatus } from "@/core/pipeline/stages";
 import { CockpitHeader } from "./cockpit-header";
 import { RunList, type RunView } from "./run-list";
@@ -42,6 +46,14 @@ export interface CockpitProps {
   selectedRun: Run | null;
   /** 选中运行的成品大小（字节）。null 表示还没有成品 */
   artifactBytes: number | null;
+  /**
+   * 分阶段的花费，服务端归集好传下来。
+   *
+   * 为什么在服务端算：cost_records 按 stage 分了账，
+   * 在页面里查一次比让每个组件各自去要知道便宜；
+   * 而且客户端组件不该直接碰数据库。
+   */
+  costByStage?: CostByStage;
   /** 主题开关。由服务端页面渲染好传进来，见 cockpit-header 里的说明 */
   themeToggle?: React.ReactNode;
 }
@@ -51,6 +63,7 @@ export function Cockpit({
   runs,
   selectedRun,
   artifactBytes,
+  costByStage = {},
   themeToggle,
 }: CockpitProps) {
   const searchParams = useSearchParams();
@@ -173,20 +186,24 @@ export function Cockpit({
                   <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500">
                     <span>契约 {s.artifact}</span>
                     {/*
-                      这里原来显示「¥0.0000」，并在当前阶段显示整次运行的总花费。
+                      真的分阶段花费。cost_records 按 stage 分了账，
+                      服务端归集好传下来，这里只是显示。
 
-                      两个问题：
-                        一、规格化接上之后它也花钱了，而这里显示 ¥0.0000 ——
-                           那是一个**假数字**，比不显示更糟；
-                        二、把整次运行的总数挂在某一个阶段旁边，
-                           会让人以为那笔钱是这一道工序花的。
-
-                      要显示真实的分阶段花费，得读 cost_records
-                      （它按 stage 分了账），而这个组件现在只拿到运行总数。
-                      在那之前显示「—」：不知道就说不知道，
-                      不要用零冒充已知。总花费在右侧面板里有。
+                      第一版写死「¥0.0000」，第二版把整次运行的总数
+                      挂在某一个阶段旁边 —— 两个都是假数字。
+                      没花过钱时 describeStageCost 返回 null，
+                      这一行就不出现，而不是显示一个零。
                     */}
-                    <span className="tabular-nums">—</span>
+                    {describeStageCost(costByStage, s.id) && (
+                      <span className="tabular-nums text-slate-400">
+                        {describeStageCost(costByStage, s.id)}
+                      </span>
+                    )}
+                    {describePriceTier(costByStage, s.id) && (
+                      <span className="text-slate-600">
+                        {describePriceTier(costByStage, s.id)}
+                      </span>
+                    )}
                   </div>
                 </li>
               );
@@ -265,9 +282,13 @@ export function Cockpit({
               */
               <TaskGraph
                 run={selectedRun}
-                costByStage={
-                  selectedRun ? attributeCost(selectedRun.totalCostCny) : undefined
-                }
+                /*
+                  用真实的分阶段花费，不用 attributeCost 那个近似。
+                  attributeCost 是图单独可用时的兜底（它把整次运行的钱
+                  都算在会花钱的那道工序上）；现在服务端已经把
+                  cost_records 按阶段归集好了，就该用真的。
+                */
+                costByStage={costByStage}
                 className="-m-1"
               />
             )}

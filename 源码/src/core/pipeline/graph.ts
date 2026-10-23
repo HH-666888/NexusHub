@@ -24,6 +24,7 @@ import {
 } from "./stages";
 import { computeStageStatuses } from "./progress";
 import type { RunProgressInput } from "./progress";
+import { costOf, type CostByStage } from "../domain/stage-cost";
 
 /* ============================================================
    类型
@@ -117,8 +118,15 @@ export function rowCount(total: number): number {
 export interface BuildGraphInput {
   /** 选中的运行。null 表示还没选中任何记录 */
   run: RunProgressInput | null;
-  /** 各阶段的累计花费。缺省视为 0 */
-  costByStage?: Partial<Record<StageId, number>>;
+  /**
+   * 各阶段的花费，由 cost_records 按 stage 归集而来。
+   *
+   * 这里直接收 CostByStage 而不是一个「阶段 → 数字」的映射：
+   * 归集结果里还有调用次数、输出 token、计价档位，
+   * 只传一个数字的话，节点上就永远只能显示金额，
+   * 想加「这一步为什么贵」就得再改一次签名。
+   */
+  costByStage?: CostByStage;
 }
 
 /**
@@ -145,7 +153,7 @@ export function buildPipelineGraph(input: BuildGraphInput): PipelineGraph {
       status: statuses[s.id],
       // 未接入的工序不会有花费。这里再兜一次底：
       // 即使上游传了值也不认，避免界面上出现「未接入但花了钱」这种矛盾
-      costCny: s.implementation === "planned" ? 0 : (costByStage[s.id] ?? 0),
+      costCny: s.implementation === "planned" ? 0 : costOf(s.id, costByStage),
       x: pos.x,
       y: pos.y,
     };

@@ -14,7 +14,18 @@ import {
   SPENDING_STAGE,
   tracePath,
 } from "@/core/pipeline/graph";
-import { STAGES, type StageId } from "@/core/pipeline/stages";
+import { STAGES } from "@/core/pipeline/stages";
+import type { CostByStage, StageCost } from "@/core/domain/stage-cost";
+
+/**
+ * 造一条阶段花费。
+ * 图上只用到 costCny，其余字段给零 —— 但类型要求齐全，
+ * 而齐全是有意义的：归集结果里确实有调用次数与计价档位，
+ * 只传一个数字的话，想加「这一步为什么贵」就得再改一次签名。
+ */
+function stageCost(costCny: number): StageCost {
+  return { costCny, calls: 1, outputTokens: 0, latencyMs: 0, tiers: ["offPeak"] };
+}
 
 /**
  * 这些测试守的是「图上不出现假信息」这条底线。
@@ -170,8 +181,8 @@ describe("流水线图 · 不出现假信息", () => {
 
   it("【关键】未接入的工序花费恒为 0，即使上游硬塞了数字", () => {
     const cost = Object.fromEntries(
-      STAGES.map((s) => [s.id, 9.99]),
-    ) as Partial<Record<StageId, number>>;
+      STAGES.map((s) => [s.id, stageCost(9.99)]),
+    ) as CostByStage;
     const g = buildPipelineGraph({
       run: { stage: "verify", status: "done" },
       costByStage: cost,
@@ -201,7 +212,7 @@ describe("流水线图 · 不出现假信息", () => {
   it("有花费时才显示，且保留四位小数", () => {
     const g = buildPipelineGraph({
       run: { stage: "build", status: "running" },
-      costByStage: { build: 0.0256 },
+      costByStage: { build: stageCost(0.0256) },
     });
     const build = g.nodes.find((n) => n.id === "build")!;
     expect(nodeMetrics(build)).toEqual([{ label: "花费", value: "¥0.0256" }]);

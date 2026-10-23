@@ -31,6 +31,7 @@ import {
 } from "@/core/pipeline/graph";
 import type { RunProgressInput } from "@/core/pipeline/progress";
 import type { StageId } from "@/core/pipeline/stages";
+import type { CostByStage } from "@/core/domain/stage-cost";
 
 /**
  * 任务图画布
@@ -207,7 +208,7 @@ const nodeTypes = { stage: StageNode };
 
 export interface TaskGraphProps {
   run: RunProgressInput | null;
-  costByStage?: Partial<Record<StageId, number>>;
+  costByStage?: CostByStage;
   /** 回退边要不要显示。默认显示 —— 这是我们的差异点 */
   showFallback?: boolean;
   className?: string;
