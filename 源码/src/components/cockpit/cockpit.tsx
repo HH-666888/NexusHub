@@ -129,7 +129,7 @@ export function Cockpit({
             <div className="mb-3 rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-surface)]/50 px-2.5 py-2 text-[10px] leading-relaxed text-slate-500">
               当前为
               <span className="mx-1 text-slate-300">直通模式</span>
-              ：跳过规格化 / 架构定型 / 界面设计，直接生成。
+              ：跳过架构定型 / 界面设计，直接生成。
               <span className="mx-1 text-slate-400">
                 {plannedCount} 道工序尚未接入
               </span>
@@ -172,11 +172,21 @@ export function Cockpit({
                   </div>
                   <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500">
                     <span>契约 {s.artifact}</span>
-                    <span className="tabular-nums">
-                      {active && selectedRun && !planned
-                        ? `¥${selectedRun.totalCostCny.toFixed(4)}`
-                        : "¥0.0000"}
-                    </span>
+                    {/*
+                      这里原来显示「¥0.0000」，并在当前阶段显示整次运行的总花费。
+
+                      两个问题：
+                        一、规格化接上之后它也花钱了，而这里显示 ¥0.0000 ——
+                           那是一个**假数字**，比不显示更糟；
+                        二、把整次运行的总数挂在某一个阶段旁边，
+                           会让人以为那笔钱是这一道工序花的。
+
+                      要显示真实的分阶段花费，得读 cost_records
+                      （它按 stage 分了账），而这个组件现在只拿到运行总数。
+                      在那之前显示「—」：不知道就说不知道，
+                      不要用零冒充已知。总花费在右侧面板里有。
+                    */}
+                    <span className="tabular-nums">—</span>
                   </div>
                 </li>
               );
