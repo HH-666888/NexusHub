@@ -349,6 +349,36 @@ async function main() {
     "没有成品时不显示下载入口 —— 不给一个点了没反应的按钮",
     "没有成品却显示了下载入口",
   );
+
+  /* ---------- 10. 任务图 ---------- */
+  heading("第十步 · 任务图（画布）");
+
+  // 标签页状态进了 URL，所以这里能直接导航过去验证。
+  // 状态不上 URL 的话，这块界面就只能靠人点开看 —— 自动化测试碰不到。
+  const graphHtml = await pageText(cookieA, `/studio?tab=graph`);
+  expect_(
+    graphHtml.includes("任务图"),
+    "任务图标签存在",
+    "没有找到任务图标签",
+  );
+  expect_(
+    graphHtml.includes("react-flow") || graphHtml.includes("React Flow"),
+    "画布容器已渲染（React Flow 挂载成功）",
+    "画布没有渲染出来",
+  );
+
+  // 未接入的工序必须在图上如实标注。
+  // 图比列表更容易让人相信「这里真的有东西」，所以更不能画错。
+  expect_(
+    graphHtml.includes("未接入"),
+    "图上如实标注了未接入的工序",
+    "图上没有出现「未接入」标注 —— 未接入的工序可能被画成了已完成",
+  );
+  expect_(
+    graphHtml.includes("规格化") && graphHtml.includes("验收与交付"),
+    "六道工序的首尾都出现在图上",
+    "工序节点没有渲染",
+  );
   expect_(
     htmlA2.includes("这里会实时显示模型写的内容"),
     "生成区有明确的空状态说明，而不是一片空白",

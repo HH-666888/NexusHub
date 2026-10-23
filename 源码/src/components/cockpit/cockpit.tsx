@@ -1,16 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { RUN_STATUS_LABEL, type Run } from "@/core/domain/run";
 import {
   computeStageStatuses,
   countPlanned,
   wiredStages,
 } from "@/core/pipeline/progress";
+import { attributeCost } from "@/core/pipeline/graph";
 import { STAGES, type StageStatus } from "@/core/pipeline/stages";
 import { CockpitHeader } from "./cockpit-header";
 import { RunList, type RunView } from "./run-list";
 import { RunWorkbench } from "./run-workbench";
+import { TaskGraph } from "./task-graph";
 
 /**
  * 驾驶舱
@@ -50,7 +53,32 @@ export function Cockpit({
   artifactBytes,
   themeToggle,
 }: CockpitProps) {
-  const [tab, setTab] = useState<"runs" | "graph">("runs");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  /*
+    让「构建记录 / 任务图」这个切换进 URL。
+    理由有两个，第二个才是主要的：
+      一、链接可分享 —— 把 ?tab=graph 发给别人，对方打开就是同一张图
+      二、截图与端到端测试没法点按钮。
+           验证工具只能「导航到某个地址」，不能「先点一下再截」。
+           状态不上 URL，这块界面就永远没法自动验证。
+    用 replace 而不是 push：切个标签页不该在浏览器历史里留一堆记录，
+    否则用户按返回键要按很多次才能退出去。
+  */
+  const [tab, setTab] = useState<"runs" | "graph">(() =>
+    searchParams.get("tab") === "graph" ? "graph" : "runs",
+  );
+
+  const switchTab = (next: "runs" | "graph") => {
+    setTab(next);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "runs") params.delete("tab");
+    else params.set("tab", next);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
 
   /**
    * 示例提示词的「种子」
@@ -167,7 +195,7 @@ export function Cockpit({
             ).map(([key, label]) => (
               <button
                 key={key}
-                onClick={() => setTab(key)}
+                onClick={() => switchTab(key)}
                 className={`rounded-md px-3 py-1.5 text-xs transition ${
                   tab === key
                     ? "bg-slate-700/60 text-slate-100"
@@ -218,14 +246,20 @@ export function Cockpit({
                 )}
               </>
             ) : (
-              <div className="flex h-full min-h-[280px] items-center justify-center rounded-lg border border-dashed border-[var(--color-border-soft)] bg-[var(--color-surface)]/40">
-                <div className="text-center text-sm text-slate-500">
-                  <div>任务图将在编排内核接入后出现</div>
-                  <div className="mt-1 text-xs">
-                    并行的粒度是「模块」，不是「文件」
-                  </div>
-                </div>
-              </div>
+              /*
+                任务图。这是「六道工序」的产品主张真正该被看见的地方 ——
+                不再是一列文字，而是一张能平移、能缩放、能点开的图。
+
+                图上放的全是真实数据：工序、状态、依赖、回退、花费、产物。
+                没接入的工序照旧灰显并标注「未接入」，不参与进度推算。
+              */
+              <TaskGraph
+                run={selectedRun}
+                costByStage={
+                  selectedRun ? attributeCost(selectedRun.totalCostCny) : undefined
+                }
+                className="-m-1"
+              />
             )}
           </div>
         </section>
