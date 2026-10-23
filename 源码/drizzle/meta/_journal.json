@@ -50,6 +50,13 @@
       "when": 1792661666342,
       "tag": "0006_breezy_quasar",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1792729185387,
+      "tag": "0007_marvelous_talon",
+      "breakpoints": true
     }
   ]
 }

@@ -20,10 +20,12 @@
 
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
 import { sqliteCostStore } from "@/adapters/store/cost-repo";
+import { sqliteEventStore } from "@/adapters/store/event-repo";
 import { sqliteRunStore } from "@/adapters/store/run-repo";
 import { createDeepSeekPort } from "@/adapters/model/deepseek";
 import { resolveModelEndpoint } from "@/adapters/model/resolve-endpoint";
 import { env } from "@/config/env";
+import { recordRunEvents } from "@/core/generate/recorder";
 import { generateApp, type GenerateEvent } from "@/core/generate/service";
 import { getOwnedRun } from "@/core/run/service";
 import { getCurrentUser } from "@/server/auth-context";
@@ -74,6 +76,12 @@ export async function GET(
         // 「重新生成」应该是一个明确动作，而不是刷新的副作用。
         const existing = await fsArtifactStore.findLatest(run.id, "html");
         if (existing) {
+          /*
+            注意这里**不记录事件**。
+            刷新会走这条路，如果每次都追加，事件日志会被刷屏，
+            回放出来的时间线也就不是「那次生成」了。
+            事件只在真正调用模型的那一次写入。
+          */
           send({
             kind: "phase",
             phase: "done",
@@ -99,22 +107,39 @@ export async function GET(
 
         const spent = await sqliteCostStore.totalByRun(run.id);
 
-        for await (const event of generateApp(
-          {
-            // 按解析结果创建端口。适配器本身不知道「配置」这回事，
-            // 它只是被绑定到了某一组接入信息上
-            model: createDeepSeekPort(resolved.endpoint),
-            artifacts: fsArtifactStore,
-            runs: sqliteRunStore,
-            costs: sqliteCostStore,
-          },
-          {
-            runId: run.id,
-            prompt: run.prompt,
-            costLimitCny: env.run.costLimitCny,
-            spentCny: spent,
-          },
-        )) {
+        /*
+          重新生成会先走 DELETE 清掉旧事件，所以到这里事件日志应当是空的。
+          万一不是（比如上一次生成中途崩了、事件写了一半），
+          清掉再从 0 开始 —— 两条时间线混在一起比没有时间线更糟。
+        */
+        if ((await sqliteEventStore.countByRun(run.id)) > 0) {
+          await sqliteEventStore.deleteByRun(run.id);
+        }
+
+        // 包一层记录器：事件原样推给浏览器，同时合并落库供事后回放。
+        // 生成内核本身一行不用改。
+        const recorded = recordRunEvents(
+          generateApp(
+            {
+              // 按解析结果创建端口。适配器本身不知道「配置」这回事，
+              // 它只是被绑定到了某一组接入信息上
+              model: createDeepSeekPort(resolved.endpoint),
+              artifacts: fsArtifactStore,
+              runs: sqliteRunStore,
+              costs: sqliteCostStore,
+            },
+            {
+              runId: run.id,
+              prompt: run.prompt,
+              costLimitCny: env.run.costLimitCny,
+              spentCny: spent,
+            },
+          ),
+          sqliteEventStore,
+          run.id,
+        );
+
+        for await (const event of recorded) {
           send(event);
         }
       } catch (err) {
@@ -160,10 +185,15 @@ export async function DELETE(
   // removeByRun 已经把文件与登记一并清掉，这里不需要再删一次
   const removed = await fsArtifactStore.removeByRun(run.id);
 
+  // 事件日志也清掉：重新生成意味着上一条时间线作废。
+  // 留着旧事件的话，回放出来的是「上一次的过程 + 这一次的产物」，
+  // 两者对不上，比没有回放更误导。
+  const removedEvents = await sqliteEventStore.deleteByRun(run.id);
+
   // 刻意不清零 totalCostCny：那是「这条运行一共花了多少钱」的真实记录。
   // 清掉它只会制造一个好看但虚假的数字 —— 钱是真花出去了。
   // 预算闸门读的是成本流水表，所以清零也不能让下一次重跑「变便宜」。
   await sqliteRunStore.update(run.id, { status: "cancelled" });
 
-  return Response.json({ removed });
+  return Response.json({ removed, removedEvents });
 }
