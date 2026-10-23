@@ -29,6 +29,7 @@ import { RunTimeline } from "./run-timeline";
 
 const PHASE_LABEL: Record<GeneratePhase, string> = {
   spec: "需求规格化",
+  awaiting: "等你确认",
   generating: "正在生成",
   checking: "正在检查",
   saving: "正在保存",
@@ -38,6 +39,7 @@ const PHASE_LABEL: Record<GeneratePhase, string> = {
 
 const PHASE_TONE: Record<GeneratePhase, string> = {
   spec: "border-violet-700 bg-violet-950/40 text-violet-300",
+  awaiting: "border-amber-700 bg-amber-950/40 text-amber-300",
   generating: "border-blue-700 bg-blue-950/40 text-blue-300",
   checking: "border-blue-700 bg-blue-950/40 text-blue-300",
   saving: "border-blue-700 bg-blue-950/40 text-blue-300",
@@ -75,6 +77,48 @@ export function GenerationConsole({
     questions: string[];
     fallback: boolean;
   } | null>(null);
+
+  /* ---------- 人工门禁的交互状态 ---------- */
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [gateMsg, setGateMsg] = useState<string | null>(null);
+
+  /** 提交回答。成功后把问题从本地列表里去掉 —— 界面据此收起表单 */
+  const submitAnswers = useCallback(async () => {
+    if (!spec || submitting) return;
+    setSubmitting(true);
+    setGateMsg(null);
+    try {
+      const res = await fetch(`/api/runs/${runId}/answers`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          answers: spec.questions.map((q) => ({ question: q, answer: draft[q] ?? "" })),
+        }),
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        answered?: number;
+        blank?: number;
+        issues?: string[];
+      };
+      if (!res.ok || !json.ok) {
+        setGateMsg(json.error ?? `提交失败（HTTP ${res.status}）`);
+        return;
+      }
+      setSpec((s) => (s ? { ...s, questions: [] } : s));
+      const parts = [`已提交 ${json.answered ?? 0} 条回答`];
+      if (json.blank) parts.push(`其中 ${json.blank} 条留空（表示由你决定）`);
+      if (json.issues?.length) parts.push(json.issues.join("；"));
+      parts.push("现在点「开始生成」继续");
+      setGateMsg(parts.join(" · "));
+    } catch (e) {
+      setGateMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  }, [spec, submitting, runId, draft]);
   const [phase, setPhase] = useState<GeneratePhase | null>(null);
   const [phaseLabel, setPhaseLabel] = useState("");
   const [text, setText] = useState("");
@@ -178,9 +222,17 @@ export function GenerationConsole({
         case "phase":
           setPhase(event.phase);
           setPhaseLabel(event.label);
+          /*
+            注意这里**没有**把 awaiting 也当成结束。
+            门禁停下时流确实结束了，但用户接下来要做的是回答问题、
+            不是看结果 —— 所以不触发 onSettled（那会去刷新运行列表），
+            让界面停在「等你确认」这个状态上。
+          */
           if (event.phase === "done" || event.phase === "failed") {
             stop();
             onSettled();
+          } else if (event.phase === "awaiting") {
+            stop();
           }
           break;
 
@@ -409,19 +461,55 @@ export function GenerationConsole({
             </div>
           )}
 
-          {spec.questions.length > 0 && (
-            <div className="mt-2 rounded border border-amber-900/50 bg-amber-950/25 px-2 py-1.5">
+          {spec.questions.length > 0 ? (
+            /*
+              人工门禁：这是全流程唯一需要人的地方。
+              疑问做成可填写的表单，而不是只提示一句「有 2 个问题」——
+              提示了却没有地方回答，等于把人拦在门口又不给开门。
+            */
+            <div className="mt-2 rounded border border-amber-900/50 bg-amber-950/25 px-2.5 py-2">
               <div className="text-[10.5px] text-amber-300">
-                这些疑点本该先问你 —— 人工门禁尚未接入，这次直接继续了
+                这些事模型没法替你决定 —— 回答之后才能继续
               </div>
-              <ul className="mt-0.5">
+              <ul className="mt-1.5 space-y-1.5">
                 {spec.questions.map((q) => (
-                  <li key={q} className="text-[10.5px] leading-relaxed text-amber-200/80">
-                    · {q}
+                  <li key={q}>
+                    <div className="text-[10.5px] leading-relaxed text-amber-200/90">{q}</div>
+                    <input
+                      type="text"
+                      value={draft[q] ?? ""}
+                      onChange={(e) =>
+                        setDraft((d) => ({ ...d, [q]: e.target.value }))
+                      }
+                      placeholder="留空表示由你决定"
+                      className="mt-1 w-full rounded border border-amber-900/60 bg-[var(--color-surface)] px-2 py-1 text-[11px] text-slate-200 outline-none focus:border-amber-600"
+                    />
                   </li>
                 ))}
               </ul>
+              <div className="mt-2 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={submitAnswers}
+                  disabled={submitting}
+                  className="rounded border border-amber-700 bg-amber-900/40 px-2.5 py-1 text-[10.5px] text-amber-200 transition-colors duration-150 hover:bg-amber-900/60 disabled:opacity-50"
+                >
+                  {submitting ? "提交中…" : "提交回答"}
+                </button>
+                <span className="text-[10px] text-amber-200/60">
+                  留空也算提交 —— 那是「你替我决定」，不是没看到
+                </span>
+              </div>
+              {gateMsg && (
+                <div className="mt-1.5 text-[10.5px] text-emerald-400">{gateMsg}</div>
+              )}
             </div>
+          ) : (
+            gateMsg && (
+              <div className="mt-2 rounded border border-emerald-900/50 bg-emerald-950/25 px-2.5 py-1.5 text-[10.5px] text-emerald-300">
+                {gateMsg}
+              </div>
+            )
           )}
         </div>
       )}

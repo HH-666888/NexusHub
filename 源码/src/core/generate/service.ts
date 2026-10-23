@@ -37,6 +37,7 @@ import {
 
 export type GeneratePhase =
   | "spec" // 规格化：把一句话需求整理成结构化规格
+  | "awaiting" // 人工门禁：停下等用户回答规格里的疑问
   | "generating" // 模型正在写
   | "checking" // 正在做产物检查
   | "saving" // 正在落盘

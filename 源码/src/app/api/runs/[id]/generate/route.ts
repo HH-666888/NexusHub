@@ -27,9 +27,55 @@ import { resolveModelEndpoint } from "@/adapters/model/resolve-endpoint";
 import { env } from "@/config/env";
 import { recordRunEvents } from "@/core/generate/recorder";
 import { generateApp, type GenerateEvent } from "@/core/generate/service";
-import { runSpecStage } from "@/core/generate/spec-stage";
+import { runSpecStage, SPEC_ARTIFACT_NAME } from "@/core/generate/spec-stage";
+import {
+  ANSWERS_ARTIFACT_NAME,
+  decideGate,
+  type SpecAnswers,
+} from "@/core/generate/gate";
+import type { AppSpec } from "@/core/domain/spec";
 import { getOwnedRun } from "@/core/run/service";
 import { getCurrentUser } from "@/server/auth-context";
+
+/**
+ * 按**文件名**找产物，而不是「取最新的那个 json」。
+ *
+ * 这一点必须小心：规格与答案都是 json 类型，而 answers.json
+ * 是后写的 —— 用 findLatest(runId, "json") 会拿到答案当成规格，
+ * 于是门禁永远算不对，而且不报错，只是行为诡异。
+ */
+async function readJsonArtifact<T>(runId: string, fileName: string): Promise<T | null> {
+  const all = await fsArtifactStore.listByRun(runId);
+  const hit = all.find((a) => a.path.endsWith(`/${fileName}`));
+  if (!hit) return null;
+  const raw = await fsArtifactStore.readContent(hit);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** 读规格与答案，判断该不该停下等人 */
+async function readGateDecision(runId: string) {
+  const spec = await readJsonArtifact<AppSpec>(runId, SPEC_ARTIFACT_NAME);
+  const answers = await readJsonArtifact<SpecAnswers>(runId, ANSWERS_ARTIFACT_NAME);
+
+  // 规格都读不出来就没什么可拦的 —— 让流程继续，
+  // 后面自然会在别处报错，而不是在这里拦一个说不清的理由
+  if (!spec) {
+    return { pause: false, answered: false, reason: "没有读到规格，跳过门禁", pending: [] };
+  }
+
+  const d = decideGate(spec, answers);
+  return {
+    pause: d.pause,
+    answered: !d.pause && spec.questions.length > 0,
+    reason: d.reason,
+    pending: d.pending,
+  };
+}
 
 /** 必须显式声明 Node 运行时：会话校验要用 better-sqlite3，Edge 跑不了 */
 export const runtime = "nodejs";
@@ -153,26 +199,38 @@ export async function GET(
           }
 
           /*
-            ⚠️ 这里有一处**已知的未完成**，必须说清楚而不是装作没有：
+            ---------- 人工门禁 ----------
+            规格里还有没回答的疑问就停下等人。
 
-            按设计，规格里若还有「需要用户确认的问题」，就该停下等人回答 ——
-            那是全流程唯一需要人的地方（人工门禁）。
-            但门禁的交互界面还没做，现在没有地方让用户回答。
-
-            所以这里选择继续，并且**明确告诉用户门禁没接入**。
-            装作门禁已经生效、或者静默继续，都比直接说出来更糟。
+            这是全流程唯一需要人的地方：其余工序的判断对错有契约和自检兜着，
+            唯独「你到底想要什么」模型没法自己判断，只能猜 ——
+            而猜错的代价要到最后一步才暴露，那时钱已经花完了。
           */
-          const pending = await sqliteEventStore.listByRun(runId);
-          const specEvent = [...pending].reverse().find((e) => e.kind === "spec");
-          if (specEvent && specEvent.payload.kind === "spec") {
-            const q = specEvent.payload.spec.questions;
-            if (q.length > 0) {
-              yield {
-                kind: "phase",
-                phase: "spec",
-                label: `规格里有 ${q.length} 个待确认问题；人工门禁尚未接入，已直接继续`,
-              };
-            }
+          const decision = await readGateDecision(runId);
+
+          /*
+            默认放行，只有 SPEC_GATE=pause 时才真的停下。
+            理由写在 config/env.ts 那条注释里：模型对一句简单需求
+            也会问出几个问题，每次生成都拦一次，
+            「一句话 → 一个能用的成品」这个承诺就不成立了。
+          */
+          if (decision.pause && env.run.specGate === "pause") {
+            // 状态置为 paused，让列表上能看出「这条在等人」
+            await sqliteRunStore.update(runId, { status: "paused" });
+            yield { kind: "phase", phase: "awaiting", label: decision.reason };
+            // 直接结束这条流。用户答完再点生成，会从门禁之后继续。
+            return;
+          }
+
+          if (decision.pause) {
+            // 放行，但把疑问说出来 —— 让用户知道模型在替你猜
+            yield {
+              kind: "phase",
+              phase: "spec",
+              label: `${decision.reason}。已按默认方式继续（设 SPEC_GATE=pause 可改为先问你）`,
+            };
+          } else if (decision.answered) {
+            yield { kind: "phase", phase: "spec", label: decision.reason };
           }
 
           // ---------- 第四道：并行构建（当前是直通模式） ----------

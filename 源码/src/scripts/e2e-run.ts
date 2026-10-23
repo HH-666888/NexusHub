@@ -433,8 +433,49 @@ async function main() {
     `返回 ${otherEvents.status}，可能泄露了记录是否存在`,
   );
 
-  /* ---------- 12. 清理 ---------- */
-  heading("第十二步 · 清理测试数据");
+  /* ---------- 12. 人工门禁的答案接口 ---------- */
+  heading("第十二步 · 人工门禁（提交规格疑问的回答）");
+
+  // 这条运行没有规格（从没调用过模型），所以提交回答应当被明确拒绝，
+  // 而不是静默成功 —— 静默成功会让用户以为答案存下来了
+  const noSpec = await fetch(`${BASE}/api/runs/${runIdA}/answers`, {
+    method: "POST",
+    headers: { cookie: cookieA, "content-type": "application/json" },
+    body: JSON.stringify({ answers: [{ question: "随便问的", answer: "随便答的" }] }),
+  });
+  expect_(
+    noSpec.status === 409,
+    "还没有规格时提交回答 → 409 并说明原因，而不是静默接受",
+    `返回 ${noSpec.status}`,
+  );
+
+  const badBody = await fetch(`${BASE}/api/runs/${runIdA}/answers`, {
+    method: "POST",
+    headers: { cookie: cookieA, "content-type": "application/json" },
+    body: "这不是 JSON",
+  });
+  expect_(badBody.status === 400, "请求体不是 JSON 时 → 400", `返回 ${badBody.status}`);
+
+  const otherUserAnswers = await fetch(`${BASE}/api/runs/${runIdA}/answers`, {
+    method: "POST",
+    headers: { cookie: cookieB, "content-type": "application/json" },
+    body: JSON.stringify({ answers: [] }),
+  });
+  expect_(
+    otherUserAnswers.status === 404,
+    "别人不能对这条记录提交回答（当作不存在处理）",
+    `返回 ${otherUserAnswers.status}`,
+  );
+
+  const anonAnswers = await fetch(`${BASE}/api/runs/${runIdA}/answers`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ answers: [] }),
+  });
+  expect_(anonAnswers.status === 401, "未登录不能提交回答", `返回 ${anonAnswers.status}`);
+
+  /* ---------- 13. 清理 ---------- */
+  heading("第十三步 · 清理测试数据");
   for (const username of [userA, userB]) {
     const u = db.select().from(users).where(eq(users.username, username)).get();
     if (u) {
