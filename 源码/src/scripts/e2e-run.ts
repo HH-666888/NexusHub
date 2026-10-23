@@ -474,8 +474,40 @@ async function main() {
   });
   expect_(anonAnswers.status === 401, "未登录不能提交回答", `返回 ${anonAnswers.status}`);
 
-  /* ---------- 13. 清理 ---------- */
-  heading("第十三步 · 清理测试数据");
+  /* ---------- 13. 新首页 /home ---------- */
+  heading("第十三步 · 首页（登录后的落地页）");
+
+  const homeRes = await fetch(`${BASE}/home`, { headers: { cookie: cookieA } });
+  expect_(homeRes.status === 200, "登录后可以打开首页", `返回 ${homeRes.status}`);
+  const homeHtml = await homeRes.text();
+
+  // 版式上几个必须存在的区块。断言的是「有没有这块」，
+  // 不是「长什么样」—— 具体像素会随设计调整，断言像素等于每改一次样式就红一次。
+  for (const [label, needle] of [
+    ["大标题", "说一句，做出来"],
+    ["产物类型分段", "网页应用"],
+    ["输入框提示", "描述你想做的软件"],
+    ["人工门禁开关", "先询问"],
+    ["项目卡片行", "我的项目"],
+    ["能力展示区", "它是怎么工作的"],
+  ] as const) {
+    expect_(homeHtml.includes(needle), `首页有「${label}」`, `首页缺少「${label}」`);
+  }
+
+  /*
+    未登录必须跳登录页。
+    断言 307 而不是 200：首页会显示用户的构建记录与累计花费，
+    不能对未登录的人开放。
+  */
+  const homeAnon = await fetch(`${BASE}/home`, { redirect: "manual" });
+  expect_(
+    homeAnon.status === 307 || homeAnon.status === 302,
+    "未登录访问首页 → 跳登录页",
+    `返回 ${homeAnon.status}，可能把构建记录暴露给了未登录的人`,
+  );
+
+  /* ---------- 14. 清理 ---------- */
+  heading("第十四步 · 清理测试数据");
   for (const username of [userA, userB]) {
     const u = db.select().from(users).where(eq(users.username, username)).get();
     if (u) {
