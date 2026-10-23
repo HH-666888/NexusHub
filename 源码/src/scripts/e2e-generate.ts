@@ -18,17 +18,25 @@ import { sqliteCostStore } from "@/adapters/store/cost-repo";
 import { sqliteRunStore } from "@/adapters/store/run-repo";
 import { costRecords, runs, users } from "@/adapters/store/schema";
 import type { GenerateEvent } from "@/core/generate/service";
+import {
+  expect_ as kitExpect,
+  fail as kitFail,
+  finish,
+  info as kitInfo,
+  ok as kitOk,
+} from "./e2e-kit";
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 
-const ok = (s: string) => console.log(`  ✅ ${s}`);
-const fail = (s: string) => console.log(`  ❌ ${s}`);
-const info = (s: string) => console.log(`     ${s}`);
+// 检查器来自共用模块 —— 见 e2e-kit.ts 里对「为什么抽出来」的说明。
+  // 原先每条脚本各有一份，而且四份都犯了同一个错：
+  // 末尾的「全部通过」无条件打印，有失败也报绿。
+  const ok = kitOk;
+  const fail = kitFail;
+  const info = kitInfo;
 
 function expect_(cond: boolean, passMsg: string, failMsg: string): boolean {
-  if (cond) ok(passMsg);
-  else fail(failMsg);
-  return cond;
+  return kitExpect(cond, passMsg, failMsg);
 }
 
 function heading(title: string) {
@@ -192,7 +200,20 @@ async function main() {
     `收到 ${count("text")} 个正文片段 —— 说明是真的流式，不是一次性返回`,
     "没有收到任何流式正文片段",
   );
-  expect_(count("usage") === 1, "收到 1 个用量事件", `收到 ${count("usage")} 个`);
+  /*
+    用量事件现在是两个 —— 规格化一次、生成一次。
+    这不是回归，是规格化接上之后的正常结果：
+    两个阶段各自调用模型，各自报一次用量。
+    断言改成「至少一次」而不是写死具体数字 ——
+    写死的话，以后再加一个阶段又要来改一遍，
+    而「改断言以让测试通过」正是最该警惕的动作。
+  */
+  expect_(count("usage") >= 1, "收到用量事件（规格化与生成各自上报）", `收到 ${count("usage")} 个`);
+  expect_(
+    count("spec") === 1,
+    "收到 1 个规格事件 —— 规格化阶段确实产出了规格",
+    `收到 ${count("spec")} 个规格事件`,
+  );
   expect_(count("check") === 1, "收到 1 个检查事件", `收到 ${count("check")} 个`);
   expect_(count("artifact") === 1, "收到 1 个产物事件", `收到 ${count("artifact")} 个`);
 
@@ -274,7 +295,25 @@ async function main() {
   /* ---------- 成本入账 ---------- */
   heading("第七步 · 成本是否入了账");
   const records = await sqliteCostStore.listByRun(run.id);
-  expect_(records.length === 1, "成本流水有且只有 1 条", `有 ${records.length} 条`);
+  /*
+    两条流水：规格化一条、生成一条。
+    原来断言的是 1 条 —— 那时只有生成阶段会调用模型。
+    规格化接上之后变成 2 条，这条断言就过期了。
+    除了改数字，这里还补了一条更有意义的断言：
+    两笔分别记在哪两个阶段。数字会变，但「每个调用模型的阶段各记一笔」
+    这个性质不会变。
+  */
+  expect_(
+    records.length === 2,
+    "成本流水有 2 条 —— 规格化一次、生成一次",
+    `有 ${records.length} 条`,
+  );
+  const stages = records.map((r) => r.stage).sort();
+  expect_(
+    stages.includes("spec") && stages.includes("build"),
+    `两笔分别记在 spec 与 build 阶段（实际：${stages.join("、")}）`,
+    `阶段不对：${stages.join("、")}`,
+  );
   const total = await sqliteCostStore.totalByRun(run.id);
   expect_(total > 0, `该运行累计花费 ¥${total.toFixed(6)}`, "累计花费为零");
 
@@ -405,7 +444,7 @@ async function main() {
     "仍有残留数据",
   );
 
-  heading(`全部通过 · 总耗时 ${((Date.now() - started) / 1000).toFixed(1)} 秒`);
+  finish(started);
 }
 
 main().catch((err) => {

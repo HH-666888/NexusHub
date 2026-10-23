@@ -17,17 +17,23 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/adapters/store/client";
 import { runs, users } from "@/adapters/store/schema";
+import {
+  expect_ as kitExpect,
+  finish,
+  info as kitInfo,
+  ok as kitOk,
+} from "./e2e-kit";
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 
-const ok = (s: string) => console.log(`  ✅ ${s}`);
-const fail = (s: string) => console.log(`  ❌ ${s}`);
-const info = (s: string) => console.log(`     ${s}`);
+// 检查器来自共用模块 —— 见 e2e-kit.ts 里对「为什么抽出来」的说明。
+  // 原先每条脚本各有一份，而且四份都犯了同一个错：
+  // 末尾的「全部通过」无条件打印，有失败也报绿。
+  const ok = kitOk;
+  const info = kitInfo;
 
 function expect_(cond: boolean, passMsg: string, failMsg: string): boolean {
-  if (cond) ok(passMsg);
-  else fail(failMsg);
-  return cond;
+  return kitExpect(cond, passMsg, failMsg);
 }
 
 function heading(title: string) {
@@ -440,7 +446,7 @@ async function main() {
   const leftover = db.select().from(users).where(eq(users.username, userA)).get();
   expect_(leftover === undefined, "测试数据已清理干净，不留痕迹", "仍有残留数据");
 
-  heading(`全部通过 · 总耗时 ${Date.now() - started} 毫秒`);
+  finish(started);
 }
 
 main().catch((err) => {
