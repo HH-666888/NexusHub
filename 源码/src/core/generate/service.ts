@@ -16,6 +16,7 @@
 
 import type { Artifact } from "../domain/artifact";
 import { summarizeChecks, type CheckResult, type CheckSummary } from "../domain/check";
+import type { AppSpec, SpecGate } from "../domain/spec";
 import type { ArtifactStore } from "../ports/artifact-store";
 import type { CostStore } from "../ports/cost-store";
 import type { ModelEffort, ModelPort, TokenUsage } from "../ports/model";
@@ -35,6 +36,7 @@ import {
    ============================================================ */
 
 export type GeneratePhase =
+  | "spec" // 规格化：把一句话需求整理成结构化规格
   | "generating" // 模型正在写
   | "checking" // 正在做产物检查
   | "saving" // 正在落盘
@@ -47,6 +49,21 @@ export type GenerateEvent =
   | { kind: "reasoning"; delta: string }
   /** 正文片段 */
   | { kind: "text"; delta: string }
+  /**
+   * 规格化阶段的产出。
+   *
+   * 为什么要单独一种事件而不是塞进 phase 的文案里：
+   *   规格是这个产品最该被看见的东西 —— 它决定了后面所有工序
+   *   拿什么当判定依据。用户要能逐条读到「它把我的需求理解成了什么」，
+   *   而不是只看到一句「规格已就绪」。
+   */
+  | {
+      kind: "spec";
+      spec: AppSpec;
+      gate: SpecGate;
+      /** 是不是降级来的。界面必须能区分，否则会把兜底当成真规格 */
+      fallback: boolean;
+    }
   | {
       kind: "usage";
       usage: TokenUsage;

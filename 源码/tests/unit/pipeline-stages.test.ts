@@ -54,14 +54,49 @@ describe("流水线进度推算", () => {
 
   it("运行完成时，已接入且已跑过的工序才显示「已通过」", () => {
     const done = computeStageStatuses({ stage: "verify", status: "done" });
-    // 构建与验收是已接入的，应当显示已通过
+
+    // 规格化、构建、验收都已接入，应当显示已通过。
+    //
+    // 这里原本断言 done.spec 是 pending。改成 passed 不是因为实现变了，
+    // 而是因为**规格化这一阶段真的接上了**：它会调用模型、
+    // 产出 spec.json、算出验收标准。既然它真的跑过，就该显示已通过。
+    // 断言写死的值会随实现推进而过期 —— 所以下面那条通用断言更重要。
+    expect(done.spec).toBe("passed");
     expect(done.build).toBe("passed");
     expect(done.verify).toBe("passed");
+
     // 没接入的一律 pending
-    expect(done.spec).toBe("pending");
     expect(done.arch).toBe("pending");
     expect(done.ui).toBe("pending");
     expect(done.assemble).toBe("pending");
+  });
+
+  it("【兜底断言】凡是标为未接入的工序，无论跑到哪一步都必须是 pending", () => {
+    /*
+      上一条断言的是具体某几道工序的状态，会随实现推进而过期。
+      这一条不写死具体是哪几道 —— 它按 implementation 字段动态取，
+      所以无论以后哪一道接上了、哪一道还没接，它都成立。
+
+      它守的是那条底线：**没接入的工序永远不能显示成已通过**。
+    */
+    const planned = STAGES.filter((s) => s.implementation === "planned");
+    expect(planned.length).toBeGreaterThan(0);
+
+    for (const stage of [
+      { stage: "spec", status: "running" },
+      { stage: "build", status: "running" },
+      { stage: "verify", status: "done" },
+      { stage: "verify", status: "failed" },
+      { stage: "assemble", status: "done" },
+    ] as const) {
+      const statuses = computeStageStatuses(stage);
+      for (const p of planned) {
+        expect(
+          statuses[p.id],
+          `运行到 ${stage.stage}/${stage.status} 时，未接入的 ${p.id} 显示成了 ${statuses[p.id]}`,
+        ).toBe("pending");
+      }
+    }
   });
 
   it("没有选中运行时，所有工序都是待执行", () => {

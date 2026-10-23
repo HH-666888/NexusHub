@@ -84,6 +84,8 @@ export interface ReplayFrame {
   checks: { passed: number; total: number } | null;
   /** 产物大小。还没落盘时为 null */
   artifactBytes: number | null;
+  /** 规格化产出的验收标准条数。还没到规格阶段时为 null */
+  specAcceptance: { total: number; must: number } | null;
   /** 这一刻之前的错误信息 */
   error: string | null;
   /** 已经被消费掉的事件条数，用于界面上标刻度 */
@@ -106,6 +108,7 @@ export function frameAt(events: readonly RunEvent[], offsetMs: number): ReplayFr
     costCny: null,
     checks: null,
     artifactBytes: null,
+    specAcceptance: null,
     error: null,
     consumed: 0,
   };
@@ -140,6 +143,12 @@ export function frameAt(events: readonly RunEvent[], offsetMs: number): ReplayFr
         break;
       case "artifact":
         frame.artifactBytes = e.payload.artifact.bytes;
+        break;
+      case "spec":
+        frame.specAcceptance = {
+          total: e.payload.spec.acceptance.length,
+          must: e.payload.spec.acceptance.filter((a) => a.level === "must").length,
+        };
         break;
       case "error":
         frame.error = e.payload.message;

@@ -27,6 +27,7 @@ import { resolveModelEndpoint } from "@/adapters/model/resolve-endpoint";
 import { env } from "@/config/env";
 import { recordRunEvents } from "@/core/generate/recorder";
 import { generateApp, type GenerateEvent } from "@/core/generate/service";
+import { runSpecStage } from "@/core/generate/spec-stage";
 import { getOwnedRun } from "@/core/run/service";
 import { getCurrentUser } from "@/server/auth-context";
 
@@ -108,36 +109,85 @@ export async function GET(
         const spent = await sqliteCostStore.totalByRun(run.id);
 
         /*
+          先把要用的两个字段取出来。
+          下面的 fullPipeline 是嵌套函数，TypeScript 的非空收窄
+          不会穿透到闭包里 —— 直接用 run.id 会一路报「可能为 null」。
+          取出常量同时也让闭包少依赖一个可变对象。
+        */
+        const runId = run.id;
+        const runPrompt = run.prompt;
+
+        /*
           重新生成会先走 DELETE 清掉旧事件，所以到这里事件日志应当是空的。
           万一不是（比如上一次生成中途崩了、事件写了一半），
           清掉再从 0 开始 —— 两条时间线混在一起比没有时间线更糟。
         */
-        if ((await sqliteEventStore.countByRun(run.id)) > 0) {
-          await sqliteEventStore.deleteByRun(run.id);
+        if ((await sqliteEventStore.countByRun(runId)) > 0) {
+          await sqliteEventStore.deleteByRun(runId);
+        }
+
+        // 端口只建一次，两个阶段共用 —— 它们本来就该用同一套接入配置
+        const ports = {
+          model: createDeepSeekPort(resolved.endpoint),
+          artifacts: fsArtifactStore,
+          runs: sqliteRunStore,
+          costs: sqliteCostStore,
+        };
+
+        /**
+         * 完整流程：先规格化，再生成。
+         *
+         * 顺序不能反 —— 规格是后面所有工序的判定依据，
+         * 先出成品再补规格，那份规格就只是事后解释，不是约束。
+         */
+        async function* fullPipeline(): AsyncIterable<GenerateEvent> {
+          // ---------- 第一道：规格化 ----------
+          for await (const e of runSpecStage(ports, {
+            runId,
+            prompt: runPrompt,
+            costLimitCny: env.run.costLimitCny,
+            spentCny: spent,
+          })) {
+            // SpecStageEvent 的几种事件与 GenerateEvent 结构一致，直接透传
+            yield e as GenerateEvent;
+          }
+
+          /*
+            ⚠️ 这里有一处**已知的未完成**，必须说清楚而不是装作没有：
+
+            按设计，规格里若还有「需要用户确认的问题」，就该停下等人回答 ——
+            那是全流程唯一需要人的地方（人工门禁）。
+            但门禁的交互界面还没做，现在没有地方让用户回答。
+
+            所以这里选择继续，并且**明确告诉用户门禁没接入**。
+            装作门禁已经生效、或者静默继续，都比直接说出来更糟。
+          */
+          const pending = await sqliteEventStore.listByRun(runId);
+          const specEvent = [...pending].reverse().find((e) => e.kind === "spec");
+          if (specEvent && specEvent.payload.kind === "spec") {
+            const q = specEvent.payload.spec.questions;
+            if (q.length > 0) {
+              yield {
+                kind: "phase",
+                phase: "spec",
+                label: `规格里有 ${q.length} 个待确认问题；人工门禁尚未接入，已直接继续`,
+              };
+            }
+          }
+
+          // ---------- 第四道：并行构建（当前是直通模式） ----------
+          const spentAfterSpec = await sqliteCostStore.totalByRun(runId);
+          yield* generateApp(ports, {
+            runId,
+            prompt: runPrompt,
+            costLimitCny: env.run.costLimitCny,
+            spentCny: spentAfterSpec,
+          });
         }
 
         // 包一层记录器：事件原样推给浏览器，同时合并落库供事后回放。
         // 生成内核本身一行不用改。
-        const recorded = recordRunEvents(
-          generateApp(
-            {
-              // 按解析结果创建端口。适配器本身不知道「配置」这回事，
-              // 它只是被绑定到了某一组接入信息上
-              model: createDeepSeekPort(resolved.endpoint),
-              artifacts: fsArtifactStore,
-              runs: sqliteRunStore,
-              costs: sqliteCostStore,
-            },
-            {
-              runId: run.id,
-              prompt: run.prompt,
-              costLimitCny: env.run.costLimitCny,
-              spentCny: spent,
-            },
-          ),
-          sqliteEventStore,
-          run.id,
-        );
+        const recorded = recordRunEvents(fullPipeline(), sqliteEventStore, runId);
 
         for await (const event of recorded) {
           send(event);

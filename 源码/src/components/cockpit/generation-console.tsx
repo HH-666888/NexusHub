@@ -28,6 +28,7 @@ import { RunTimeline } from "./run-timeline";
  */
 
 const PHASE_LABEL: Record<GeneratePhase, string> = {
+  spec: "需求规格化",
   generating: "正在生成",
   checking: "正在检查",
   saving: "正在保存",
@@ -36,6 +37,7 @@ const PHASE_LABEL: Record<GeneratePhase, string> = {
 };
 
 const PHASE_TONE: Record<GeneratePhase, string> = {
+  spec: "border-violet-700 bg-violet-950/40 text-violet-300",
   generating: "border-blue-700 bg-blue-950/40 text-blue-300",
   checking: "border-blue-700 bg-blue-950/40 text-blue-300",
   saving: "border-blue-700 bg-blue-950/40 text-blue-300",
@@ -61,6 +63,18 @@ export function GenerationConsole({
     用户会以为「录像没录上」，其实只是没去取。
   */
   const [refreshKey, setRefreshKey] = useState(0);
+  /*
+    规格化阶段的产出。它是这一阶段唯一值得展示的东西 ——
+    用户要看的是「它把我的需求理解成了什么」，而不是「规格已就绪」。
+  */
+  const [spec, setSpec] = useState<{
+    goal: string;
+    audience: string;
+    acceptance: Array<{ id: string; statement: string; verifyBy: string; level: string }>;
+    outOfScope: string[];
+    questions: string[];
+    fallback: boolean;
+  } | null>(null);
   const [phase, setPhase] = useState<GeneratePhase | null>(null);
   const [phaseLabel, setPhaseLabel] = useState("");
   const [text, setText] = useState("");
@@ -181,12 +195,28 @@ export function GenerationConsole({
           break;
 
         case "usage":
-          setCost(event.costCny);
-          setLatency(event.latencyMs);
-          setUsage({
-            in: event.usage.inputTokens,
-            out: event.usage.outputTokens,
-            think: event.usage.reasoningTokens,
+          /*
+            用量事件两个阶段都会发（规格化一次、生成一次）。
+            花费要**累加**而不是覆盖 —— 覆盖的话，
+            界面上的数字会从规格那笔变成生成那笔，总额永远少一截。
+          */
+          setCost((c) => (c ?? 0) + event.costCny);
+          setLatency((l) => (l ?? 0) + event.latencyMs);
+          setUsage((u) => ({
+            in: (u?.in ?? 0) + event.usage.inputTokens,
+            out: (u?.out ?? 0) + event.usage.outputTokens,
+            think: (u?.think ?? 0) + event.usage.reasoningTokens,
+          }));
+          break;
+
+        case "spec":
+          setSpec({
+            goal: event.spec.goal,
+            audience: event.spec.audience,
+            acceptance: event.spec.acceptance,
+            outOfScope: event.spec.scope.outOfScope,
+            questions: event.spec.questions,
+            fallback: event.fallback,
           });
           break;
 
@@ -310,6 +340,88 @@ export function GenerationConsole({
             <span className="text-slate-600">
               （思考已关闭 —— 实测这类任务关掉更快也更完整）
             </span>
+          )}
+        </div>
+      )}
+
+      {/* 规格
+          这是规格化阶段唯一值得展示的东西。用户要看的不是「规格已就绪」，
+          而是「它到底把我的需求理解成了什么」——
+          理解错了要在这里就能发现，而不是等成品出来才发现。 */}
+      {spec && (
+        <div className="border-b border-[var(--color-border-soft)] bg-violet-950/15 px-4 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded border border-violet-700/60 bg-violet-950/40 px-1.5 py-px text-[9.5px] text-violet-300">
+              规格
+            </span>
+            <span className="text-[12px] text-slate-200">{spec.goal || "（没有给出目标）"}</span>
+            {spec.fallback && (
+              // 兜底必须显著标出来，否则用户会把通用硬检查当成针对自己需求的验收标准
+              <span className="rounded border border-amber-700/60 bg-amber-950/40 px-1.5 py-px text-[9.5px] text-amber-300">
+                兜底规格 · 模型没能给出可用规格
+              </span>
+            )}
+          </div>
+
+          {spec.audience && (
+            <div className="mt-1 text-[11px] text-slate-500">
+              给谁用：<span className="text-slate-400">{spec.audience}</span>
+            </div>
+          )}
+
+          {spec.acceptance.length > 0 && (
+            <div className="mt-2">
+              <div className="text-[10.5px] text-slate-500">
+                验收标准 {spec.acceptance.length} 条
+                {spec.acceptance.some((a) => a.level === "must") && (
+                  <>
+                    {" "}
+                    · 其中{" "}
+                    <span className="text-slate-400">
+                      {spec.acceptance.filter((a) => a.level === "must").length} 条必需
+                    </span>
+                  </>
+                )}
+              </div>
+              <ul className="scroll-hint mt-1 max-h-28 overflow-y-auto">
+                {spec.acceptance.map((a) => (
+                  <li key={a.id} className="py-0.5 text-[10.5px] leading-relaxed">
+                    <span
+                      className={
+                        a.level === "must"
+                          ? "text-violet-400"
+                          : "text-slate-600"
+                      }
+                    >
+                      {a.level === "must" ? "必需" : "期望"}
+                    </span>
+                    <span className="ml-1.5 text-slate-300">{a.statement}</span>
+                    <span className="ml-1.5 text-slate-600">— {a.verifyBy}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {spec.outOfScope.length > 0 && (
+            <div className="mt-1.5 text-[10.5px] text-slate-500">
+              明确不做：<span className="text-slate-400">{spec.outOfScope.join("、")}</span>
+            </div>
+          )}
+
+          {spec.questions.length > 0 && (
+            <div className="mt-2 rounded border border-amber-900/50 bg-amber-950/25 px-2 py-1.5">
+              <div className="text-[10.5px] text-amber-300">
+                这些疑点本该先问你 —— 人工门禁尚未接入，这次直接继续了
+              </div>
+              <ul className="mt-0.5">
+                {spec.questions.map((q) => (
+                  <li key={q} className="text-[10.5px] leading-relaxed text-amber-200/80">
+                    · {q}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}

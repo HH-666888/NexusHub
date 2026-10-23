@@ -84,7 +84,19 @@ export const STAGES: readonly StageDef[] = [
     ],
     fallbackTo: [],
     humanGate: true, // 全流程唯一需要人的地方
-    implementation: "planned",
+    /*
+      改为 direct 而不是 wired，是因为**人工门禁还没接**。
+
+      这一阶段的执行部分已经真的在跑了：调用模型、解析、
+      产出 spec.json、算出验收标准 —— 契约是真的。
+      但 humanGate 这一条还没有落地：规格里出现「需要用户确认的问题」时
+      本该停下等人回答，而现在没有地方让用户回答，只能继续往下走。
+
+      所以标 direct：「在跑，但没走完整链路」。
+      等门禁的交互做出来、用户能真的回答问题并据此修改规格，
+      再改成 wired。在那之前标 wired 会让人以为门禁已经生效。
+    */
+    implementation: "direct",
   },
   {
     id: "arch",
