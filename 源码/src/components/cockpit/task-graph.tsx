@@ -18,11 +18,14 @@ import "@xyflow/react/dist/style.css";
 
 import {
   buildPipelineGraph,
+  describeTrace,
   LAYOUT,
   nodeMetrics,
   nodeStatusLabel,
   nodeTone,
+  tracePath,
   type NodeTone,
+  type PathTrace,
   type PipelineGraph,
   type PipelineNode,
 } from "@/core/pipeline/graph";
@@ -61,34 +64,39 @@ interface StageNodeData extends Record<string, unknown> {
   node: PipelineNode;
   tint: string;
   tone: NodeTone;
-  selected: boolean;
+  /** 有聚焦点时，这个节点是否在追踪出来的链上 */
+  onChain: boolean;
+  /** 当前有没有聚焦点 —— 没有聚焦时所有节点一视同仁 */
+  anyFocus: boolean;
 }
 
 function StageNode({ data }: NodeProps) {
-  const { node, tint, tone } = data as StageNodeData;
+  const { node, tint, tone, onChain, anyFocus } = data as StageNodeData;
 
   const dim = tone === "planned";
   const empty = node.implementation === "planned";
+  // 有聚焦点、又不在链上 → 压暗，让链自己浮出来
+  const offChain = anyFocus && !onChain;
 
   return (
     <div
-      className="relative overflow-hidden rounded-xl border px-3 py-2.5 transition-[box-shadow,border-color] duration-150"
+      className="relative overflow-hidden rounded-xl border px-3 py-2.5 transition-[box-shadow,border-color,opacity] duration-200"
       style={
         {
           width: LAYOUT.nodeWidth,
           minHeight: LAYOUT.nodeHeight,
-          borderColor: `rgb(${tint} / ${dim ? 0.3 : 0.45})`,
+          borderColor: `rgb(${tint} / ${onChain && anyFocus ? 0.75 : dim ? 0.3 : 0.45})`,
           backgroundColor: "var(--color-surface)",
           backgroundImage: dim
             ? undefined
-            : `linear-gradient(150deg, rgb(${tint} / 0.16) 0%, rgb(${tint} / 0.04) 55%, transparent 100%)`,
+            : `linear-gradient(150deg, rgb(${tint} / ${onChain && anyFocus ? 0.26 : 0.16}) 0%, rgb(${tint} / 0.04) 55%, transparent 100%)`,
           boxShadow:
-            tone === "running"
+            tone === "running" || (onChain && anyFocus)
               ? `0 0 0 1px rgb(${tint} / 0.8), 0 0 26px -8px rgb(${tint} / 0.95)`
               : dim
                 ? undefined
                 : `0 0 18px -12px rgb(${tint} / 0.9)`,
-          opacity: dim ? 0.55 : 1,
+          opacity: offChain ? 0.22 : dim ? 0.55 : 1,
         } as CSSProperties
       }
     >
@@ -211,9 +219,22 @@ function TaskGraphInner({ run, costByStage, showFallback = true, className }: Ta
     [run, costByStage],
   );
 
+  /*
+    聚焦：鼠标悬停或点选某个节点时，把「它这条链」高亮出来。
+    回答的是「这个产物是怎么来的」—— 一堆线里根本看不清哪几根连着。
+    悬停给的是即时反馈，点选给的是留住不走的焦点。
+  */
+  const [hoveredId, setHoveredId] = useState<StageId | null>(null);
+  const [selectedId, setSelectedId] = useState<StageId | null>(null);
+  const focusId = hoveredId ?? selectedId;
+
+  const trace: PathTrace | null = useMemo(
+    () => (focusId ? tracePath(graph, focusId) : null),
+    [graph, focusId],
+  );
+
   // React Flow 的节点状态（拖动位置等）由它自己管，这里只做初始值
-  const [nodes, setNodes] = useState<Node[]>(() => toFlowNodes(graph));
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [baseNodes, setBaseNodes] = useState<Node[]>(() => toFlowNodes(graph, null));
 
   // 图数据变了（切换运行、跑完一轮）就重建节点，但保留用户拖过的位置
   const graphKey = useMemo(
@@ -223,8 +244,28 @@ function TaskGraphInner({ run, costByStage, showFallback = true, className }: Ta
   const [lastKey, setLastKey] = useState(graphKey);
   if (lastKey !== graphKey) {
     setLastKey(graphKey);
-    setNodes(toFlowNodes(graph));
+    setBaseNodes(toFlowNodes(graph, null));
   }
+
+  /*
+    高亮在**渲染时派生**，不写进 state。
+    第一版是用 useEffect 把高亮结果 setState 回节点数组里，
+    结果被 lint 拦下了 —— 在 effect 里同步 setState 会引发级联渲染。
+    拦得对：派生出来的东西就不该再存一份，存两份必然要同步，
+    要同步就必然多一轮渲染。现在位置在 baseNodes 里，高亮是算出来的。
+  */
+  const nodes: Node[] = useMemo(
+    () =>
+      baseNodes.map((n) => ({
+        ...n,
+        data: {
+          ...n.data,
+          onChain: trace ? trace.chain.has(n.id as StageId) : true,
+          anyFocus: trace !== null,
+        },
+      })),
+    [baseNodes, trace],
+  );
 
   const edges: Edge[] = useMemo(
     () =>
@@ -232,6 +273,17 @@ function TaskGraphInner({ run, costByStage, showFallback = true, className }: Ta
         .filter((e) => e.kind === "flow" || showFallback)
         .map((e) => {
           const fallback = e.kind === "fallback";
+          const onChain = trace ? trace.edges.has(e.id) : true;
+          const off = trace !== null && !onChain;
+
+          const base = fallback
+            ? { stroke: "rgba(217,119,6,.55)", strokeDasharray: "5 5", strokeWidth: 1.2 }
+            : { stroke: "rgba(148,163,184,.35)", strokeWidth: 1.2 };
+
+          const lit = fallback
+            ? { stroke: "rgba(251,191,36,.95)", strokeDasharray: "5 5", strokeWidth: 1.8 }
+            : { stroke: "rgba(226,232,240,.85)", strokeWidth: 2 };
+
           return {
             id: e.id,
             source: e.source,
@@ -243,18 +295,24 @@ function TaskGraphInner({ run, costByStage, showFallback = true, className }: Ta
             targetHandle: fallback ? "fb-in" : undefined,
             label: e.label,
             labelShowBg: false,
-            style: fallback
-              ? { stroke: "rgba(217,119,6,.55)", strokeDasharray: "5 5", strokeWidth: 1.2 }
-              : { stroke: "rgba(148,163,184,.35)", strokeWidth: 1.2 },
-            labelStyle: { fill: "var(--ink-6)", fontSize: 9 },
-            zIndex: fallback ? 0 : 1,
+            style: {
+              ...(off ? base : onChain && trace ? lit : base),
+              opacity: off ? 0.15 : 1,
+              transition: "opacity .2s, stroke .2s",
+            },
+            // 链上的线画在上面，被压住的线不会盖住它
+            zIndex: onChain && trace ? 5 : fallback ? 0 : 1,
+            labelStyle: {
+              fill: onChain && trace ? "var(--ink-2)" : "var(--ink-6)",
+              fontSize: 9,
+            },
           } satisfies Edge;
         }),
-    [graph.edges, showFallback],
+    [graph.edges, showFallback, trace],
   );
 
   const onNodeClick = useCallback((_: unknown, n: Node) => {
-    setSelectedId(n.id);
+    setSelectedId(n.id as StageId);
   }, []);
 
   return (
@@ -270,7 +328,7 @@ function TaskGraphInner({ run, costByStage, showFallback = true, className }: Ta
             (c) => c.type === "position" || c.type === "select" || c.type === "dimensions",
           );
           if (positional.length === 0) return;
-          setNodes((prev) =>
+          setBaseNodes((prev) =>
             prev.map((n) => {
               for (const c of positional) {
                 if (c.type === "position" && c.id === n.id && c.position) {
@@ -285,7 +343,15 @@ function TaskGraphInner({ run, costByStage, showFallback = true, className }: Ta
           );
         }}
         onNodeClick={onNodeClick}
-        onPaneClick={() => setSelectedId(null)}
+        onNodeMouseEnter={(_, n) => setHoveredId(n.id as StageId)}
+        onNodeMouseLeave={() => setHoveredId(null)}
+        onPaneClick={() => {
+          setSelectedId(null);
+          setHoveredId(null);
+        }}
+        /* 点空白处也清掉悬停态：鼠标移出画布时我们收不到 leave 事件，
+           焦点会一直留在最后一个节点上 */
+        onMoveStart={() => setHoveredId(null)}
         fitView
         fitViewOptions={{ padding: 0.06, maxZoom: 1.2 }}
         minZoom={0.25}
@@ -301,6 +367,19 @@ function TaskGraphInner({ run, costByStage, showFallback = true, className }: Ta
           控制条直接压在「并行构建」几个字上。
         */}
         <Controls showInteractive={false} position="bottom-right" />
+
+        {/*
+          这里原本挂了一个小地图（MiniMap），已经删掉。
+
+          删的理由：工作台中间那栏只有约 830px 宽，而图是 752px ——
+          整张图本来就一眼看得全，小地图告诉你的信息你已经在看了。
+          它反而固定压在「界面设计」和「验收与交付」两个节点上，
+          截图里一眼就能看出来。
+
+          加一个让界面变差的功能不叫「更自由」。
+          等「并行构建」真的裂成多个模块节点、图长到一屏放不下的时候，
+          它才值得回来 —— 那时候它是导航，现在它只是遮挡。
+        */}
       </ReactFlow>
 
       {/* 点开节点后的小结。放在画布角落而不是侧栏，
@@ -308,7 +387,12 @@ function TaskGraphInner({ run, costByStage, showFallback = true, className }: Ta
       {selectedId && (
         <NodeSummary
           node={graph.nodes.find((n) => n.id === selectedId) ?? null}
-          onClose={() => setSelectedId(null)}
+          trace={selectedId ? tracePath(graph, selectedId) : null}
+          nameOf={(id) => graph.nodes.find((n) => n.id === id)?.name ?? id}
+          onClose={() => {
+            setSelectedId(null);
+            setHoveredId(null);
+          }}
         />
       )}
     </div>
@@ -319,7 +403,17 @@ function TaskGraphInner({ run, costByStage, showFallback = true, className }: Ta
    节点小结
    ============================================================ */
 
-function NodeSummary({ node, onClose }: { node: PipelineNode | null; onClose: () => void }) {
+function NodeSummary({
+  node,
+  trace,
+  nameOf,
+  onClose,
+}: {
+  node: PipelineNode | null;
+  trace: PathTrace | null;
+  nameOf: (id: StageId) => string;
+  onClose: () => void;
+}) {
   if (!node) return null;
   const tone = nodeTone(node);
   const tint = TONE_TINT[tone];
@@ -379,6 +473,26 @@ function NodeSummary({ node, onClose }: { node: PipelineNode | null; onClose: ()
           </div>
         )
       )}
+
+      {/* 路径追踪：这条链是怎么连起来的。
+          回答「这个产物是怎么来的」，是这套界面最该能回答的问题。
+          画布上已经用亮度标出来了，这里再用文字说一遍 ——
+          颜色是给眼睛的，文字是给确认的。 */}
+      {trace && (
+        <div className="mt-2 border-t border-[var(--color-border-soft)] pt-2">
+          <div className="text-[10px] text-slate-500">这条链</div>
+          <div className="mt-1 text-[10.5px] leading-relaxed text-slate-400">
+            {describeTrace(trace, nameOf)}
+          </div>
+          {trace.fallbacksIntoChain.length > 0 && (
+            <div className="mt-1.5 text-[10px] leading-relaxed text-amber-500/80">
+              {trace.fallbacksIntoChain
+                .map((f) => `${nameOf(f.from)} 失败会退回 ${nameOf(f.to)}`)
+                .join("；")}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -387,7 +501,7 @@ function NodeSummary({ node, onClose }: { node: PipelineNode | null; onClose: ()
    数据转换
    ============================================================ */
 
-function toFlowNodes(graph: PipelineGraph): Node[] {
+function toFlowNodes(graph: PipelineGraph, trace: PathTrace | null): Node[] {
   return graph.nodes.map((n) => {
     const tone = nodeTone(n);
     return {
@@ -398,7 +512,8 @@ function toFlowNodes(graph: PipelineGraph): Node[] {
         node: n,
         tint: TONE_TINT[tone],
         tone,
-        selected: false,
+        onChain: trace ? trace.chain.has(n.id) : true,
+        anyFocus: trace !== null,
       } satisfies StageNodeData,
       draggable: true,
       // 让 React Flow 知道节点尺寸，省掉一次测量导致的布局跳动

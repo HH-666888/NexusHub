@@ -290,3 +290,108 @@ export function attributeCost(
   if (!(totalCostCny > 0)) return {};
   return { [SPENDING_STAGE]: totalCostCny };
 }
+
+/* ============================================================
+   路径追踪
+   ------------------------------------------------------------
+   点一个节点，回答两个问题：
+     · 它是怎么来的（上游链）
+     · 它之后还会去哪（下游链）
+
+   追问「这个产物是怎么来的」是这套界面最该能回答的问题，
+   而一堆线里根本看不清哪几根是连着的。
+
+   ── 只在顺序流转边上追溯，不跟回退边 ──
+     回退边是「失败了会退回哪」，不是正常流转。
+     把它也算进路径的话，任何节点都能顺着一路退回起点，
+     于是「上游」永远等于全部六道工序，追踪就没意义了。
+     回退边单独列出来给用户看，不混进主链。
+   ============================================================ */
+
+export interface PathTrace {
+  /** 聚焦的那个工序本身 */
+  focus: StageId;
+  /** 主链上的全部工序（含聚焦点） */
+  chain: Set<StageId>;
+  /** 聚焦点的上游（不含它自己），按从近到远 */
+  upstream: StageId[];
+  /** 聚焦点的下游（不含它自己），按从近到远 */
+  downstream: StageId[];
+  /** 属于主链的顺序流转边 */
+  edges: Set<string>;
+  /** 聚焦点自己失败时会退回到哪 —— 单独给，不混进主链 */
+  fallbackFromMe: StageId | null;
+  /** 主链上任意一道工序失败会退回到哪 */
+  fallbacksIntoChain: Array<{ from: StageId; to: StageId }>;
+}
+
+export function tracePath(graph: PipelineGraph, from: StageId): PathTrace {
+  const flowEdges = graph.edges.filter((e) => e.kind === "flow");
+  const fallbackEdges = graph.edges.filter((e) => e.kind === "fallback");
+
+  const forward = new Map<StageId, StageId[]>();
+  const backward = new Map<StageId, StageId[]>();
+  for (const e of flowEdges) {
+    forward.set(e.source, [...(forward.get(e.source) ?? []), e.target]);
+    backward.set(e.target, [...(backward.get(e.target) ?? []), e.source]);
+  }
+
+  /** 从起点按给定方向走，返回按距离分层的结果 */
+  function walk(start: StageId, adj: Map<StageId, StageId[]>): StageId[] {
+    const seen = new Set<StageId>([start]);
+    const out: StageId[] = [];
+    let frontier = [start];
+    while (frontier.length) {
+      const next: StageId[] = [];
+      for (const cur of frontier) {
+        for (const nx of adj.get(cur) ?? []) {
+          if (seen.has(nx)) continue;
+          seen.add(nx);
+          out.push(nx);
+          next.push(nx);
+        }
+      }
+      frontier = next;
+    }
+    return out;
+  }
+
+  const upstream = walk(from, backward);
+  const downstream = walk(from, forward);
+  const chain = new Set<StageId>([from, ...upstream, ...downstream]);
+
+  return {
+    focus: from,
+    chain,
+    upstream,
+    downstream,
+    edges: new Set(
+      flowEdges
+        .filter((e) => chain.has(e.source) && chain.has(e.target))
+        .map((e) => e.id),
+    ),
+    fallbackFromMe: fallbackEdges.find((e) => e.source === from)?.target ?? null,
+    fallbacksIntoChain: fallbackEdges
+      .filter((e) => chain.has(e.source))
+      .map((e) => ({ from: e.source, to: e.target })),
+  };
+}
+
+/** 一句话说清这条链，给节点小结用 */
+export function describeTrace(trace: PathTrace, nameOf: (id: StageId) => string): string {
+  const parts: string[] = [];
+  if (trace.upstream.length) {
+    parts.push(`上游 ${trace.upstream.map(nameOf).join(" → ")}`);
+  } else {
+    parts.push("它是整条流水线的起点");
+  }
+  if (trace.downstream.length) {
+    parts.push(`下游 ${trace.downstream.map(nameOf).join(" → ")}`);
+  } else {
+    parts.push("它是终点，之后没有工序");
+  }
+  if (trace.fallbackFromMe) {
+    parts.push(`这一道失败会退回「${nameOf(trace.fallbackFromMe)}」`);
+  }
+  return parts.join("；");
+}

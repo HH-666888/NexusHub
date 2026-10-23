@@ -575,15 +575,26 @@ body {
   --xy-attribution-background-color: transparent;
 }
 
-/* 控制条本体：圆角跟随外观配置，按钮分隔线用我们的描边色 */
+/* 控制条本体：圆角跟随外观配置，按钮分隔线用我们的描边色。
+   做成半透明浮层 —— 画布只有 800 多像素宽，图基本铺满，
+   任何角落都会压到节点。这是画布类界面的常态（Figma、Miro 都如此），
+   关键是让它读起来像「浮在上面的一层」，而不是和节点抢地方。 */
 .nexus-flow .react-flow__controls {
   border-radius: var(--app-radius, 12px);
   overflow: hidden;
-  box-shadow: 0 2px 10px rgb(0 0 0 / 0.35);
+  background: rgb(16 17 20 / 0.72);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--color-border-soft);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.45);
 }
 
 .nexus-flow .react-flow__controls-button {
   border-bottom-color: var(--color-border-soft);
+  background: transparent;
+}
+
+.nexus-flow .react-flow__controls-button:hover {
+  background: rgb(51 65 85 / 0.5);
 }
 
 .nexus-flow .react-flow__controls-button svg {

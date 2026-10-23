@@ -3,6 +3,7 @@ import {
   artifactExists,
   attributeCost,
   buildPipelineGraph,
+  describeTrace,
   gridSlot,
   isNodeInteractive,
   LAYOUT,
@@ -11,6 +12,7 @@ import {
   nodeTone,
   rowCount,
   SPENDING_STAGE,
+  tracePath,
 } from "@/core/pipeline/graph";
 import { STAGES, type StageId } from "@/core/pipeline/stages";
 
@@ -236,6 +238,99 @@ describe("流水线图 · 节点的可点性", () => {
     const names = new Set(g.nodes.map((n) => n.artifact));
     expect(artifactExists("build", names)).toBe(true);
     expect(artifactExists("build", new Set(["别的文件.json"]))).toBe(false);
+  });
+});
+
+describe("流水线图 · 路径追踪", () => {
+  const g = buildPipelineGraph({ run: null });
+  const nameOf = (id: string) => STAGES.find((s) => s.id === id)?.name ?? id;
+
+  it("从起点出发：没有上游，下游是全部其余工序", () => {
+    const t = tracePath(g, "spec");
+    expect(t.upstream).toEqual([]);
+    expect(t.downstream).toEqual(["arch", "ui", "build", "assemble", "verify"]);
+    expect(t.chain.size).toBe(6);
+    expect(t.fallbackFromMe).toBeNull();
+  });
+
+  it("从终点出发：没有下游，上游是全部其余工序", () => {
+    const t = tracePath(g, "verify");
+    expect(t.downstream).toEqual([]);
+    expect(t.upstream).toEqual(["assemble", "build", "ui", "arch", "spec"]);
+    expect(t.chain.size).toBe(6);
+  });
+
+  it("从中间出发：上下游都不含自己", () => {
+    const t = tracePath(g, "build");
+    expect(t.upstream).not.toContain("build");
+    expect(t.downstream).not.toContain("build");
+    expect(t.chain.has("build")).toBe(true);
+  });
+
+  it("上游按从近到远排列 —— 用户要的是「上一步是谁」", () => {
+    const t = tracePath(g, "build");
+    // build 的上一步是 ui，再往前是 arch、spec
+    expect(t.upstream[0]).toBe("ui");
+    expect(t.upstream[t.upstream.length - 1]).toBe("spec");
+  });
+
+  it("【关键】追踪只跟顺序流转，不跟回退边", () => {
+    // 如果回退边也算进路径，任何节点都会顺着退回起点，
+    // 「上游」就永远等于全部六道工序，追踪失去意义。
+    const t = tracePath(g, "assemble");
+    expect(t.upstream).not.toContain("verify");
+    expect(t.downstream).not.toContain("arch");
+  });
+
+  it("【已知局限】流水线是线性的，所以链覆盖全部六道工序", () => {
+    /*
+      这条不是「通过就好」的断言，是把一个**已知局限**写下来。
+
+      六道工序目前是一条直线（加上回退边），所以从任何一道出发，
+      上下游加起来必然是全部六道 —— 追踪在当前形态下不产生区分度。
+
+      它要等到「并行构建」真的裂成多个模块节点时才有用：
+      那时候一条链才是链，而不是整条线。
+      在那之前，这个能力的价值主要在回退那部分（见下一条）。
+    */
+    const t = tracePath(g, "build");
+    expect(t.chain.size).toBe(6);
+    expect(t.edges.size).toBe(5); // 全部顺序流转边
+  });
+
+  it("回退边才是眼下真正有区分度的部分", () => {
+    /*
+      回退边不是全连的：每道工序只声明最近的一跳。
+      所以「这一道失败会退回哪」是一句有信息量的话，
+      而上游下游在直线流水线上没有。
+    */
+    const build = tracePath(g, "build");
+    const verify = tracePath(g, "verify");
+    expect(build.fallbackFromMe).not.toBe(verify.fallbackFromMe);
+
+    // 起点没有退路
+    expect(tracePath(g, "spec").fallbackFromMe).toBeNull();
+
+    // 断言取自真实声明，而不是我拍脑袋记的值 ——
+    // 第一版就是硬写了一个值，结果和 stages.ts 里的实际声明对不上。
+    for (const s of STAGES) {
+      expect(tracePath(g, s.id).fallbackFromMe).toBe(s.fallbackTo[0] ?? null);
+    }
+  });
+
+  it("describeTrace 说得清楚，不留半句话", () => {
+    const start = describeTrace(tracePath(g, "spec"), nameOf);
+    const end = describeTrace(tracePath(g, "verify"), nameOf);
+    const mid = describeTrace(tracePath(g, "build"), nameOf);
+    expect(start).toContain("起点");
+    expect(end).toContain("终点");
+    expect(mid).toContain("上游");
+    expect(mid).toContain("下游");
+    // 不能说成「上游 」后面什么都没有
+    for (const s of [start, end, mid]) {
+      expect(s).not.toMatch(/上游\s*；/);
+      expect(s).not.toMatch(/下游\s*；/);
+    }
   });
 });
 
