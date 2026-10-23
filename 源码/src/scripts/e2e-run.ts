@@ -93,6 +93,28 @@ function readSessionCookie(res: Response): string | null {
   return null;
 }
 
+/**
+ * 剥掉 Next.js 的 RSC 水合载荷，只留真正渲染出来的 HTML。
+ *
+ * ── 为什么必须剥 ──
+ *   App Router 会把整棵组件树序列化进几个
+ *   <script>self.__next_f.push(...)</script> 标签里，供客户端水合。
+ *   于是同一个属性在响应里出现两次：一次在正文，一次在载荷里。
+ *
+ *   这个坑**只对无值属性发作**：
+ *     data-step-card="s1"   载荷里是 "data-step-card":"s1" —— 形式不同，不会重复计数
+ *     data-rationale        载荷里形式相同 —— 被数了两遍
+ *   所以「7 张卡带原理条」被数成了 14 张。
+ *
+ *   这类错很阴：测试红了，但页面完全正常。
+ *   而且它只在无值属性上发作，同一个文件里别的断言却好好的 ——
+ *   很容易被当成"这条断言写错了"而改错地方。
+ *   统一剥掉载荷之后就都不必操心了。
+ */
+function stripFlightPayload(html: string): string {
+  return html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, "");
+}
+
 /** 注册一个账号，返回会话 Cookie */
 async function signUp(username: string): Promise<string> {
   const page = await fetch(`${BASE}/register`);
@@ -553,8 +575,56 @@ async function main() {
     `返回 ${legacyHome.status}`,
   );
 
-  /* ---------- 14. 清理 ---------- */
-  heading("第十四步 · 清理测试数据");
+  /* ---------- 14. 蓝图渲染页 ---------- */
+  heading("第十四步 · 蓝图渲染页（阶段 1 的预览）");
+
+  const bpRes = await fetch(`${BASE}/blueprint`, { headers: { cookie: cookieA } });
+  expect_(bpRes.status === 200, "登录后可以打开蓝图页", `返回 ${bpRes.status}`);
+  const bpHtml = stripFlightPayload(await bpRes.text());
+
+  expect_(bpHtml.includes("7 步转一圈"), "蓝图页有闭环标题", "蓝图页缺闭环标题");
+
+  /*
+    七张步骤卡。
+    断言的是**卡片数量**而不是"有没有某段文字" ——
+    以后改文案时这条不会红，但少渲染一张卡会立刻红。
+  */
+  const cardIds = [...bpHtml.matchAll(/data-step-card="([^"]+)"/g)].map((m) => m[1]);
+  expect_(
+    cardIds.length === 7,
+    `蓝图页渲染了 7 张步骤卡（${cardIds.join(" ")}）`,
+    `步骤卡数量不对：${cardIds.length} 张`,
+  );
+
+  /*
+    原理条每一张卡都要有。
+    它是这张图的主干（见 step-card.tsx 的说明），
+    少一条那张卡就退化成普通的流程图节点 —— 而这种事从画面上看不出来。
+  */
+  const rationaleCount = (bpHtml.match(/data-rationale/g) ?? []).length;
+  expect_(
+    rationaleCount === 7,
+    "七张卡都带原理条",
+    `只有 ${rationaleCount} 张卡带原理条，应该有 7 张`,
+  );
+
+  /*
+    「AI · 干活」只该出现在能改东西的那一步上。
+    这条守的是权限模型的界面投影：干活的徽章是实心的、最显眼，
+    一旦哪次改动让它多出现一次，一屏里就会有两个"最显眼"的东西。
+  */
+  const workBadges = (bpHtml.match(/data-actor-badge="AI · 干活"/g) ?? []).length;
+  expect_(
+    workBadges === 1,
+    "只有一步标着「AI · 干活」",
+    `有 ${workBadges} 步标着「AI · 干活」，应该只有 1 步`,
+  );
+
+  const humanBadges = (bpHtml.match(/data-actor-badge="人"/g) ?? []).length;
+  expect_(humanBadges === 1, "只有一步标着「人」", `有 ${humanBadges} 步标着「人」`);
+
+  /* ---------- 15. 清理 ---------- */
+  heading("第十五步 · 清理测试数据");
   for (const username of [userA, userB]) {
     const u = db.select().from(users).where(eq(users.username, username)).get();
     if (u) {
