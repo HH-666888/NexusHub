@@ -26,6 +26,7 @@
     "e2e:run": "tsx src/scripts/e2e-run.ts",
     "e2e:generate": "tsx src/scripts/e2e-generate.ts",
     "e2e:settings": "tsx src/scripts/e2e-settings.ts",
+    "e2e:canvas": "tsx src/scripts/e2e-canvas.ts",
     "demo:seed": "tsx src/scripts/demo-seed.ts",
     "demo:token": "tsx src/scripts/demo-token.ts",
     "probe": "tsx src/scripts/probe-capability.ts",
