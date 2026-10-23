@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  ACCENT_OPTIONS,
   appearanceToCssVars,
   DEFAULT_APPEARANCE,
   normalizeAppearance,
@@ -207,12 +208,52 @@ describe("辅助色方案", () => {
     }
   });
 
-  it("颜色是 RGB 三元组格式，能直接塞进 rgb(... / alpha)", () => {
+  /*
+    这条测试原来断言的是**逗号**格式，而它的名字却写着
+    「能直接塞进 rgb(... / alpha)」—— 名字是对的，断言是错的：
+    逗号恰恰就是塞不进去的原因。
+
+    CSS Color 4 里 rgb() 只认两种写法：
+      现代：rgb(34 211 238 / 0.4)   空格分隔，可带斜杠透明度
+      传统：rgb(34, 211, 238)       逗号分隔，不能带斜杠透明度
+    写成逗号就成了非法值，而变量是计算值阶段才替换的，
+    静态检查发现不了 —— 浏览器替换后把整条声明丢掉，
+    border-color 回落到 currentColor、box-shadow 回落到 none。
+
+    项目里 33 处写成逗号，整套「辅助色透明发光」一直是没生效的。
+    这条测试不但没拦住，还把这个错误固化了下来 ——
+    因为它断言的是「格式长什么样」，而不是「拼出来能不能用」。
+
+    现在改成**真的去拼**，并检查拼出来的东西合法。
+    断言意图而不是断言字面，这类「测试把 bug 固化」的坑才能避免。
+  */
+  it("颜色能直接塞进 rgb(... / alpha)，拼出来必须是合法值", () => {
     for (const t of TINT_OPTIONS) {
       if (t.id === "mono") continue;
       for (const c of t.colors) {
-        expect(c, `${t.id}: ${c}`).toMatch(/^\d{1,3},\d{1,3},\d{1,3}$/);
+        // 通道三元组：三个数字，空格分隔（不能是逗号）
+        expect(c, `${t.id}: ${c}`).toMatch(/^\d{1,3} \d{1,3} \d{1,3}$/);
+
+        // 真正拼一次，确保两者都成立
+        const solid = `rgb(${c})`;
+        const alpha = `rgb(${c} / 0.4)`;
+        expect(solid, `${t.id} 实色拼出来不合法：${solid}`).toMatch(
+          /^rgb\(\d{1,3} \d{1,3} \d{1,3}\)$/,
+        );
+        expect(alpha, `${t.id} 带透明度拼出来不合法：${alpha}`).toMatch(
+          /^rgb\(\d{1,3} \d{1,3} \d{1,3} \/ [\d.]+\)$/,
+        );
+
+        // 逗号是这条规矩的反面 —— 显式挡一道，免得有人「顺手改回去」
+        expect(c, `${t.id}: ${c} 用了逗号，配斜杠透明度会变成非法值`).not.toContain(",");
       }
+    }
+  });
+
+  it("主色的发光分量同样必须是空格分隔", () => {
+    for (const a of ACCENT_OPTIONS) {
+      expect(a.glow, `${a.id}: ${a.glow}`).toMatch(/^\d{1,3} \d{1,3} \d{1,3}$/);
+      expect(a.glow).not.toContain(",");
     }
   });
 

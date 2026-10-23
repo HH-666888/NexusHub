@@ -57,8 +57,8 @@ const TONE_TINT: Record<NodeTone, string> = {
   pending: "var(--ink-6)",
   running: "var(--tint-4)",
   passed: "var(--tint-6)",
-  failed: "220,38,38",
-  blocked: "217,119,6",
+  failed: "220 38 38",
+  blocked: "217 119 6",
 };
 
 interface StageNodeData extends Record<string, unknown> {

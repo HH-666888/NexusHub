@@ -89,11 +89,11 @@ export type ThemeId = (typeof THEME_OPTIONS)[number]["id"];
 
 /** 主色。强调色、它的浅版、以及用于透明发光的 RGB 分量 */
 export const ACCENT_OPTIONS = [
-  { id: "blue", label: "蓝", base: "#2563eb", soft: "#60a5fa", glow: "37,99,235" },
-  { id: "violet", label: "紫", base: "#7c3aed", soft: "#a78bfa", glow: "124,58,237" },
-  { id: "cyan", label: "青", base: "#0891b2", soft: "#22d3ee", glow: "8,145,178" },
-  { id: "emerald", label: "绿", base: "#059669", soft: "#34d399", glow: "5,150,105" },
-  { id: "amber", label: "橙", base: "#d97706", soft: "#fbbf24", glow: "217,119,6" },
+  { id: "blue", label: "蓝", base: "#2563eb", soft: "#60a5fa", glow: "37 99 235" },
+  { id: "violet", label: "紫", base: "#7c3aed", soft: "#a78bfa", glow: "124 58 237" },
+  { id: "cyan", label: "青", base: "#0891b2", soft: "#22d3ee", glow: "8 145 178" },
+  { id: "emerald", label: "绿", base: "#059669", soft: "#34d399", glow: "5 150 105" },
+  { id: "amber", label: "橙", base: "#d97706", soft: "#fbbf24", glow: "217 119 6" },
 ] as const;
 
 export type AccentId = (typeof ACCENT_OPTIONS)[number]["id"];
@@ -109,7 +109,30 @@ export interface TintPalette {
   id: string;
   label: string;
   hint: string;
-  /** 最多六个 RGB 三元组，按位置依次分配 */
+  /**
+   * 最多六个 RGB 三元组，按位置依次分配。
+   *
+   * ⚠️ **必须是空格分隔，不能写逗号。** ⚠️
+   *
+   * 这些值最终会被拼进 `rgb(var(--tint-N) / 0.4)` 这样的表达式。
+   * 而 CSS Color 4 只认两种写法：
+   *     现代：rgb(34 211 238 / 0.4)   ← 空格分隔，可带斜杠透明度
+   *     传统：rgb(34, 211, 238)       ← 逗号分隔，**不能**带斜杠透明度
+   * 写成逗号就成了非法值。而且变量是**计算值阶段**才替换进去的，
+   * 静态检查发现不了 —— 浏览器替换后判定非法，把整条声明丢掉：
+   *     border-color     → 回落到 currentColor（变成文字色）
+   *     box-shadow       → 回落到 none（发光没了）
+   *     background-image → 回落到 none（渐变没了）
+   *
+   * 这不是理论风险：项目里 33 处写成逗号，导致整套「辅助色透明发光」
+   * 一直是没生效的 —— 卡片渲染成普通灰框，而代码看起来完全正常。
+   * 是拿 CDP 去读计算样式才发现的（边框色等于文字色，发光是 none）。
+   *
+   * 空格分隔的好处是**两种用法都合法**：
+   *     rgb(34 211 238)          不带透明度
+   *     rgb(34 211 238 / 0.16)   带透明度
+   * 所以统一成空格，不需要为有没有 alpha 分别处理。
+   */
   colors: readonly string[];
 }
 
@@ -120,12 +143,12 @@ export const TINT_OPTIONS: readonly TintPalette[] = [
     hint: "青紫品红，AI 科技感最强的一档",
     // 取自参考图：深蓝底上的霓虹青、亮蓝、紫、品红、洋红
     colors: [
-      "34,211,238",
-      "59,130,246",
-      "139,92,246",
-      "236,72,153",
-      "217,70,239",
-      "16,185,129",
+      "34 211 238",
+      "59 130 246",
+      "139 92 246",
+      "236 72 153",
+      "217 70 239",
+      "16 185 129",
     ],
   },
   {
@@ -133,12 +156,12 @@ export const TINT_OPTIONS: readonly TintPalette[] = [
     label: "光谱",
     hint: "六色均匀铺开，识别度最高",
     colors: [
-      "56,189,248",
-      "99,102,241",
-      "168,85,247",
-      "236,72,153",
-      "245,158,11",
-      "16,185,129",
+      "56 189 248",
+      "99 102 241",
+      "168 85 247",
+      "236 72 153",
+      "245 158 11",
+      "16 185 129",
     ],
   },
   {
@@ -146,12 +169,12 @@ export const TINT_OPTIONS: readonly TintPalette[] = [
     label: "冷色",
     hint: "蓝青绿，克制、偏工程感",
     colors: [
-      "56,189,248",
-      "34,211,238",
-      "45,212,191",
-      "16,185,129",
-      "99,102,241",
-      "129,140,248",
+      "56 189 248",
+      "34 211 238",
+      "45 212 191",
+      "16 185 129",
+      "99 102 241",
+      "129 140 248",
     ],
   },
   {
@@ -159,12 +182,12 @@ export const TINT_OPTIONS: readonly TintPalette[] = [
     label: "暖色",
     hint: "琥珀橙红，偏活泼",
     colors: [
-      "245,158,11",
-      "251,146,60",
-      "244,63,94",
-      "236,72,153",
-      "217,119,6",
-      "234,88,12",
+      "245 158 11",
+      "251 146 60",
+      "244 63 94",
+      "236 72 153",
+      "217 119 6",
+      "234 88 12",
     ],
   },
   {
