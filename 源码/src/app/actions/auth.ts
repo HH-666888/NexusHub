@@ -112,7 +112,14 @@ export async function logoutAction(): Promise<void> {
   await logout(sqliteAuthStore, token);
   jar.delete(SESSION_COOKIE);
 
-  // 退出后回首页，而不是回登录页 ——
-  // 首页能重新讲清楚这是个什么东西，登录页不能
-  redirect("/");
+  /*
+    退出后回**欢迎页**，而不是回登录页 ——
+    欢迎页能重新讲清楚这是个什么东西，登录页不能。
+
+    这条注释原本写的是「回首页」，当时首页就是欢迎页。
+    后来把新首页挪到了根路径，而新首页**需要登录** ——
+    登出后 redirect("/") 会被弹回登录页，等于什么也没看到。
+    所以这里改成明确指向 /welcome。
+  */
+  redirect("/welcome");
 }

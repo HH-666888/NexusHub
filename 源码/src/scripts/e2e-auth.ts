@@ -98,20 +98,35 @@ async function main() {
   const username = `ea_${Date.now().toString(36)}`; // 36 进制时间戳，短且唯一
   const password = "abc123";
 
-  /* ---------- 1. 首页公开，工作台需要登录 ---------- */
-  heading("第一步 · 首页公开可看，工作台未登录应被拦截");
+  /* ---------- 1. 欢迎页公开；首页与工作台要登录 ---------- */
+  heading("第一步 · 欢迎页公开可看，首页与工作台未登录应被拦截");
 
-  const welcome = await fetch(BASE, { redirect: "manual" });
+  /*
+    这一步原来测的是「根路径公开」。首页搬到根路径之后就不成立了：
+      /         首页 —— 需要登录（会显示我的构建记录与累计花费）
+      /welcome  欢迎页 —— 公开
+    所以拆成两条：欢迎页必须公开，首页必须拦住。
+    **两条都要**：只测「首页拦住了」的话，万一欢迎页也一起被拦，
+    还没注册的人就永远看不到产品介绍，而这条路径没人会顺手测到。
+  */
+  const welcome = await fetch(`${BASE}/welcome`, { redirect: "manual" });
   const welcomeHtml = await welcome.text();
   expect_(
     welcome.status === 200,
-    `未登录访问首页 → 200（欢迎页对所有人开放）`,
-    `首页竟然返回 ${welcome.status}`,
+    "未登录访问欢迎页 → 200（给还没注册的人看）",
+    `欢迎页竟然返回 ${welcome.status}`,
   );
   expect_(
     welcomeHtml.includes("免费开始") && welcomeHtml.includes("规格化"),
     "欢迎页上能看到主视觉与六道工序",
     "欢迎页内容不完整",
+  );
+
+  const homeAnon = await fetch(BASE, { redirect: "manual" });
+  expect_(
+    homeAnon.status === 307 || homeAnon.status === 302,
+    "未登录访问首页 → 被跳转（首页会显示构建记录，不能公开）",
+    `首页竟然返回 ${homeAnon.status}`,
   );
 
   const studioAnon = await fetch(`${BASE}/studio`, { redirect: "manual" });
@@ -256,12 +271,18 @@ async function main() {
     "新会话无法访问工作台",
   );
 
-  const welcomeAuthed = await fetch(BASE, { headers: { cookie: cookie2! } });
+  /*
+    这条测的是**欢迎页**感知登录态：已登录的人不该再看到「免费开始」，
+    而该看到「进入工作台」。
+    首页搬到根路径之后，这里必须跟着指向 /welcome ——
+    否则测的就成了首页，而首页本来就要登录，测不出「感知登录态」这件事。
+  */
+  const welcomeAuthed = await fetch(`${BASE}/welcome`, { headers: { cookie: cookie2! } });
   const welcomeAuthedHtml = await welcomeAuthed.text();
   expect_(
     welcomeAuthedHtml.includes("进入工作台"),
-    "已登录时首页的按钮变成「进入工作台」，而不是「免费开始」",
-    "已登录时首页没有感知到登录态",
+    "已登录时欢迎页的按钮变成「进入工作台」，而不是「免费开始」",
+    "已登录时欢迎页没有感知到登录态",
   );
 
   /* ---------- 9. 清理 ---------- */

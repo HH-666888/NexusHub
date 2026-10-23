@@ -1,286 +1,84 @@
-import Link from "next/link";
+import { HomeHero } from "@/components/home/home-hero";
+import { HomeNav } from "@/components/home/home-nav";
+import { HomeProjects } from "@/components/home/home-projects";
+import { HomeShowcase } from "@/components/home/home-showcase";
+import type { RunView } from "@/components/cockpit/run-list";
 import { ThemeToggleServer } from "@/components/theme-toggle-server";
-import { Features } from "@/components/welcome/features";
-import { PipelineFlow } from "@/components/welcome/pipeline-flow";
-import { SectionHead } from "@/components/welcome/section-head";
-import { StatsRow } from "@/components/welcome/stats-row";
-import { getCurrentUser } from "@/server/auth-context";
+import { sqliteCostStore } from "@/adapters/store/cost-repo";
+import { sqliteRunStore } from "@/adapters/store/run-repo";
+import { describeTime } from "@/core/domain/run";
+import { listRuns } from "@/core/run/service";
+import { requireUser } from "@/server/auth-context";
+import { serverNow } from "@/server/clock";
 
 /**
- * 首页 / 欢迎页 —— 真正的入口
+ * 首页 /（登录之后的落地页）
  * ============================================================
- * 路由安排：
- *   /        首页（本文件）—— 任何人都能看，不需要登录
- *   /studio  工作台 —— 需要登录
+ * 版式参考的是 RunningHub 的创作首页：
+ * 居中大标题、一排类型分段、一个巨型输入框，下面是项目卡片与能力展示。
  *
- * 为什么不把工作台放在首页：
- *   首页要回答的是「这是个什么东西、值不值得试」，
- *   工作台要回答的是「我这一句话现在跑到哪了」。
- *   两个问题该由两个页面回答，混在一起两边都答不好。
+ * ── 和欢迎页是什么关系 ──
+ *   两个页面回答的是两个不同的问题：
+ *     /          已经登录的人：我要做什么、上次做到哪了
+ *     /welcome   还没注册的人：这是什么东西、值不值得试
+ *   把这两个问题塞进一个页面，两边都答不好 —— 所以分成两页。
  *
- * 关于外观配置：
- *   这里**一个配置判断都没有**。强调色写成 var(--app-accent)，
- *   装饰层写成固定的类名（bd-glow / bd-grid），显不显示由样式表说了算。
- *   结果是：换配色、换字体、换背景风格时，这个组件完全不需要重新渲染。
+ *   ── 为什么首页在 / 而不是 /home ──
+ *     一开始建在 /home 上（为了不动原来的欢迎页）。但那样打开网站
+ *     第一眼看到的还是旧的欢迎页，「首页换了」这件事要输地址才看得到。
+ *     所以把新首页挪到了根路径，欢迎页原样搬到 /welcome，
+ *     /home 留作重定向。
+ *     两个页面**内容一行没改**，只是换了地址。
  *
- * 性能说明（目标环境是 2 核 4G 的服务器）：
- *   这个页面查一次数据库（判断登录态 + 读外观配置），其余全是静态标记。
- *   所有动效都是纯 CSS，服务端一点负担都没有 ——
- *   动画跑在访客的浏览器上，服务器只发一次 HTML。
+ * ── 这一版是「画面版」 ──
+ *   版式、层级、留白都按最终形态做，但按钮还没接真实动作。
+ *   唯一接真数据的是两处**只读**的地方：项目卡片行与累计已花费。
+ *   之所以接上而不是写死：编几条假项目摆上去好看，
+ *   但用户点进去会发现不存在 —— 那比空着更糟。
  */
-export default async function WelcomePage() {
-  // 一次带索引的查询，用来决定右上角显示「登录」还是「进入工作台」
-  const user = await getCurrentUser();
+export default async function HomePage() {
+  const user = await requireUser();
+  const now = serverNow();
+
+  const rawRuns = await listRuns(sqliteRunStore, user.id);
+  const runs: RunView[] = rawRuns.map((r) => ({
+    ...r,
+    timeLabel: describeTime(r.createdAt, now),
+  }));
+
+  /*
+    累计已花费。没花过时传 null 而不是 0 ——
+    界面上要能区分「还没跑过」和「跑了但花了零元」。
+  */
+  const spent = await sqliteCostStore.totalByUser(user.id);
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
-      {/*
-        背景装饰
-        ------------------------------------------------------------
-        两个光斑 + 一层网格，都带 bd-* 类名。
-        显不显示由 <html data-backdrop> 决定的 CSS 规则控制 ——
-        「纯净」模式下这两个元素直接 display:none，连合成层都不会创建。
-
-        用 radial-gradient 而不是「大元素 + filter: blur()」：
-        径向渐变本身就是柔和的，不需要滤镜；
-        而对一个铺满屏幕的元素做模糊，是合成阶段最贵的操作之一。
-      */}
+    /*
+      点阵底纹铺在最外层。
+      它和已有的径向光晕叠加：点阵给空白一个尺度感，
+      光晕给页面一个视觉中心 —— 两者管的事不一样，不冲突。
+    */
+    <div className="dot-grid relative min-h-screen bg-[var(--color-canvas)]">
+      {/* 光晕。放在点阵之上、内容之下，不参与交互 */}
       <div
         aria-hidden
-        className="bd-glow bg-drift pointer-events-none absolute -top-40 left-1/2 h-[42rem] w-[42rem] -translate-x-1/2 opacity-60"
+        className="pointer-events-none absolute inset-x-0 top-0 h-[520px]"
         style={{
           background:
-            "radial-gradient(circle, rgba(var(--app-accent-glow), 0.24) 0%, rgba(var(--app-accent-glow), 0.06) 42%, transparent 68%)",
+            "radial-gradient(1100px 520px at 50% -10%, rgb(var(--app-accent-glow) / 0.1), transparent 65%)",
         }}
       />
-      <div
-        aria-hidden
-        className="bd-glow pointer-events-none absolute -bottom-52 right-[-10rem] h-[34rem] w-[34rem] opacity-50"
-        style={{
-          background:
-            "radial-gradient(circle, rgba(var(--app-accent-glow), 0.16) 0%, transparent 66%)",
-        }}
-      />
-      <div aria-hidden className="bd-grid pointer-events-none absolute inset-0" />
 
-      {/* ============================================================
-          顶栏
-          ============================================================ */}
-      <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5">
-        <div className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className="inline-block h-2.5 w-2.5 rounded-full bg-[var(--app-accent)]"
-          />
-          <span className="text-lg font-semibold tracking-tight">Nexus</span>
-          <span className="ml-2 hidden text-xs text-slate-500 sm:inline">
-            一个网页里的软件工厂
-          </span>
-        </div>
-
-        <nav className="flex items-center gap-2 text-sm">
-          <ThemeToggleServer />
-          {user ? (
-            <Link
-              href="/studio"
-              className="rounded-lg bg-[var(--app-accent)] px-4 py-2 font-medium text-white transition-[transform,background-color] duration-150 ease-out hover:-translate-y-px hover:opacity-90"
-            >
-              进入工作台
-            </Link>
-          ) : (
-            <>
-              <Link
-                href="/login"
-                className="px-3 py-2 text-slate-400 transition-colors duration-150 hover:text-slate-100"
-              >
-                登录
-              </Link>
-              <Link
-                href="/register"
-                className="rounded-lg bg-[var(--app-accent)] px-4 py-2 font-medium text-white transition-[transform,background-color] duration-150 ease-out hover:-translate-y-px hover:opacity-90"
-              >
-                免费开始
-              </Link>
-            </>
-          )}
-        </nav>
-      </header>
-
-      {/* ============================================================
-          主视觉
-          ============================================================ */}
-      <main className="relative z-10">
-        <section className="mx-auto w-full max-w-4xl px-6 pt-10 pb-10 text-center sm:pt-14">
-          <div
-            className="animate-rise inline-flex items-center gap-2 rounded-full border border-[var(--color-border-soft)] bg-[var(--color-surface)]/70 px-3 py-1 text-[11px] text-slate-400"
-            style={{ animationDelay: "0s" }}
-          >
-            <span
-              aria-hidden
-              className="inline-block h-1.5 w-1.5 rounded-full bg-green-400"
-            />
-            从一句话，到一个能点开就用的成品
-          </div>
-
-          <h1
-            className="animate-rise mt-6 text-4xl leading-[1.15] font-semibold tracking-tight sm:text-5xl"
-            style={{ animationDelay: "0.08s" }}
-          >
-            把「做一个……」
-            <br className="sm:hidden" />
-            <span className="bg-gradient-to-r from-[var(--app-accent-soft)] via-[var(--app-accent-soft)] to-[var(--app-accent)] bg-clip-text text-transparent">
-              变成真能用的东西
-            </span>
-          </h1>
-
-          <p
-            className="animate-rise mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base"
-            style={{ animationDelay: "0.16s" }}
-          >
-            你只管说清楚要什么。规格、架构、界面、代码、组装、验收
-            这六道工序由流水线自动跑完，
-            <span className="text-slate-300">
-              中间每一步你都能看见、能叫停、能改。
-            </span>
-          </p>
-
-          {/*
-            行动按钮刻意不放在这里。
-            首屏只回答「这是个什么东西」，等下面把「怎么做到的」和
-            「你最后拿到什么」讲完，再在那个位置给按钮 ——
-            那时候人才有判断依据。顶部导航里仍有入口，不影响急着开始的人。
-          */}
-        </section>
-
-        {/* ============================================================
-            01 · 它怎么跑
-            ------------------------------------------------------------
-            节标题 + 一句话输入示范 + 六道工序 + 成品样子 + 数字栏。
-
-            加节标题是这次改动的**主线**：原来这些块孤立地飘着，
-            现在被收进一个明确的「节」里，留白才变成节奏而不是空缺。
-            ============================================================ */}
-        <section className="mx-auto w-full max-w-5xl px-6 pb-16">
-          <SectionHead
-            no="01"
-            title="它怎么跑"
-            note="六道工序自动跑完 · 每一步都有可校验的产物"
-          />
-          <PipelineFlow />
-          <div className="mt-6">
-            <StatsRow />
-          </div>
-        </section>
-
-        {/* ============================================================
-            02 · 你能看到什么
-            ============================================================ */}
-        <section className="mx-auto w-full max-w-5xl px-6 pb-16">
-          <SectionHead
-            no="02"
-            title="你能看到什么"
-            note="这三条，同类工具普遍不做"
-          />
-          <Features />
-        </section>
-
-        {/* ============================================================
-            03 · 现在开始
-            ------------------------------------------------------------
-            放在「看完整条故事线」之后，而不是首屏。
-            前面刚说完「交给你的不是一个代码压缩包，是一个能点开就用的东西」，
-            这里接一句问话，顺理成章。
-
-            布局改成左右分栏：原来是一个 230px 高的盒子装两行字加两个按钮，
-            上下左右全是留白。改成分栏后同样的内容，高度减半，
-            信息密度立刻正常了。
-            ============================================================ */}
-        <section className="mx-auto w-full max-w-5xl px-6 pb-14">
-          <SectionHead no="03" title="现在开始" />
-
-          <div className="animate-rise relative overflow-hidden rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] px-6 py-7 sm:px-8">
-            {/* 一层跟随主色的柔光，让这个区块从页面里「浮」出来 */}
-            <div
-              aria-hidden
-              className="bd-glow pointer-events-none absolute -top-24 left-1/3 h-56 w-[32rem]"
-              style={{
-                background:
-                  "radial-gradient(circle, rgba(var(--app-accent-glow), 0.18) 0%, transparent 68%)",
-              }}
-            />
-
-            <div className="relative flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
-              <div>
-                <h2 className="text-xl font-semibold tracking-tight text-slate-100">
-                  准备好说第一句话了吗？
-                </h2>
-                <p className="mt-2 max-w-md text-xs leading-relaxed text-slate-400">
-                  建个号只要用户名和密码。首次跑通不需要配置任何东西 ——
-                  平台自己的模型额度已经就绪。
-                </p>
-              </div>
-
-              <div className="flex shrink-0 flex-wrap items-center gap-3">
-                {user ? (
-                  <Link
-                    href="/studio"
-                    className="rounded-lg bg-[var(--app-accent)] px-6 py-3 text-sm font-medium text-white transition-[transform,background-color] duration-150 ease-out hover:-translate-y-0.5 hover:opacity-90"
-                  >
-                    回到我的工作台
-                  </Link>
-                ) : (
-                  <>
-                    <Link
-                      href="/register"
-                      className="rounded-lg bg-[var(--app-accent)] px-6 py-3 text-sm font-medium text-white transition-[transform,background-color] duration-150 ease-out hover:-translate-y-0.5 hover:opacity-90"
-                    >
-                      免费开始
-                    </Link>
-                    <Link
-                      href="/login"
-                      className="rounded-lg border border-[var(--color-border-soft)] px-6 py-3 text-sm text-slate-300 transition-[transform,border-color,color] duration-150 ease-out hover:-translate-y-0.5 hover:border-slate-500 hover:text-white"
-                    >
-                      我已有账号
-                    </Link>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
-
-      {/* ============================================================
-          收尾文字带
-          ------------------------------------------------------------
-          参考 MiMo 首页那条重复的 "M I M O"。
-
-          作用不是装饰好看 —— 它把「内容突然结束」到「页脚」之间
-          那道生硬的切换，变成一个**有意的收束**。
-          纯 CSS 文本，没有图片、没有动画，一行 HTML。
-          ============================================================ */}
-      <div
-        aria-hidden
-        className="relative z-10 overflow-hidden border-y border-[var(--color-border-soft)] py-4 whitespace-nowrap select-none"
-      >
-        <span className="font-mono text-[11px] tracking-[0.42em] text-slate-700">
-          N E X U S · 一 个 网 页 里 的 软 件 工 厂 · N E X U S · 一 个 网 页
-          里 的 软 件 工 厂 · N E X U S · 一 个 网 页 里 的 软 件 工 厂 · N E X U
-          S · 一 个 网 页 里 的 软 件 工 厂 ·
-        </span>
+      <div className="relative">
+        <HomeNav
+          spentCny={spent > 0 ? spent : null}
+          user={{ displayName: user.displayName, username: user.username }}
+          themeToggle={<ThemeToggleServer />}
+        />
+        <HomeHero />
+        <HomeProjects runs={runs} />
+        <HomeShowcase />
       </div>
-
-      {/* ============================================================
-          页脚
-          ============================================================ */}
-      <footer className="relative z-10 border-t border-[var(--color-border-soft)]">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-2 px-6 py-6 text-xs text-slate-500">
-          <span>Nexus · 一个网页里的软件工厂</span>
-          <span>
-            全国高校 AI Web 开发挑战赛参赛作品 · 演示环境仅供评审使用
-          </span>
-        </div>
-      </footer>
     </div>
   );
 }

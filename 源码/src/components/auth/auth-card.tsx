@@ -27,9 +27,11 @@ export function AuthCard({
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm">
-        {/* 品牌区 */}
+        {/* 品牌区。点它去**欢迎页**而不是根路径 ——
+            根路径是需要登录的新首页，从登录页点它会被弹回登录页，
+            形成一个点了没反应的死循环。 */}
         <div className="mb-8 text-center">
-          <Link href="/" className="inline-block">
+          <Link href="/welcome" className="inline-block">
             <div className="flex items-center justify-center gap-2">
               <span
                 aria-hidden

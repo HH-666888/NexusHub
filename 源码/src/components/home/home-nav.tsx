@@ -28,7 +28,7 @@ export interface HomeNavProps {
 }
 
 const LINKS = [
-  { href: "/home", label: "首页" },
+  { href: "/", label: "首页" },
   { href: "/studio", label: "构建" },
   { href: "/studio?tab=graph", label: "产物" },
   { href: "/settings", label: "设置" },
@@ -41,7 +41,7 @@ export function HomeNav({ spentCny, user, themeToggle }: HomeNavProps) {
     <header className="sticky top-0 z-20 border-b border-[var(--color-border-soft)] bg-[var(--color-canvas)]/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-[1400px] items-center gap-8 px-8">
         {/* 品牌 */}
-        <Link href="/home" className="flex flex-none items-center gap-2">
+        <Link href="/" className="flex flex-none items-center gap-2">
           <span
             aria-hidden
             className="inline-block h-2 w-2 rounded-full bg-[var(--app-accent)]"

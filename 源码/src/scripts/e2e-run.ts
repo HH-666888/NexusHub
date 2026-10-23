@@ -474,10 +474,10 @@ async function main() {
   });
   expect_(anonAnswers.status === 401, "未登录不能提交回答", `返回 ${anonAnswers.status}`);
 
-  /* ---------- 13. 新首页 /home ---------- */
-  heading("第十三步 · 首页（登录后的落地页）");
+  /* ---------- 13. 首页 / 与欢迎页 /welcome ---------- */
+  heading("第十三步 · 首页（登录后的落地页）与欢迎页");
 
-  const homeRes = await fetch(`${BASE}/home`, { headers: { cookie: cookieA } });
+  const homeRes = await fetch(`${BASE}/`, { headers: { cookie: cookieA } });
   expect_(homeRes.status === 200, "登录后可以打开首页", `返回 ${homeRes.status}`);
   const homeHtml = await homeRes.text();
 
@@ -499,11 +499,45 @@ async function main() {
     断言 307 而不是 200：首页会显示用户的构建记录与累计花费，
     不能对未登录的人开放。
   */
-  const homeAnon = await fetch(`${BASE}/home`, { redirect: "manual" });
+  const homeAnon = await fetch(`${BASE}/`, { redirect: "manual" });
   expect_(
     homeAnon.status === 307 || homeAnon.status === 302,
     "未登录访问首页 → 跳登录页",
     `返回 ${homeAnon.status}，可能把构建记录暴露给了未登录的人`,
+  );
+
+  /*
+    欢迎页要**公开**，而且搬家之后内容不能丢。
+    这两条一起断言是有意的：搬家最容易出的错不是页面打不开，
+    而是「能打开但内容少了一截」—— 那种错没人会立刻发现。
+  */
+  const welcomeAnon = await fetch(`${BASE}/welcome`);
+  expect_(welcomeAnon.status === 200, "未登录也能打开欢迎页", `返回 ${welcomeAnon.status}`);
+  const welcomeHtml = await welcomeAnon.text();
+  for (const [label, needle] of [
+    ["产品定位", "一个网页里的软件工厂"],
+    ["主视觉按钮", "免费开始"],
+    ["六道工序", "规格化"],
+  ] as const) {
+    expect_(
+      welcomeHtml.includes(needle),
+      `欢迎页仍然有「${label}」`,
+      `欢迎页缺少「${label}」—— 搬家时可能丢了内容`,
+    );
+  }
+
+  /*
+    旧地址 /home 要重定向，不能 404。
+    已经发出去的链接与书签都指着它；404 会让人以为功能没了。
+  */
+  const legacyHome = await fetch(`${BASE}/home`, {
+    headers: { cookie: cookieA },
+    redirect: "manual",
+  });
+  expect_(
+    legacyHome.status === 307 || legacyHome.status === 302,
+    "旧的 /home 重定向到 /（老链接不 404）",
+    `返回 ${legacyHome.status}`,
   );
 
   /* ---------- 14. 清理 ---------- */
