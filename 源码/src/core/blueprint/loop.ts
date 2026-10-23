@@ -40,6 +40,20 @@ import type { ActorKind, Metric } from "./org";
  */
 export type AccessMode = "read" | "write";
 
+/**
+ * 这一步**碰什么**。
+ *
+ * ── 为什么单独一个字段，不能从 actor/mode 推 ──
+ *   「写代码」和「上线发布」都是 ai + write，
+ *   但一个改的是自己这边的工作区，一个动的是外面看得见的东西。
+ *   风险差着量级，而 actor 和 mode 都表达不了这件事。
+ *   参考图上「上新、下架、对外回复，只有人能点头」这句原理，
+ *   说的正是这一档 —— 所以它必须能单独写出来。
+ *
+ * 三档的含义见 authority.ts。
+ */
+export type ActionScope = "observe" | "internal" | "outward";
+
 export interface LoopStep {
   id: string;
   /** 序号。参考图左上角那个 01 / 02 / …。从 1 开始 */
@@ -49,6 +63,12 @@ export interface LoopStep {
   actor: ActorKind;
   /** 能不能改东西。程序和人可以不填，AI 必填 */
   mode?: AccessMode;
+  /**
+   * 碰什么。**可以不填，但缺省是保守推出来的**（见 authority.ts 的 resolveScope）：
+   * 涉及写的步骤一律按「对外」处理，于是需要人点头。
+   * 宁可多问一次，也不要让一个漏填的字段把线上动作放过去。
+   */
+  scope?: ActionScope;
   /** 做什么。一句话，越具体越好 */
   duty: string;
   /**
