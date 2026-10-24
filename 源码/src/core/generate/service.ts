@@ -45,7 +45,27 @@ export type GeneratePhase =
   | "failed"; // 失败
 
 export type GenerateEvent =
-  | { kind: "phase"; phase: GeneratePhase; label: string }
+  | {
+      kind: "phase";
+      phase: GeneratePhase;
+      label: string;
+      /**
+       * 这条 phase 事件是干什么的。
+       *
+       * ── 为什么需要一个标记位，而不是让界面去认那句话 ──
+       *   回流（07）说的是「带上了上一轮没过的 N 项检查」。
+       *   界面要把它**留在一个固定的地方**，而不是让它被后面
+       *   一串 phase 事件一路顶掉 —— 那样用户回头看时，
+       *   唯一能证明"回流真的发生了"的东西就没了。
+       *
+       *   而靠 `label.includes("别再犯")` 去认是极脆的：
+       *   改一个字，回流就静默失效，而且没有任何测试会红。
+       *
+       * 只有 "callback" 一种取值 —— 别的 phase 不需要这个。
+       * 需要第二种时再加，不要提前造一个开放字符串。
+       */
+      note?: "callback";
+    }
   /** 思考片段。前端逐段追加即可，不需要自己拼接 */
   | { kind: "reasoning"; delta: string }
   /** 正文片段 */
@@ -95,6 +115,17 @@ export interface GenerateInput {
   spentCny?: number;
   effort?: ModelEffort;
   maxOutputTokens?: number;
+  /**
+   * 回流上下文：上一轮没过的地方（任务 07 回流）。
+   *
+   * ── 为什么是调用方拼好了传进来，而不是内核自己去捞 ──
+   *   内核是纯逻辑，不碰数据库。而且"上一轮"这个概念只有编排层
+   *   才知道（它管着这条运行的生命周期），内核不该去猜。
+   *
+   * 不传就是没有上一轮 —— 这时**不加那条消息**。
+   * 加一条空消息会白白多花 token，还会让模型以为有什么言外之意。
+   */
+  callbackContext?: string | null;
 }
 
 /* ============================================================
@@ -137,6 +168,21 @@ export async function* generateApp(
       maxOutputTokens: input.maxOutputTokens ?? GENERATE_MAX_OUTPUT_TOKENS,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
+        /*
+          回流（任务 07）。
+
+          ── 为什么单独一条 system 消息，而不是拼进用户那句话 ──
+            拼进去的话，用户的原话就被改了 ——
+            而那句话是这次运行的**起点**（run.prompt 里存着原文），
+            改了之后"模型看到的"和"记录里存的"就不是一回事了。
+
+          ── 为什么放在用户那句话前面 ──
+            它是**背景**，不是这次的诉求。
+            放在后面会让模型把它当成新的指令，冲淡用户真正想要的东西。
+        */
+        ...(input.callbackContext
+          ? [{ role: "system" as const, content: input.callbackContext }]
+          : []),
         { role: "user", content: input.prompt },
       ],
     });

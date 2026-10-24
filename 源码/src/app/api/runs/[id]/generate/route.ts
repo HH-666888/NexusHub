@@ -35,6 +35,13 @@ import {
 } from "@/core/generate/gate";
 import type { AppSpec } from "@/core/domain/spec";
 import { resolveGatePolicy } from "@/core/pipeline/gate-policy";
+import {
+  CALLBACK_ARTIFACT_NAME,
+  buildCallbackContext,
+  buildCallbackRecord,
+  describeCallback,
+  extractPreviousAttempt,
+} from "@/core/pipeline/callback";
 import { getOwnedRun } from "@/core/run/service";
 import { getCurrentUser } from "@/server/auth-context";
 
@@ -165,12 +172,47 @@ export async function GET(
         const runPrompt = run.prompt;
 
         /*
+          ---------- 07 回流：先把上一轮捞出来 ----------
+          必须在清空事件**之前**读 —— 那些事件就是上一轮的全部记录。
+
+          参考图上闭环的最后一步是「下一轮的数据，回到起点」。
+          六道工序里原本没有这一环：跑完就结束，再点一次「重新生成」
+          等于把上一次原样重跑一遍，模型不知道上次哪里没过，
+          于是在同一个地方再错一次。用户看到的是"又花了钱，还是同样的毛病"。
+        */
+        const priorEvents = await sqliteEventStore.listByRun(runId);
+        const previous = extractPreviousAttempt(priorEvents);
+        const callbackContext = buildCallbackContext(previous);
+
+        /*
           重新生成会先走 DELETE 清掉旧事件，所以到这里事件日志应当是空的。
           万一不是（比如上一次生成中途崩了、事件写了一半），
           清掉再从 0 开始 —— 两条时间线混在一起比没有时间线更糟。
+
+          ⚠️ 顺序：上面已经读完了才清。反过来就什么也捞不到。
         */
         if ((await sqliteEventStore.countByRun(runId)) > 0) {
           await sqliteEventStore.deleteByRun(runId);
+        }
+
+        /*
+          把回流内容落成产物。
+          它是这次尝试的一部分，和 spec.json 平级 ——
+          事后能回答「这一次生成，模型到底被提醒了什么」。
+          没有这个文件的话，回流失效时只能靠翻日志猜。
+        */
+        if (previous && callbackContext) {
+          await fsArtifactStore.save({
+            runId,
+            kind: "json",
+            // 和 spec.json 同一套路径约定：<运行id>/<文件名>
+            path: `${runId}/${CALLBACK_ARTIFACT_NAME}`,
+            content: JSON.stringify(
+              buildCallbackRecord(runId, previous, callbackContext, Date.now()),
+              null,
+              2,
+            ),
+          });
         }
 
         // 端口只建一次，两个阶段共用 —— 它们本来就该用同一套接入配置
@@ -188,6 +230,29 @@ export async function GET(
          * 先出成品再补规格，那份规格就只是事后解释，不是约束。
          */
         async function* fullPipeline(): AsyncIterable<GenerateEvent> {
+          /*
+            ---------- 07 回流：先说给用户听 ----------
+            回流是**往模型上下文里塞东西** —— 一个用户看不见的动作。
+            不告诉他的话，他只会看到"这一次好像聪明了一点"，而不知道为什么。
+
+            更要紧的是：一个偷偷改提示词的系统，
+            和一个偷偷改代码的系统一样不可信。
+            所以说在生成开始之前，而不是混在中间某句日志里。
+          */
+          const callbackNote = describeCallback(previous);
+          if (callbackNote) {
+            /*
+              phase 用 "spec" 而不是新造一个 "callback"。
+              GeneratePhase 是个封闭联合，加一个值要动事件类型、
+              落库校验、回放分帧、界面渲染——为一句提示语不值得。
+
+              而 note: "callback" 是给界面的标记位：
+              让它把这句话**留在固定位置**，而不是被后面一串
+              phase 事件顶掉。见 GenerateEvent 里那段说明。
+            */
+            yield { kind: "phase", phase: "spec", label: callbackNote, note: "callback" };
+          }
+
           // ---------- 第一道：规格化 ----------
           for await (const e of runSpecStage(ports, {
             runId,
@@ -254,6 +319,8 @@ export async function GET(
             prompt: runPrompt,
             costLimitCny: env.run.costLimitCny,
             spentCny: spentAfterSpec,
+            // 07 回流：上一轮没过的地方，这一段会作为一条 system 消息发给模型
+            callbackContext,
           });
         }
 

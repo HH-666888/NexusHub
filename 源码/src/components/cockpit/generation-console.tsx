@@ -121,6 +121,15 @@ export function GenerationConsole({
   }, [spec, submitting, runId, draft]);
   const [phase, setPhase] = useState<GeneratePhase | null>(null);
   const [phaseLabel, setPhaseLabel] = useState("");
+  /**
+   * 回流（07）那句提示，单独留一份。
+   *
+   * 不放进 phaseLabel：那个值会被后面一串 phase 事件一路顶掉，
+   * 而「这一次带上了上一轮的问题」需要留在界面上 ——
+   * 不然用户回头看时，唯一的证据已经没了。
+   * 空串表示这一轮没有回流。
+   */
+  const [callbackNote, setCallbackNote] = useState("");
   const [text, setText] = useState("");
   const [reasoning, setReasoning] = useState("");
   const [cost, setCost] = useState<number | null>(null);
@@ -202,6 +211,7 @@ export function GenerationConsole({
     setLatency(null);
     setUsage(null);
     setChecks(null);
+    setCallbackNote("");
     setError(null);
     setStartedAt(Date.now());
     setElapsed(0);
@@ -221,7 +231,14 @@ export function GenerationConsole({
       switch (event.kind) {
         case "phase":
           setPhase(event.phase);
-          setPhaseLabel(event.label);
+          /*
+            回流（07）单独留一份。
+            phaseLabel 会被后面一串 phase 事件一路顶掉，
+            而「回流真的发生了」这件事需要留在固定的地方 ——
+            否则用户回头看时，唯一的证据已经没了。
+          */
+          if (event.note === "callback") setCallbackNote(event.label);
+          else setPhaseLabel(event.label);
           /*
             注意这里**没有**把 awaiting 也当成结束。
             门禁停下时流确实结束了，但用户接下来要做的是回答问题、
@@ -349,6 +366,23 @@ export function GenerationConsole({
             }`}
           >
             检查 {passed}/{total} 通过
+          </span>
+        )}
+
+        {/*
+          回流（07）的痕迹。
+          放在这一排状态里，而不是跟着 phase 文案一闪而过 ——
+          「这一次带上了上一轮的问题」是需要事后也能看到的事实。
+          它同时对应一个 callback.json 产物，用户可以打开看
+          到底被提醒了什么。
+        */}
+        {callbackNote && (
+          <span
+            data-callback-note
+            title="上一轮没过的地方已经作为上下文喂给了模型"
+            className="rounded border border-cyan-800/60 bg-cyan-950/30 px-1.5 py-px text-[10px] text-cyan-300/90"
+          >
+            ↻ {callbackNote}
           </span>
         )}
 
