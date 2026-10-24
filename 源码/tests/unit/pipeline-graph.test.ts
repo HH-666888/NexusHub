@@ -474,3 +474,79 @@ describe("流水线图 · 权限四件套", () => {
     expect(verify.access, "只读不该把状态也改了").toBe("read");
   });
 });
+
+/* ============================================================
+   门禁的「声明」与「实际」
+   ============================================================
+   改之前：stages.ts 里那句 humanGate: true 没有任何代码读它，
+   实际控制门禁的是 SPEC_GATE 环境变量，默认放行 —— 而且放行是静默的。
+   界面上的「要人点头」于是成了一句空话。
+
+   这一组测的就是：**声明和实际不一致时，图上必须看得出来。**
+   ============================================================ */
+
+describe("流水线图 · 门禁的声明与实际", () => {
+  it("不传覆盖时，实际等于声明", () => {
+    const g = buildPipelineGraph({ run: null });
+    for (const n of g.nodes) {
+      expect(n.gateActive, `${n.name} 的默认 gateActive 和 approval 不一致`).toBe(
+        n.approval === "human",
+      );
+    }
+  });
+
+  it("按声明来：规格化会停", () => {
+    const g = buildPipelineGraph({ run: null, gateOverride: "declared" });
+    const spec = g.nodes.find((n) => n.id === "spec")!;
+    expect(spec.approval).toBe("human");
+    expect(spec.gateActive).toBe(true);
+  });
+
+  it("【关键】覆盖成放行时，图上看得出来", () => {
+    /*
+      声明要人点头、实际不停 —— 这是比没有门禁更糟的状态：
+      用户会以为有人把关过了。
+
+      所以 approval（声明）和 gateActive（实际）必须是两个字段，
+      而且图上两个都要看得到。只留一个的话，
+      要么图上骗人，要么运行时骗人。
+    */
+    const g = buildPipelineGraph({ run: null, gateOverride: "continue" });
+    const spec = g.nodes.find((n) => n.id === "spec")!;
+    expect(spec.approval, "声明被覆盖改掉了").toBe("human");
+    expect(spec.gateActive, "覆盖成放行之后 gateActive 还是 true").toBe(false);
+  });
+
+  it("覆盖成放行，只影响声明要批的那一道", () => {
+    // 本来就不用批的工序，放行不算"变化"
+    const g = buildPipelineGraph({ run: null, gateOverride: "continue" });
+    for (const n of g.nodes) {
+      if (n.approval === "none") {
+        expect(n.gateActive, `${n.name} 本来不用批，却被放行影响了`).toBe(false);
+      }
+    }
+  });
+
+  it("强制停下：本来不用批的工序也会停", () => {
+    const g = buildPipelineGraph({ run: null, gateOverride: "pause" });
+    for (const n of g.nodes) {
+      expect(n.gateActive, `${n.name} 强制停下却没停`).toBe(true);
+    }
+    // 但"声明"没变 —— 加严不改声明
+    expect(g.nodes.find((n) => n.id === "build")!.approval).toBe("none");
+  });
+
+  it("没有一种组合会「声明要批、实际没停、而又看不出来」", () => {
+    for (const o of ["declared", "pause", "continue"] as const) {
+      const g = buildPipelineGraph({ run: null, gateOverride: o });
+      for (const n of g.nodes) {
+        if (n.approval === "human" && !n.gateActive) {
+          // 这就是"不一致"，两个字段刚好能表达它 ——
+          // 界面据此显示「要人点头（已放行）」
+          expect(n.approval).toBe("human");
+          expect(n.gateActive).toBe(false);
+        }
+      }
+    }
+  });
+});

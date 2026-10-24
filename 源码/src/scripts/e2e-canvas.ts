@@ -467,6 +467,43 @@ async function main() {
       `带门禁的是：${gd.gates.join(" ") || "（无）"}`,
     );
 
+    /*
+      ---------- 门禁的「声明」与「实际」 ----------
+      改之前 stages.ts 里那句 humanGate: true 没有任何代码读它，
+      实际控制门禁的是 SPEC_GATE 环境变量。两个真相来源，
+      而且放行是静默的 —— 界面上写着「要人点头」而实际不停。
+
+      现在图上会同时说出两件事：声明要不要批（那段文字），
+      以及实际会不会停（data-node-gate-active）。
+      两者不一致时，文字会变成「要人点头（已放行）」并且划掉。
+    */
+    const gateActive = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const el = document.querySelector('[data-node-gate]');
+        return el ? el.getAttribute('data-node-gate-active') : null;
+      })()`,
+      returnByValue: true,
+    });
+    const active = gateActive.result!.value as string | null;
+    info(`门禁标记：${active === "1" ? "会停下问人" : "已放行（模型会替你猜）"}`);
+
+    expect_(
+      active === "0" || active === "1",
+      "门禁标记说出了实际会不会停",
+      `data-node-gate-active 是 ${active}`,
+    );
+
+    /*
+      当前跑端到端时 SPEC_GATE 没设，也就是 "declared" ——
+      按权限模型来，规格化声明了要人点头，所以实际会停。
+      这条断言把"默认值就是声明"这件事钉住。
+    */
+    expect_(
+      active === "1",
+      "没设 SPEC_GATE 时按权限模型来：规格化会停下问人",
+      `没设 SPEC_GATE，但门禁标记是 ${active} —— 默认值不是 declared？`,
+    );
+
     expect_(
       gd.watches.length === 6,
       "六道工序都写了「看什么数」",

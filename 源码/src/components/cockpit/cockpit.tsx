@@ -14,6 +14,7 @@ import {
   type CostByStage,
 } from "@/core/domain/stage-cost";
 import { STAGES, type StageStatus } from "@/core/pipeline/stages";
+import type { GateOverride } from "@/core/pipeline/gate-policy";
 import { CockpitHeader } from "./cockpit-header";
 import { RunList, type RunView } from "./run-list";
 import { RunWorkbench } from "./run-workbench";
@@ -54,6 +55,15 @@ export interface CockpitProps {
    * 而且客户端组件不该直接碰数据库。
    */
   costByStage?: CostByStage;
+  /**
+   * 人工门禁的运行时覆盖，服务端读环境变量后传下来。
+   *
+   * 为什么要一路传到图上：图上写「要人点头」而运行时不真的停，
+   * 是比没有门禁更糟的状态 —— 用户会以为有人把关过了。
+   * 让图自己说出这件事，比只在事件流里说一句更靠得住
+   *（事件流是跑的时候才有，图随时挂在那儿）。
+   */
+  gateOverride?: GateOverride;
   /** 主题开关。由服务端页面渲染好传进来，见 cockpit-header 里的说明 */
   themeToggle?: React.ReactNode;
 }
@@ -64,6 +74,7 @@ export function Cockpit({
   selectedRun,
   artifactBytes,
   costByStage = {},
+  gateOverride = "declared",
   themeToggle,
 }: CockpitProps) {
   const searchParams = useSearchParams();
@@ -289,6 +300,7 @@ export function Cockpit({
                   cost_records 按阶段归集好了，就该用真的。
                 */
                 costByStage={costByStage}
+                gateOverride={gateOverride}
                 className="-m-1"
               />
             )}

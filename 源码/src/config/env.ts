@@ -41,6 +41,24 @@ function num(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * 读门禁覆盖的那个环境变量。
+ *
+ * ── 为什么写成一个函数而不是 `=== "pause" ? ... : ...` ──
+ *   那个写法**只有一个有效值**：除了 "pause" 之外全是"放行"。
+ *   于是 `SPEC_GATE=continue` 和 `SPEC_GATE=香蕉` 和没设
+ *   得到的结果一模一样 —— 一个拼错的值会静默变成"放行"，
+ *   而放行意味着模型替用户猜。
+ *
+ *   这里改成白名单：不认识的值一律回落到 "declared"（按权限模型来）。
+ *   拼错时的后果是"多问了一次人"，而不是"少问了一次" ——
+ *   这两个代价不对等。
+ */
+function parseGateOverride(raw: string): "declared" | "pause" | "continue" {
+  if (raw === "pause" || raw === "continue" || raw === "declared") return raw;
+  return "declared";
+}
+
 export const env = {
   model: {
     baseUrl: str("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
@@ -64,12 +82,20 @@ export const env = {
      *  否则旧产物会被误判为兼容 —— 这是「失效传播」的判据 */
     workflowVersion: "v1",
     /**
-     * 规格里出现疑问时，是停下来等人回答，还是继续做。
+     * 人工门禁的**运行时覆盖**。
      *
-     * "pause"    —— 停下来，界面上把疑问做成表单，答完再继续。
-     * "continue" —— 直接做，疑问照样显示在界面上，但不拦。
+     * ⚠️ 它不是这件事的真相来源。
+     *    真相在 core/pipeline/stages.ts：规格化那一道声明了
+     *    `humanGate: true`，也就是"这一步要人点头"。
+     *    这里只是允许你在运行时改主意，规则在 core/pipeline/gate-policy.ts。
      *
-     * ── 为什么默认是 continue ──
+     * "declared" —— 按声明来（也就是步骤自己的权限模型说了算）
+     * "pause"    —— 强制停下等人。**加严永远允许**，不需要理由
+     * "continue" —— 强制放行。这是**覆盖声明**，所以会留下痕迹：
+     *               事件流里会明说"这一步声明了要人点头，但当前设置
+     *               是先放行，模型会替你猜"。
+     *
+     * ── 为什么默认 continue ──
      *   这是跑真实端到端时改的。原来默认拦，结果发现模型对
      *   「做一个番茄钟」这种一句话需求也会问出 3 个问题 ——
      *   也就是说**几乎每次生成都会被拦一次**。
@@ -79,11 +105,14 @@ export const env = {
      *
      *   所以默认放行：疑问仍然显示，用户看到了可以主动回头改，
      *   但不会因为没回答而拿不到东西。
-     *   想要「不替你猜」的人把它设成 pause。
      *
-     *   两种模式都是完整实现，切换只改这一个环境变量。
+     * ── 但覆盖不能是静默的 ──
+     *   一个静默关掉的门禁，和没有门禁是同一件事 —— 而且更糟，
+     *   因为界面上还写着「要人点头」，用户会以为有人把关过了。
+     *   所以 resolveGatePolicy 会把它标成 overridden 并带上 overrideNote，
+     *   事件流照实说。
      */
-    specGate: str("SPEC_GATE", "continue") === "pause" ? "pause" : "continue",
+    specGate: parseGateOverride(str("SPEC_GATE", "declared")),
   },
   paths: {
     database: str("DATABASE_PATH", "./data/nexus.db"),

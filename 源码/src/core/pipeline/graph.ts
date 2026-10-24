@@ -25,6 +25,7 @@ import {
   type StageStatus,
 } from "./stages";
 import type { AccessMode, ActorKind, Approver } from "./authority";
+import { resolveGatePolicy, type GateOverride } from "./gate-policy";
 import { computeStageStatuses } from "./progress";
 import type { RunProgressInput } from "./progress";
 import { costOf, type CostByStage } from "../domain/stage-cost";
@@ -64,6 +65,15 @@ export interface PipelineNode {
   access: AccessMode;
   /** 要不要人点头。**是算出来的**（规则给下限，humanGate 可以抬高） */
   approval: Approver;
+  /**
+   * 门禁**实际会不会停**。
+   *
+   * 和 approval 的区别正是「声明」与「实际」的区别：
+   *   approval === "human" && gateActive === false
+   *     → 声明要人点头，但运行时被覆盖成放行了。
+   *       这是图上必须标出来的状态（见 BuildGraphInput.gateOverride）。
+   */
+  gateActive: boolean;
   /** 这一阶段的判断依据 —— 「你凭什么说做完了」 */
   watches: StageMetric[];
 
@@ -167,6 +177,19 @@ export interface BuildGraphInput {
    * 想加「这一步为什么贵」就得再改一次签名。
    */
   costByStage?: CostByStage;
+  /**
+   * 人工门禁的运行时覆盖。
+   *
+   * ── 为什么图要知道这件事 ──
+   *   图上写「要人点头」，而运行时不真的停 —— 这是比没有门禁更糟的状态：
+   *   用户会以为有人把关过了。
+   *
+   *   所以覆盖必须**在图上也看得见**，不能只出现在事件流里
+   *   （事件流是跑的时候才有的，而图是随时都挂在那儿的）。
+   *
+   * 不传就是 "declared"（按工序自己的权限模型来），也就是默认没有覆盖。
+   */
+  gateOverride?: GateOverride;
 }
 
 /**
@@ -179,6 +202,7 @@ export interface BuildGraphInput {
  */
 export function buildPipelineGraph(input: BuildGraphInput): PipelineGraph {
   const statuses = computeStageStatuses(input.run);
+  const gateOverride: GateOverride = input.gateOverride ?? "declared";
   const costByStage = input.costByStage ?? {};
 
   const nodes: PipelineNode[] = STAGES.map((s, i) => {
@@ -204,6 +228,11 @@ export function buildPipelineGraph(input: BuildGraphInput): PipelineGraph {
       actor: s.actor,
       access: s.access,
       approval: stageApproval(s),
+      /*
+        门禁实际会不会停。
+        不传覆盖就是"按声明来"，那时 gateActive === (approval === "human")。
+      */
+      gateActive: resolveGatePolicy(s.id, gateOverride).active,
       watches: s.watches,
 
       x: pos.x,

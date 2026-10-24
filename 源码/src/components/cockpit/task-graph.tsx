@@ -31,6 +31,7 @@ import {
 } from "@/core/pipeline/graph";
 import type { RunProgressInput } from "@/core/pipeline/progress";
 import { actorBadge } from "@/core/pipeline/authority";
+import type { GateOverride } from "@/core/pipeline/gate-policy";
 import type { StageId } from "@/core/pipeline/stages";
 import type { CostByStage } from "@/core/domain/stage-cost";
 
@@ -245,15 +246,31 @@ function StageNode({ data }: NodeProps) {
         {node.approval === "human" && (
           <span
             data-node-gate={node.id}
-            title="这一步会停下来问人"
+            /*
+              ── 为什么要看 gateActive 而不是只看 approval ──
+                声明要人点头、而运行时被覆盖成放行 —— 这是比没有门禁
+                更糟的状态：用户会以为有人把关过了。
+
+                所以覆盖必须**在图上看得见**，不能只出现在事件流里
+                （事件流是跑的时候才有的，而这张图随时挂在那儿）。
+            */
+            data-node-gate-active={node.gateActive ? "1" : "0"}
+            title={
+              node.gateActive
+                ? "这一步会停下来问人"
+                : "这一步声明了要人点头，但当前设置是先放行 —— 模型会替你猜"
+            }
             className="rounded px-1.5 py-px text-[9.5px] leading-tight whitespace-nowrap"
             style={{
               background: dim ? "none" : "rgb(249 115 22 / 0.16)",
               color: dim ? "var(--ink-6)" : "rgb(253 186 116)",
               border: `1px solid ${dim ? "var(--color-border-soft)" : "rgb(249 115 22 / 0.35)"}`,
+              // 被放行的那一支用划掉的样子，和"真的会停"拉开距离
+              textDecoration: node.gateActive ? undefined : "line-through",
+              opacity: node.gateActive ? 1 : 0.6,
             }}
           >
-            要人点头
+            {node.gateActive ? "要人点头" : "要人点头（已放行）"}
           </span>
         )}
       </div>
@@ -326,13 +343,27 @@ export interface TaskGraphProps {
   costByStage?: CostByStage;
   /** 回退边要不要显示。默认显示 —— 这是我们的差异点 */
   showFallback?: boolean;
+  /**
+   * 人工门禁的运行时覆盖，由服务端读环境变量后传下来。
+   *
+   * 不传就是"按声明来"。传下来是为了让图能说出
+   * 「这一步声明了要人点头，但当前放行」——
+   * 只写在事件流里不够，因为事件流是跑的时候才有的，而图随时挂在那儿。
+   */
+  gateOverride?: GateOverride;
   className?: string;
 }
 
-function TaskGraphInner({ run, costByStage, showFallback = true, className }: TaskGraphProps) {
+function TaskGraphInner({
+  run,
+  costByStage,
+  showFallback = true,
+  gateOverride = "declared",
+  className,
+}: TaskGraphProps) {
   const graph: PipelineGraph = useMemo(
-    () => buildPipelineGraph({ run, costByStage }),
-    [run, costByStage],
+    () => buildPipelineGraph({ run, costByStage, gateOverride }),
+    [run, costByStage, gateOverride],
   );
 
   /*

@@ -34,6 +34,7 @@ import {
   type SpecAnswers,
 } from "@/core/generate/gate";
 import type { AppSpec } from "@/core/domain/spec";
+import { resolveGatePolicy } from "@/core/pipeline/gate-policy";
 import { getOwnedRun } from "@/core/run/service";
 import { getCurrentUser } from "@/server/auth-context";
 
@@ -209,12 +210,17 @@ export async function GET(
           const decision = await readGateDecision(runId);
 
           /*
-            默认放行，只有 SPEC_GATE=pause 时才真的停下。
-            理由写在 config/env.ts 那条注释里：模型对一句简单需求
-            也会问出几个问题，每次生成都拦一次，
-            「一句话 → 一个能用的成品」这个承诺就不成立了。
+            ---------- 这一步该不该有人点头，由权限模型说了算 ----------
+            以前这里直接读 env.run.specGate，而 stages.ts 里那句
+            `humanGate: true` 没有任何代码读它 —— 两个互不相干的真相来源。
+            改成先问权限模型（resolveGatePolicy），环境变量降级成运行时覆盖。
+
+            覆盖仍然允许（开发时每次生成都被拦一次很烦），
+            但**覆盖不再是静默的**：下面两个分支都会把话说出来。
           */
-          if (decision.pause && env.run.specGate === "pause") {
+          const policy = resolveGatePolicy("spec", env.run.specGate);
+
+          if (decision.pause && policy.active) {
             // 状态置为 paused，让列表上能看出「这条在等人」
             await sqliteRunStore.update(runId, { status: "paused" });
             yield { kind: "phase", phase: "awaiting", label: decision.reason };
@@ -223,11 +229,19 @@ export async function GET(
           }
 
           if (decision.pause) {
-            // 放行，但把疑问说出来 —— 让用户知道模型在替你猜
+            /*
+              放行，但把两件事都说出来：
+                一、模型在替你猜哪些地方
+                二、这是**覆盖**了这一步自己的声明才发生的
+              只说不说第二件的话，界面上还写着「要人点头」而实际没停，
+              那比没有门禁更糟 —— 用户会以为有人把关过了。
+            */
             yield {
               kind: "phase",
               phase: "spec",
-              label: `${decision.reason}。已按默认方式继续（设 SPEC_GATE=pause 可改为先问你）`,
+              label: policy.overrideNote
+                ? `${decision.reason}。${policy.overrideNote}`
+                : `${decision.reason}。已按默认方式继续`,
             };
           } else if (decision.answered) {
             yield { kind: "phase", phase: "spec", label: decision.reason };

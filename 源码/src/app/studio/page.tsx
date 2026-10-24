@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { Cockpit } from "@/components/cockpit/cockpit";
 import type { RunView } from "@/components/cockpit/run-list";
 import { ThemeToggleServer } from "@/components/theme-toggle-server";
+import { env } from "@/config/env";
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
 import { sqliteCostStore } from "@/adapters/store/cost-repo";
 import { sqliteRunStore } from "@/adapters/store/run-repo";
@@ -86,6 +87,12 @@ export default async function StudioPage({
       selectedRun={selectedRun}
       artifactBytes={artifact?.bytes ?? null}
       costByStage={costByStage}
+      /*
+        人工门禁的运行时覆盖。
+        服务端读环境变量 —— 客户端组件不该直接碰 process.env，
+        而且这个值本来就该在服务端定格（同一个页面渲染两次不该看到两个值）。
+      */
+      gateOverride={env.run.specGate}
       themeToggle={<ThemeToggleServer />}
     />
   );
