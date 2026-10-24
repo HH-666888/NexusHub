@@ -14,7 +14,8 @@ import {
   SPENDING_STAGE,
   tracePath,
 } from "@/core/pipeline/graph";
-import { STAGES } from "@/core/pipeline/stages";
+import { STAGES, STAGE_MAP, stageApproval, stageAuthorityNote } from "@/core/pipeline/stages";
+import { actorBadge } from "@/core/pipeline/authority";
 import type { CostByStage, StageCost } from "@/core/domain/stage-cost";
 
 /**
@@ -376,5 +377,100 @@ describe("流水线图 · 运行状态映射", () => {
     for (const n of g.nodes.filter((x) => x.implementation !== "planned")) {
       expect(nodeTone(n)).toBe("pending");
     }
+  });
+});
+
+/* ============================================================
+   权限四件套
+   ============================================================
+   这几个字段来自「研发团队运转图」那套纪律 —— 那张图删了，
+   四个维度留了下来，长到工序上，在图上露出来。
+
+   这一组测的不是"某个函数算得对"，而是**这套流程的设计意图
+   有没有真的传达到界面上**。传错了，徽章和告警会跟着错，
+   而那种错从画面上看不出来。
+   ============================================================ */
+
+describe("流水线图 · 权限四件套", () => {
+  const g = buildPipelineGraph({ run: null });
+  const nodeOf = (id: string) => g.nodes.find((n) => n.id === id)!;
+
+  it("每个节点都带着四个字段", () => {
+    for (const n of g.nodes) {
+      expect(n.actor, `${n.name} 没带谁做`).toBeTruthy();
+      expect(n.access, `${n.name} 没带能不能改`).toBeTruthy();
+      expect(n.approval, `${n.name} 没带要不要人点头`).toBeTruthy();
+      expect(n.watches.length, `${n.name} 没带看什么数`).toBeGreaterThan(0);
+    }
+  });
+
+  it("【最要紧】验收节点在图上也是只读的", () => {
+    /*
+      这是整个转向里最要紧的一条规矩的**界面投影**：
+
+        判定者不参与生产。
+
+      核心层已经有一条单测钉着 STAGE_MAP.verify.access === "read"。
+      这一条钉的是它有没有真的传到图上 ——
+      核心层改对了、图上还画着"AI · 干活"的话，看的人仍然会误解。
+    */
+    const verify = nodeOf("verify");
+    expect(verify.access).toBe("read");
+    expect(actorBadge(verify)).toBe("AI · 只读");
+  });
+
+  it("approval 是算出来的，不是另存一份 —— 不会和 access 打架", () => {
+    /*
+      存两份的话，改了 access 而忘了改 approval，
+      界面上就会出现"标着只读、却要人点头"这种自相矛盾。
+      这里断言的是：图上那个值必须等于按工序定义现算的那个。
+    */
+    for (const n of g.nodes) {
+      expect(n.approval, `${n.name} 的 approval 和现算的对不上`).toBe(
+        stageApproval(STAGE_MAP[n.id]),
+      );
+    }
+  });
+
+  it("规格化要人点头 —— 而且是一条能说出理由的", () => {
+    const spec = nodeOf("spec");
+    expect(spec.approval).toBe("human");
+    expect(stageAuthorityNote(STAGE_MAP.spec)).toContain("故意");
+  });
+
+  it("其余五道不用人点头", () => {
+    const gated = g.nodes.filter((n) => n.approval === "human");
+    expect(gated.map((n) => n.id)).toEqual(["spec"]);
+  });
+
+  it("看什么数原样带过来，没被加工", () => {
+    // 加工过的话，核心层改了文案而图上还是旧的
+    for (const n of g.nodes) {
+      expect(n.watches.map((w) => w.label)).toEqual(
+        STAGE_MAP[n.id].watches.map((w) => w.label),
+      );
+    }
+  });
+
+  it("未接入的工序也带着权限 —— 那是它的定义，不是它的进度", () => {
+    /*
+      权限和"接没接入"是两件事。
+      把未接入的工序的权限抹掉的话，用户就看不到"这一道将来会是什么样的角色"——
+      而那恰好是六道工序图存在的意义（它画的是完整形态）。
+    */
+    const planned = g.nodes.filter((n) => n.implementation === "planned");
+    expect(planned.length).toBeGreaterThan(0);
+    for (const n of planned) {
+      expect(n.actor, `${n.name} 未接入但丢了权限`).toBeTruthy();
+      expect(n.watches.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("权限不影响状态 —— 两者是不同的维度", () => {
+    // 一条只读的工序和一条会写的工序，在"跑到哪了"上没有任何区别
+    const running = buildPipelineGraph({ run: { stage: "verify", status: "running" } });
+    const verify = running.nodes.find((n) => n.id === "verify")!;
+    expect(nodeTone(verify)).toBe("running");
+    expect(verify.access, "只读不该把状态也改了").toBe("read");
   });
 });

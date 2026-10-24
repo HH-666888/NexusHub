@@ -19,9 +19,12 @@
 import {
   STAGES,
   STAGE_MAP,
+  stageApproval,
   type StageId,
+  type StageMetric,
   type StageStatus,
 } from "./stages";
+import type { AccessMode, ActorKind, Approver } from "./authority";
 import { computeStageStatuses } from "./progress";
 import type { RunProgressInput } from "./progress";
 import { costOf, type CostByStage } from "../domain/stage-cost";
@@ -43,6 +46,27 @@ export interface PipelineNode {
   status: StageStatus;
   /** 该阶段累计花费（元）。未接入的阶段恒为 0 */
   costCny: number;
+
+  /* ============================================================
+     权限四件套
+     ============================================================
+     这几个字段来自「研发团队运转图」那套纪律 —— 它本来是一个
+     独立的能力，有一张自己的图和一套模型。后来发现那是在
+     并排造第二套"工作怎么发生"的描述，所以整张图删了，
+     只把四个维度留下来，长到工序上，在这里露出来。
+
+     定义在 stages.ts，规则在 authority.ts。
+     ============================================================ */
+
+  /** 谁在做这一阶段 */
+  actor: ActorKind;
+  /** 能不能改东西 */
+  access: AccessMode;
+  /** 要不要人点头。**是算出来的**（规则给下限，humanGate 可以抬高） */
+  approval: Approver;
+  /** 这一阶段的判断依据 —— 「你凭什么说做完了」 */
+  watches: StageMetric[];
+
   /** 布局坐标 */
   x: number;
   y: number;
@@ -74,11 +98,27 @@ export interface PipelineGraph {
 export const LAYOUT = {
   /** 节点尺寸 */
   nodeWidth: 208,
-  nodeHeight: 96,
+  /**
+   * 节点高度。
+   *
+   * ── 为什么从 96 涨到 136 ──
+   *   长了权限那两行（「谁做 + 要不要人点头」和「看什么数」）之后，
+   *   96 装不下：头部 16 + 名字 16 + 产物名 12 + 权限 16 + 看什么 14
+   *   + 指标 16 + 内边距 20 ≈ 110，还没算行距取整。
+   *
+   *   布局里写死高度是必须的 —— 边要从节点的边出发，
+   *   而"量 DOM"会带来首帧闪动、窗口变化要重算、测试也没法测。
+   *   所以内容长了就得把这个常数一起改，不然会溢出。
+   */
+  nodeHeight: 136,
   /** 横向间距（列距 = nodeWidth + gapX） */
   gapX: 64,
-  /** 纵向行距 */
-  gapY: 132,
+  /**
+   * 纵向行距。
+   * 节点变高之后这个也要跟着涨 —— 它管的是**回退边从下方绕过去**的空间，
+   * 留窄了回退边会和下一行节点的顶边叠在一起。
+   */
+  gapY: 172,
   /**
    * 每行放几道工序。
    *
@@ -154,6 +194,18 @@ export function buildPipelineGraph(input: BuildGraphInput): PipelineGraph {
       // 未接入的工序不会有花费。这里再兜一次底：
       // 即使上游传了值也不认，避免界面上出现「未接入但花了钱」这种矛盾
       costCny: s.implementation === "planned" ? 0 : costOf(s.id, costByStage),
+
+      /*
+        权限四件套直接取自工序定义。
+        approval 是**算出来的**而不是另存一份字段 ——
+        存两份的话，改了 access 而忘了改 approval，
+        界面上就会出现"标着只读、却要人点头"这种自相矛盾。
+      */
+      actor: s.actor,
+      access: s.access,
+      approval: stageApproval(s),
+      watches: s.watches,
+
       x: pos.x,
       y: pos.y,
     };

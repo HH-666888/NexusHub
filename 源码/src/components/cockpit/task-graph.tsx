@@ -30,6 +30,7 @@ import {
   type PipelineNode,
 } from "@/core/pipeline/graph";
 import type { RunProgressInput } from "@/core/pipeline/progress";
+import { actorBadge } from "@/core/pipeline/authority";
 import type { StageId } from "@/core/pipeline/stages";
 import type { CostByStage } from "@/core/domain/stage-cost";
 
@@ -71,6 +72,65 @@ interface StageNodeData extends Record<string, unknown> {
   anyFocus: boolean;
 }
 
+/**
+ * 谁在做、能不能改。
+ *
+ * ── 视觉重量跟着风险走 ──
+ *   「AI · 只读」是细边线的浅色；
+ *   「AI · 干活」是实心的琥珀色。
+ *   两者同屏出现时，眼睛会先看到危险的那个 ——
+ *   这正是想让用户形成的直觉：
+ *   **这套东西里，能改东西的那一步才需要盯。**
+ *
+ * 文案由核心层的 actorBadge 给（那条规则不算界面的事）。
+ */
+function AuthorityChip({ node, dim }: { node: PipelineNode; dim: boolean }) {
+  const label = actorBadge(node);
+
+  /*
+    四档的视觉重量，从轻到重：
+      程序自动   细边线、灰        它只是取数，不参与判断
+      AI · 只读  细边线、青        能看，改不了
+      AI · 干活  **实心、琥珀**    能改，这一档要盯
+      人         实心、橙         唯一能为对外动作负责的
+  */
+  const solid = label === "AI · 干活" || label === "人";
+  const color =
+    label === "人"
+      ? "249 115 22" // 橙
+      : label === "AI · 干活"
+        ? "245 158 11" // 琥珀
+        : label === "AI · 只读"
+          ? "34 211 238" // 青
+          : null;
+
+  return (
+    <span
+      data-node-actor={node.id}
+      className="rounded px-1.5 py-px text-[9.5px] leading-tight whitespace-nowrap"
+      style={
+        dim || !color
+          ? {
+              border: "1px solid var(--color-border-soft)",
+              color: "var(--ink-6)",
+            }
+          : solid
+            ? {
+                background: `rgb(${color} / 0.85)`,
+                color: "#1c1917",
+                fontWeight: 500,
+              }
+            : {
+                border: `1px solid rgb(${color} / 0.38)`,
+                color: `rgb(${color} / 0.95)`,
+              }
+      }
+    >
+      {label}
+    </span>
+  );
+}
+
 function StageNode({ data }: NodeProps) {
   const { node, tint, tone, onChain, anyFocus } = data as StageNodeData;
 
@@ -81,11 +141,20 @@ function StageNode({ data }: NodeProps) {
 
   return (
     <div
-      className="relative overflow-hidden rounded-xl border px-3 py-2.5 transition-[box-shadow,border-color,opacity] duration-200"
+      /*
+        「正在干活」那圈光。
+        用的是全局那条 working-ring（和参考图里的图例同一个东西）——
+        以前跑着的节点只有一个静态外发光，和"选中"长得几乎一样；
+        转起来之后，"正在跑"是唯一会动的东西，扫一眼就能找到。
+      */
+      className={`relative overflow-hidden rounded-xl border px-3 py-2.5 transition-[box-shadow,border-color,opacity] duration-200 ${
+        tone === "running" ? "working-ring" : ""
+      }`}
       style={
         {
           width: LAYOUT.nodeWidth,
           minHeight: LAYOUT.nodeHeight,
+          ["--ring-color" as string]: `rgb(${tint})`,
           borderColor: `rgb(${tint} / ${onChain && anyFocus ? 0.75 : dim ? 0.3 : 0.45})`,
           backgroundColor: "var(--color-surface)",
           backgroundImage: dim
@@ -153,6 +222,52 @@ function StageNode({ data }: NodeProps) {
       </div>
       <div className="mt-0.5 font-mono text-[9.5px] text-slate-500">
         {node.artifact}
+      </div>
+
+      {/*
+        ---------- 权限 ----------
+        来自「研发团队运转图」那套纪律。那张图删了，四个维度留下来长在工序上。
+
+        ── 为什么这两样要放到节点上，而不是只放在详情面板里 ──
+          因为它们表达的是**这套流程安不安全**，而安全是扫一眼就该看出来的事：
+            · 谁在做（AI 还是程序还是人）
+            · 能不能改东西 —— 「AI · 干活」是实心的，在一屏里最先被看到
+            · 要不要人点头 —— 那是人与机器之间唯一的接口
+          藏进详情面板的话，用户得逐一点开才知道"哪一步会来问我"。
+
+        ── 未接入的工序也显示 ──
+          权限是它的**定义**，不是它的进度。抹掉的话，
+          用户就看不到"这一道将来会是什么样的角色"——
+          而六道工序图画的本来就是完整形态。
+        */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        <AuthorityChip node={node} dim={dim} />
+        {node.approval === "human" && (
+          <span
+            data-node-gate={node.id}
+            title="这一步会停下来问人"
+            className="rounded px-1.5 py-px text-[9.5px] leading-tight whitespace-nowrap"
+            style={{
+              background: dim ? "none" : "rgb(249 115 22 / 0.16)",
+              color: dim ? "var(--ink-6)" : "rgb(253 186 116)",
+              border: `1px solid ${dim ? "var(--color-border-soft)" : "rgb(249 115 22 / 0.35)"}`,
+            }}
+          >
+            要人点头
+          </span>
+        )}
+      </div>
+
+      {/*
+        ---------- 看什么数 ----------
+        「你凭什么说这一步做完了」。说不出来的工序多半只是走个过场。
+        只显示标签，不显示具体值 —— 值是运行期的事，那是下面那排指标的位置。
+      */}
+      <div
+        data-node-watches={node.id}
+        className="mt-1 truncate text-[9.5px] text-slate-600"
+      >
+        看：{node.watches.map((w) => w.label).join(" · ")}
       </div>
 
       {nodeMetrics(node).length > 0 && (

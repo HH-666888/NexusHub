@@ -398,8 +398,91 @@ async function main() {
       `画布上多了 ${empty.count} 个元素：${empty.kids.join(", ")}`,
     );
 
+    /* ---------- 9. 任务图上的权限四件套 ---------- */
+    /*
+      任务图是**纯客户端渲染**的 —— SSR 出来的 HTML 里一个节点都没有
+      （实测过：data-node-actor / 「要人点头」/「AI · 只读」全是 false）。
+      所以这一组只能在浏览器里验，加在这个脚本里而不是 e2e-run 里。
+
+      这一组测的是**设计意图有没有真的传到界面上**：
+      核心层改了 access 而图上还画着旧徽章的话，看的人仍然会误解。
+    */
+    heading("第九步 · 任务图上的权限");
+
+    await cdp.send("Page.navigate", { url: `${BASE}/studio?tab=graph` });
+    await sleep(4000);
+
+    const graphCheck = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const q = (s) => [...document.querySelectorAll(s)];
+        return JSON.stringify({
+          actors: q('[data-node-actor]').map(el => ({
+            id: el.getAttribute('data-node-actor'),
+            label: el.textContent.trim(),
+          })),
+          gates: q('[data-node-gate]').map(el => el.getAttribute('data-node-gate')),
+          watches: q('[data-node-watches]').map(el => ({
+            id: el.getAttribute('data-node-watches'),
+            text: el.textContent.trim(),
+          })),
+        });
+      })()`,
+      returnByValue: true,
+    });
+    const gd = JSON.parse(graphCheck.result!.value!) as {
+      actors: Array<{ id: string; label: string }>;
+      gates: string[];
+      watches: Array<{ id: string; text: string }>;
+    };
+
+    info(`节点上的角色徽章：${gd.actors.map((a) => `${a.id}=${a.label}`).join(" ")}`);
+
+    expect_(
+      gd.actors.length === 6,
+      "六道工序都带了角色徽章",
+      `只有 ${gd.actors.length} 道工序带了角色徽章`,
+    );
+
+    /*
+      【最要紧】验收在图上必须是「AI · 只读」。
+      核心层有一条单测钉着 STAGE_MAP.verify.access === "read"，
+      这一条钉的是它有没有真的画出来。
+    */
+    const verifyActor = gd.actors.find((a) => a.id === "verify");
+    expect_(
+      verifyActor?.label === "AI · 只读",
+      "验收在图上标着「AI · 只读」",
+      `验收标成了「${verifyActor?.label}」—— 判定者不该参与生产`,
+    );
+
+    expect_(
+      gd.actors.filter((a) => a.label === "AI · 干活").length === 5,
+      "其余五道都是「AI · 干活」",
+      `「AI · 干活」有 ${gd.actors.filter((a) => a.label === "AI · 干活").length} 道，应该是 5 道`,
+    );
+
+    expect_(
+      gd.gates.length === 1 && gd.gates[0] === "spec",
+      "只有规格化标着「要人点头」",
+      `带门禁的是：${gd.gates.join(" ") || "（无）"}`,
+    );
+
+    expect_(
+      gd.watches.length === 6,
+      "六道工序都写了「看什么数」",
+      `只有 ${gd.watches.length} 道写了看什么数`,
+    );
+
+    // 看什么数不能是空壳
+    const emptyWatches = gd.watches.filter((w) => w.text.replace(/^看：/, "").trim().length === 0);
+    expect_(
+      emptyWatches.length === 0,
+      "「看什么数」都不是空的",
+      `有 ${emptyWatches.length} 道工序的「看什么数」是空的`,
+    );
+
     cdp.close();
-    ok("画布交互全部通过");
+    ok("画布交互与任务图权限全部通过");
   } finally {
     browser.kill();
     setTimeout(() => {
