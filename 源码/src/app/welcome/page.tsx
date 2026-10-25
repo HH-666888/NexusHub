@@ -41,7 +41,7 @@ import { getCurrentUser } from "@/server/auth-context";
  *   动画跑在访客的浏览器上，服务器只发一次 HTML。
  */
 export default async function WelcomePage() {
-  // 一次带索引的查询，用来决定右上角显示「登录」还是「进入工作台」
+  // 一次带索引的查询，用来决定右上角显示「登录」还是「进入画布」
   const user = await getCurrentUser();
 
   return (
@@ -101,7 +101,7 @@ export default async function WelcomePage() {
                 href="/canvas"
                 className="rounded-lg bg-[var(--app-accent)] px-4 py-1.5 text-[13px] font-medium text-white transition-[transform,opacity] duration-150 ease-out hover:-translate-y-px hover:opacity-90"
               >
-                进入工作台
+                进入画布
               </Link>
             ) : null
           }

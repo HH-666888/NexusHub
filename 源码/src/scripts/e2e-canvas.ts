@@ -913,8 +913,59 @@ async function main() {
       `放大到 ${back.zoom} 档位还是 ${back.tier}`,
     );
 
+    /* ---------- 14. 界面上没有指向退役页面的链接 ---------- */
+    /*
+      这一条守的是「/studio 真的退役了」。
+
+      退役一个页面最怕的不是入口没了，而是**有人还指着它**。
+      这种东西靠人工 grep 守不住。
+
+      ⚠️ 断言的是界面上没有链接指向它，**不是路由打不开**。
+         /studio 的文件全部保留、敲地址仍然能打开 ——
+         那是故意的：真要删是另一件事。
+    */
+    heading("第十四步 · 界面上没有指向退役页面的链接");
+
+    const liveRoutes = ["/", "/canvas", "/settings", "/welcome", "/login", "/register"];
+    const stray: string[] = [];
+    let navLinkCount = -1;
+
+    for (const route of liveRoutes) {
+      await cdp.send("Page.navigate", { url: `${BASE}${route}` });
+      await sleep(1600);
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: `(() => {
+          const nav = document.querySelector('[data-app-nav]');
+          return JSON.stringify({
+            hrefs: [...document.querySelectorAll('a[href]')]
+              .map((a) => a.getAttribute('href'))
+              .filter((h) => h && h.includes('/studio')),
+            navLinks: nav ? nav.querySelectorAll('a[href]').length : -1,
+          });
+        })()`,
+        returnByValue: true,
+      });
+      const v = JSON.parse(r.result!.value!) as { hrefs: string[]; navLinks: number };
+      if (v.hrefs.length > 0) stray.push(`${route} -> ${v.hrefs.join(", ")}`);
+      if (v.navLinks > 0) navLinkCount = v.navLinks;
+    }
+
+    info(`查了 ${liveRoutes.length} 个页面，顶栏链接 ${navLinkCount} 个`);
+
+    expect_(
+      stray.length === 0,
+      `${liveRoutes.length} 个页面上都没有指向 /studio 的链接`,
+      `这些页面还指着退役的工作台：${stray.join("  |  ")}`,
+    );
+
+    expect_(
+      navLinkCount === 4,
+      "顶栏是 品牌 + 三项（首页 / 构建 / 设置）",
+      `顶栏有 ${navLinkCount} 个链接`,
+    );
+
     cdp.close();
-    ok("画布交互、详情、工作台面板、顶栏一致性与缩放让位全部通过");
+    ok("画布交互、详情、面板、顶栏一致性、缩放让位与退役页面全部通过");
   } finally {
     browser.kill();
     setTimeout(() => {
