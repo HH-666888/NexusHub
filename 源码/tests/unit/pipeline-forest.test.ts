@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHILD_PLACEHOLDER,
   childIndex,
   checksToChildren,
+  statusLabelOf,
   summarizeChildren,
   toLayoutNodes,
   type ChildrenByStage,
@@ -100,6 +102,9 @@ describe("拼森林", () => {
         detail: "",
         tone: "plain",
         reveal: "batch",
+        statusLabel: statusLabelOf("plain"),
+        chips: [CHILD_PLACEHOLDER],
+        metric: CHILD_PLACEHOLDER,
       },
     ],
   };
@@ -141,7 +146,17 @@ describe("查表", () => {
     const idx = childIndex({
       verify: checksToChildren(SEVEN),
       build: [
-        { id: "build:x", stage: "build", label: "x", detail: "", tone: "plain", reveal: "batch" },
+        {
+          id: "build:x",
+          stage: "build",
+          label: "x",
+          detail: "",
+          tone: "plain",
+          reveal: "batch",
+          statusLabel: statusLabelOf("plain"),
+          chips: [CHILD_PLACEHOLDER],
+          metric: CHILD_PLACEHOLDER,
+        },
       ],
     });
     expect(idx.size).toBe(8);

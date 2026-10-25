@@ -47,18 +47,75 @@ import type { LayoutNode } from "../canvas/forest-layout";
  */
 export type RevealMode = "stream" | "batch";
 
-/** 画在某一级工序下面的一个小方块 */
+/**
+ * 子卡片上还没接上真东西的槽位，先摆这个。
+ *
+ * ── 为什么是「——」而不是编一个词 ──
+ *   用户明确说了：「对于子卡片的关键字可以先不管，暂时用杠号填充即可」。
+ *   编一个像模像样的关键字（比如「本地正则」「确定性」）看着更完整，
+ *   但那是**替用户编事实** —— 而这个项目从头到尾守的一条规矩就是
+ *   宁可在界面上留一块空的，也不填一个假的。
+ *
+ * **定义在一个常量里**，是为了以后接真数据时只改一处。
+ */
+export const CHILD_PLACEHOLDER = "——";
+
+/**
+ * 画在某一级工序下面的一个小方块。
+ *
+ * ── ⚠️ 它的字段是照着**主卡片**设计的，不是"简化版" ──
+ *   用户的原话：
+ *     「每一个卡片的效果尽量和现在的主卡片的内容或者效果保持一致……
+ *       需要有关键的颜色和内容……内容也要这种关键字一样的展示，
+ *       不能只是一个标题。」
+ *     「虽然这 6 个根节点是主、后面的是子，但**只是位置上的区分**，
+ *       卡片样式等先不区分。」
+ *
+ *   所以字段和 StageCard 是**同构**的 —— 一一对得上：
+ *
+ *     主卡                         子卡
+ *     ──────────────────────────  ──────────────────────────
+ *     序号 01 + 状态胶囊「已通过」   statusLabel（由 tone 推出）
+ *     名称「规格化」                label
+ *     产物名 spec.json / 看什么数    detail
+ *     权限胶囊「AI·干活」…           chips（★ 暂时占位）
+ *     分隔线 + 「花费 ¥0.0082」      metric（★ 暂时占位）
+ *
+ *   「只是位置上的区分」这一条很重要：**层级感由结构和连线给，
+ *    不由样式给** —— 就像文件树里所有文件名长得一模一样，
+ *    层级全靠缩进。
+ */
 export interface StageChild {
   /** 全局唯一。渲染层按它查数据 */
   id: string;
   /** 归属的工序 */
   stage: StageId;
-  /** 方块上那一行字 */
+  /** 卡片上的名称。对应主卡的「规格化」那一行 */
   label: string;
-  /** 悬停/详情里的一句话依据 */
+  /** 判定依据。对应主卡的「产物名 / 看什么数」那两行 */
   detail: string;
   tone: "pass" | "fail" | "plain";
   reveal: RevealMode;
+  /**
+   * 状态胶囊上的字。对应主卡右上角那个「已通过」。
+   * 由 tone 推出，不单独存 —— 存两份迟早对不上。
+   */
+  statusLabel: string;
+  /**
+   * 关键字胶囊。对应主卡上「AI·干活」「要人点头」那一排。
+   * ★ 现在全是占位符 —— 见 CHILD_PLACEHOLDER 的说明。
+   */
+  chips: string[];
+  /**
+   * 分隔线下面那个数值。对应主卡的「花费 ¥0.0082」。
+   * ★ 现在也是占位符。
+   */
+  metric: string;
+}
+
+/** tone → 状态胶囊上那句话。三个值写在一处，渲染层不用自己判断 */
+export function statusLabelOf(tone: StageChild["tone"]): string {
+  return tone === "pass" ? "通过" : tone === "fail" ? "未过" : "——";
 }
 
 /**
@@ -88,6 +145,13 @@ export function checksToChildren(
       所以它们"逐个出现"这件事是真的 —— 见文件头那段。
     */
     reveal: "stream" as const,
+    statusLabel: statusLabelOf(r.pass ? "pass" : "fail"),
+    /*
+      ★ 占位。用户说了关键字先不管 —— 见 CHILD_PLACEHOLDER。
+      两枚是因为主卡上那一排通常有两三个胶囊，一枚会显得太空。
+    */
+    chips: [CHILD_PLACEHOLDER, CHILD_PLACEHOLDER],
+    metric: CHILD_PLACEHOLDER,
   }));
 }
 
