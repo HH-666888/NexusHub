@@ -152,18 +152,6 @@ function GraphArt() {
           </div>
         ))}
       </div>
-      {/* 失败回退：一条从下往上的虚线，说明流程不是单向瀑布 */}
-      <div className="mt-2 flex items-center gap-2 px-1">
-        <span
-          aria-hidden
-          className="h-px flex-1"
-          style={{
-            backgroundImage:
-              "repeating-linear-gradient(90deg, rgba(217,119,6,.6) 0 4px, transparent 4px 8px)",
-          }}
-        />
-        <span className="text-[9px] text-amber-600/80">失败可退回</span>
-      </div>
     </div>
   );
 }

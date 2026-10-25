@@ -500,9 +500,17 @@ async function main() {
     );
 
     /*
-      连线：顺序流转的实线 + 失败回退的虚线。
-      回退边是别家画不出来的东西（他们的流程里没定义失败退回到哪），
-      所以它必须真的画出来，而不是只存在于数据结构里。
+      连线：只有顺序流转的实线。
+
+      ⚠️ 以前这里断言「五道工序各有一条失败回退边」（虚线弧）。
+         按用户要求删掉了 —— 回退是**流程内部的机制**，不画在画布上：
+         六道工序之间那条顺序实线已经说清「谁接谁」，再叠一层虚弧线，
+         读者得先去分辨「这条虚线是什么」，而那件事跟他此刻要看的东西无关。
+
+         断言从「虚线有 5 条」改成「**一条虚线都没有**」——
+         这不是放松测试，是把它调转方向去守新的约定：
+         画布上不该再出现回退弧线。机制本身还在（node.fallbackTo 照建、
+         失败该退到哪照算、点开工序看详情仍然列着回退目标），只是不再画。
     */
     const edgeCheck = await cdp.send("Runtime.evaluate", {
       expression: `(() => {
@@ -513,12 +521,17 @@ async function main() {
       returnByValue: true,
     });
     const ed = JSON.parse(edgeCheck.result!.value!) as { total: number; dashed: number };
-    info(`连线：共 ${ed.total} 条，其中虚线（失败回退）${ed.dashed} 条`);
+    info(`连线：共 ${ed.total} 条，其中虚线 ${ed.dashed} 条`);
 
     expect_(
-      ed.dashed === 5,
-      "五道工序各有一条失败回退边",
-      `虚线的条数是 ${ed.dashed}，应该是 5`,
+      ed.total >= 5,
+      `顺序流转的实线还在（共 ${ed.total} 条）`,
+      `连一条线都没有（${ed.total}）—— 画布不该连"谁接谁"都不画`,
+    );
+    expect_(
+      ed.dashed === 0,
+      "画布上没有回退弧线（回退留在流程内部，不显示）",
+      `出现了 ${ed.dashed} 条虚线 —— 回退弧线不该再画出来`,
     );
 
     /*

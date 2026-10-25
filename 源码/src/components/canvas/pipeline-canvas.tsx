@@ -7,8 +7,6 @@ import type { GateOverride } from "@/core/pipeline/gate-policy";
 import type { PipelineNode } from "@/core/pipeline/graph";
 import {
   PIPELINE_GEOMETRY,
-  fallbackLabelAt,
-  fallbackPath,
   flowArrowAt,
   flowPath,
   type CanvasPipelineGeometry,
@@ -460,11 +458,11 @@ export function PipelineCanvas({
 
   const bounds = forest.bounds;
   /*
-    跨行回退边共用的那根竖线 —— 摆在**整片森林的左边**。
-    以前是按 pipelineWidth 算的；现在森林会因为子树变宽，
-    bounds.x 就是那个"最左边"，用它更直接。
+    ⚠️ 这里原来还有一根 `const lane = bounds.x - 32` ——
+       跨行回退边共用的那根竖线。回退弧线不画了，它也就没人用了，删掉。
+       （留着的话 tsc 不报错、eslint 也不一定拦得住，
+        但下次有人读到这行会以为画布上还有那条线。）
   */
-  const lane = bounds.x - 32;
 
   return (
     <div data-canvas-pipeline className="absolute" style={{ left: 0, top: 0 }}>
@@ -502,45 +500,26 @@ export function PipelineCanvas({
         })}
 
         {/*
-          失败回退：从每道工序自己声明的 fallbackTo 展开。
-          这是别家画不出来的东西 —— 他们的流程里没定义失败退回到哪。
+          ⚠️ 这里原来画的是**失败回退的弧线 + 「失败可退回」标签**，现在不画了。
+
+          ── 为什么删掉 ──
+            回退是**流程内部的机制**，不是图上要表达的东西。
+            六道工序之间那条顺序实线已经说清了「谁接谁」；
+            再叠一层虚弧线，读者要先去分辨「这条虚线是什么」，
+            而那件事跟他此刻要看的（跑到哪一步了、每步产出了什么）无关。
+
+            用户原话：「这个操作只需要保持在内部即可，不需要专门显示出来」。
+
+          ── 删掉的只是「画」，不是「有」 ──
+            · node.fallbackTo 还在图上（graph.ts 建图时照建）
+            · 失败时该退到哪、tracePath 怎么走，全都不变
+            · 点开工序看详情时，回退目标仍然列在里面
+            也就是：**机制完整保留，只是不再往画布上画一条线。**
+
+            这也是为什么 fallbackPath / fallbackLabelAt 两个几何函数
+            暂时留在 pipeline-layout 里没删 —— 它们是这条边的几何，
+            留着是「随时能装回去」，不是因为还有人在调。
         */}
-        {nodes.map((node, i) => {
-          const to = node.fallbackTo?.[0];
-          if (!to) return null;
-          const targetIdx = nodes.findIndex((n) => n.id === to);
-          if (targetIdx < 0) return null;
-
-          const a = rects[i];
-          const b = rects[targetIdx];
-          const lit = onChain(node.id) && onChain(to);
-          /*
-            跨行的那几条要共用同一根竖线（lane），
-            并且按源节点序号错开标签 —— 不然几个标签会精确地叠在一个点上。
-            两件事的原因都写在 pipeline-layout 里那两个函数的注释上。
-          */
-          const label = fallbackLabelAt(a, b, lane, i);
-
-          return (
-            <g key={`fb-${node.id}`} opacity={lit ? 1 : 0.12}>
-              <path
-                d={fallbackPath(a, b, g, lane)}
-                fill="none"
-                stroke="rgb(248 113 113 / 0.4)"
-                strokeWidth={1.2}
-                strokeDasharray="5 4"
-              />
-              <text
-                x={label.x}
-                y={label.y + 4}
-                textAnchor="middle"
-                className="fill-[rgb(248_113_113_/_0.75)] text-[11px]"
-              >
-                失败可退回
-              </text>
-            </g>
-          );
-        })}
       </svg>
 
       {/* ---------- 节点 ---------- */}
