@@ -39,7 +39,18 @@ export function HomeNav({ spentCny, user, themeToggle }: HomeNavProps) {
 
   return (
     <header className="sticky top-0 z-20 border-b border-[var(--color-border-soft)] bg-[var(--color-canvas)]/80 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-[1400px] items-center gap-8 px-8">
+      {/*
+        ⚠️ 这里**不再设 max-width**，只留一个克制的页边距。
+
+        原来写的是 `mx-auto max-w-[1400px] px-8`。
+        1440 的屏幕上两边各让 52px，看着是正常页边距；
+        但到 1920 就变成**各让 292px** —— 品牌和用户信息被推到中间，
+        两边角上一大片空。同一条写法在两种屏上差六倍，而宽屏才是多数人的屏。
+
+        页边距取 20px：工作台和画布那边的内容也是贴着边的（p-3 上下），
+        靠得近一些，导航和内容才像同一张页面上的东西。
+      */}
+      <div className="flex h-16 items-center gap-8 px-5">
         {/* 品牌 */}
         <Link href="/" className="flex flex-none items-center gap-2">
           <span

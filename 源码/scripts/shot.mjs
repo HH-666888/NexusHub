@@ -2,12 +2,17 @@
  * 带登录态的截图工具
  * ============================================================
  * 用法：
- *   node scripts/shot.mjs <网址> <输出图片路径> [会话Cookie值] [高]
+ *   node scripts/shot.mjs <网址> <输出图片路径> [会话Cookie值] [高] [宽]
  *
  * 为什么需要它：
  *   工作台、设置页这些页面都要求登录，而 Edge 的 --screenshot 参数
  *   没法带 Cookie —— 它只能截公开页面。
  *   这个脚本走 CDP（Chrome 调试协议）：先注入 Cookie，再导航，再截图。
+ *
+ * 宽为什么也要能改：
+ *   一开始写死 1440。而「角上太空」这类问题**只在宽屏上才看得出来** ——
+ *   1440 下两边各让 52px 是正常页边距，1920 下同样的写法
+ *   会各让 292px，一眼就空。窄屏截图看不见这个问题。
  *
  * 这是开发期的验证工具，不参与线上运行。
  */
@@ -20,12 +25,13 @@ import path from "node:path";
 const EDGE = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const PORT = 9333;
 
-const [, , url, out, cookieValue, heightArg] = process.argv;
+const [, , url, out, cookieValue, heightArg, widthArg] = process.argv;
 if (!url || !out) {
-  console.error("用法: node scripts/shot.mjs <网址> <输出路径> [Cookie值] [高]");
+  console.error("用法: node scripts/shot.mjs <网址> <输出路径> [Cookie值] [高] [宽]");
   process.exit(1);
 }
 const viewportHeight = Number(heightArg) || 900;
+const viewportWidth = Number(widthArg) || 1440;
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-shot-"));
 const browser = spawn(
@@ -42,7 +48,7 @@ const browser = spawn(
     "--disable-extensions",
     `--remote-debugging-port=${PORT}`,
     `--user-data-dir=${profile}`,
-    `--window-size=1440,${viewportHeight}`,
+    `--window-size=${viewportWidth},${viewportHeight}`,
     "about:blank",
   ],
   { stdio: "ignore" },
@@ -157,7 +163,7 @@ async function main() {
   }
 
   await cdp.send("Emulation.setDeviceMetricsOverride", {
-    width: 1440,
+    width: viewportWidth,
     height: viewportHeight,
     deviceScaleFactor: 1,
     mobile: false,
