@@ -15,10 +15,15 @@ export const metadata: Metadata = {
 /**
  * 让浏览器自己的 UI（手机状态栏等）跟随主题。
  * 不做这一步，浅色主题下手机上会顶着一条深色状态栏。
+ *
+ * ⚠️ 这个值**必须和 globals.css 里的 --color-canvas 一致**。
+ *    它写死在两处（CSS 变量一处、这里一处），改一处忘一处，
+ *    手机上就会看到状态栏和页面底色对不上的一条色带。
+ *    底色抬过两次（#08090c → #0c0d11 → #171922），这里跟着走。
  */
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#08090c" },
+    { media: "(prefers-color-scheme: dark)", color: "#171922" },
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
   ],
 };

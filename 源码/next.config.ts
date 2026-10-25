@@ -4,31 +4,40 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
 
   /**
-   * 开发模式左下角那个 Next.js 浮标 —— 留着，固定在左下角
+   * 开发模式左下角那个 Next.js 浮标 —— **关掉**。
    * ============================================================
-   * 它显示「Route: Dynamic / Bundler: Turbopack / Route Info / Preferences」。
+   * 它显示「Route: Dynamic / Bundler: Turbopack / Route Info / Preferences」，
+   * 是 Next.js 自带的开发者面板。
+   *
+   * ── 为什么关掉 ──
+   *   一、**它对产品没有任何用处。** 那是 Next.js 的调试工具，
+   *       不是这个项目做出来的任何东西。挂在那儿只会让人问
+   *       「这个按钮是干嘛的」—— 而答案跟项目无关。
+   *   二、角上一块英文，看着像没收尾的脚手架。
+   *   三、它压在画布左下角，那里是画布的地盘。
    *
    * ── 关于语言：改不了 ──
-   *   那几句**写死在编译产物里**：
-   *     node_modules/next/dist/compiled/next-devtools/index.js
-   *   而 Next.js 没提供任何 locale / i18n 机制，配置项只有两个：
+   *   那几句写死在 Next.js 的编译产物里，而它没提供任何
+   *   locale / i18n 机制，配置项只有两个：
    *     devIndicators?: false | { position?: 'top-left' | ... }
    *   也就是「关掉」和「留着（可换角）」两种选择，**没有翻译这条路**。
+   *   既然翻不了，又对产品没用，那就关掉。
    *
-   * ── 一度关掉过，又打开了 ──
-   *   关掉的理由是「角上挂一块英文像是没收尾的脚手架」。
-   *   打开的理由是它确实让项目看起来更像正经的 Next.js 工程。
-   *   两者都成立，最后选了留着 —— 这是产品决定，不是技术限制。
+   * ── ⚠️ 纠正这段注释以前写错的一句话 ──
+   *   以前这里说「生产构建的 .next/static 里含这些文案的文件是 0 个」。
+   *   **那是错的。** 重新查过：`.next/static/chunks/` 里确实有一个 chunk
+   *   （约 164 KB）带着这些字符串 —— Next.js 把 devtools 的代码一起打进了
+   *   产物，运行时再按环境决定挂不挂出来。
    *
-   * ── ⚠️ 一个必须知道的事实 ──
-   *   **它只在 `npm run dev` 时出现。** 跑生产构建确认过：
-   *   `.next/static` 里含这些文案的文件是 0 个。
-   *   所以演示时如果用 `npm run build` + `npm start` 起的服务，
-   *   角上是不会有它的 —— 想让它出现，得用 dev 起服务。
+   *   准确的说法是：**字符串会进产物，面板只在开发模式挂出来。**
+   *   这不影响「关掉它」这个决定（关掉不减小产物，只是开发时清净），
+   *   但原来那句「0 个」会误导人，留着不如改掉。
    *
-   * 想关掉：把这一行改成 devIndicators: false。
+   * 想临时打开看打包状态：
+   *   devIndicators: { position: "bottom-right" }
+   * 放右下角去，别压着画布。
    */
-  devIndicators: { position: "bottom-left" },
+  devIndicators: false,
 
   /**
    * better-sqlite3 是原生模块（含 .node 二进制），不能被打包进服务端产物，

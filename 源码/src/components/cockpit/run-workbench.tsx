@@ -5,31 +5,42 @@ import { useCallback, useState } from "react";
 import { GenerationConsole } from "./generation-console";
 
 /**
- * 运行工作区
+ * 运行工作区（可折叠）
  * ============================================================
- * 底部这一块承担三件事，用标签页切换：
+ * 三件事，用标签页切换：
  *   生成过程 —— 实时看模型在写什么、花了多少、检查过了几项
  *   成品     —— 在新页面打开生成出来的成品（能点能用）
  *   源码     —— 看它到底写了什么，并下载成单文件
  *
- * ── ⚠️ 成品这里**故意不放 iframe 预览** ──
- *   原来这一格是内嵌 iframe，直接在工作台里把成品跑起来。
- *   做法本身没错（省得来回切页面），但实际用下来是**半打开**：
- *   这一格高度只有屏高的一小半，成品应用进去之后要么显示不全、
- *   要么卡在半截上，看着像坏了。
+ * ── ⚠️ 它是**可折叠**的，而且默认是收起来的 ──
+ *   原来这一块常驻占屏幕下方 38%。问题是：**多数时候它是空的**。
+ *   生成完了、成品也看过了之后，那一块就是一片什么都没有的区域，
+ *   白白占掉屏幕下半。而上面那张画布 —— 真正要看的东西 ——
+ *   被压得只剩一半高。
  *
- *   「要么全部打开，要么全部不打开」——
- *   半截的预览比没有预览更糟：它让人以为成品有问题，
- *   而实际上成品是好的，只是没地方显示。
+ *   现在：**收起时只留一条 40px 的标签条**，画布拿到整个下半屏；
+ *   想看生成过程 / 成品 / 源码，点一下标签条就展开。
  *
- *   所以现在给的是一枚**明确的按钮**：点一下在新标签页里整页打开。
- *   那里有整屏，滚动、点击、localStorage 全都正常。
+ * ── 什么时候默认展开 ──
+ *   **还没有成品的时候**。因为那时候这一块就是重点 ——
+ *   「开始生成」那个按钮在里面，收起来等于把入口藏了。
+ *   有过成品之后默认收起，把屏幕让回画布。
+ *
+ * ── 为什么高度用 vh 而不是让父组件给 ──
+ *   父组件（/canvas 的页面）拿不到这里的开关状态，也就没法决定
+ *   给多高。用 38vh 自己定，父组件只要 `shrink-0` 就行 ——
+ *   收起时靠内容撑出 40px，展开时是 38vh。**一个组件自己管自己的高度。**
+ *
+ * ── 成品那一页为什么没有 iframe ──
+ *   原来内嵌 iframe 直接把成品跑在那一格里，但那一格只有屏高的一小半，
+ *   成品应用进去要么显示不全、要么卡在半截上，看着像成品坏了，
+ *   而实际上成品是好的，只是没地方显示。**半截的预览比没有预览更糟。**
+ *   所以改成一枚明确的按钮：在新标签页里整页打开，能点能用、数据存得住。
  *
  * ── 为什么源码按需拉取而不是服务端直接传下来 ──
  *   一次生成的 HTML 有二十多 KB。放进服务端渲染的 props 里，
  *   意味着每次进工作台都要把它序列化进页面 ——
  *   而多数时候用户只是来看看记录，不会点源码。
- *   按需拉取把这份体积挪到了真正需要的时候。
  */
 export function RunWorkbench({
   runId,
@@ -41,7 +52,13 @@ export function RunWorkbench({
   artifactBytes: number | null;
 }) {
   const router = useRouter();
-  /** 有成品时默认停在「成品」—— 用户点进来最想看的通常是做出来的东西 */
+  /**
+   * 展开状态。**初值跟着「有没有成品」走** ——
+   * 没成品时展开（那是唯一能找到「开始生成」的地方），
+   * 有成品时收起（把屏幕让回画布）。
+   */
+  const [open, setOpen] = useState(!hasArtifact);
+  /** 有成品时默认停在「成品」—— 点进来最想看的通常是做出来的东西 */
   const [tab, setTab] = useState<"generate" | "artifact" | "source">(
     hasArtifact ? "artifact" : "generate",
   );
@@ -50,6 +67,7 @@ export function RunWorkbench({
 
   const openSource = useCallback(async () => {
     setTab("source");
+    setOpen(true);
     if (source !== null || loadingSource) return;
     setLoadingSource(true);
     try {
@@ -71,7 +89,6 @@ export function RunWorkbench({
   const download = useCallback(async () => {
     // 用表单 POST 而不是 <a download>：
     // 下载要带 Cookie 做归属校验，而 <a> 无法带自定义请求头。
-    // POST 到同一路径，服务端加上 Content-Disposition 让浏览器存盘。
     const form = document.createElement("form");
     form.method = "POST";
     form.action = `/api/runs/${runId}/artifact`;
@@ -80,10 +97,26 @@ export function RunWorkbench({
     form.remove();
   }, [runId]);
 
+  /** 点标签：展开（如果收着）并切过去 */
+  const pick = useCallback(
+    (key: "generate" | "artifact" | "source") => {
+      if (key === "source") {
+        void openSource();
+        return;
+      }
+      setOpen(true);
+      setTab(key);
+    },
+    [openSource],
+  );
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {/* 标签栏 */}
-      <div className="flex items-center gap-1 border-b border-[var(--color-border-soft)] px-3 py-1.5">
+    <div
+      data-run-workbench={open ? "open" : "closed"}
+      className={open ? "flex h-[38vh] min-h-[200px] flex-col" : "flex flex-col"}
+    >
+      {/* 标签条。**收起时它是唯一可见的东西**，所以折叠按钮就放在这里 */}
+      <div className="flex flex-none items-center gap-1 border-b border-[var(--color-border-soft)] px-3 py-1.5">
         {(
           [
             ["generate", "生成过程"],
@@ -94,9 +127,9 @@ export function RunWorkbench({
           <button
             key={key}
             type="button"
-            onClick={() => (key === "source" ? openSource() : setTab(key))}
+            onClick={() => pick(key)}
             className={`rounded-md px-2.5 py-1 text-[11px] transition-colors duration-150 ${
-              tab === key
+              open && tab === key
                 ? "bg-slate-700/60 text-slate-100"
                 : "text-slate-500 hover:text-slate-300"
             }`}
@@ -111,7 +144,6 @@ export function RunWorkbench({
           )}
           {hasArtifact && (
             <>
-              {/* 这两枚是标签栏上的快捷入口，和「成品」那一页里的按钮做同一件事 */}
               <a
                 href={`/api/runs/${runId}/artifact`}
                 target="_blank"
@@ -129,38 +161,56 @@ export function RunWorkbench({
               </button>
             </>
           )}
+
+          {/*
+            折叠按钮。
+            收起时朝上（点开），展开时朝下（收起）——
+            箭头指的是"点了之后它往哪走"，不是"它现在在哪"。
+          */}
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-label={open ? "收起下方面板" : "展开下方面板"}
+            title={open ? "收起（把屏幕让给画布）" : "展开生成过程 / 成品 / 源码"}
+            className="flex h-6 w-6 items-center justify-center rounded border border-[var(--color-border-soft)] text-[10px] text-slate-400 transition-[border-color,color] duration-150 hover:border-slate-500 hover:text-slate-100"
+          >
+            {open ? "▾" : "▴"}
+          </button>
         </div>
       </div>
 
-      {/* 内容区 */}
-      <div className="min-h-0 flex-1">
-        {tab === "generate" && (
-          <GenerationConsole runId={runId} hasArtifact={hasArtifact} onSettled={onSettled} />
-        )}
+      {/* 内容区。收起时整块不渲染 —— 不是藏起来，是不占地方 */}
+      {open && (
+        <div className="min-h-0 flex-1">
+          {tab === "generate" && (
+            <GenerationConsole runId={runId} hasArtifact={hasArtifact} onSettled={onSettled} />
+          )}
 
-        {tab === "artifact" &&
-          (hasArtifact ? (
-            <Opener runId={runId} bytes={artifactBytes} onDownload={download} />
-          ) : (
-            <Empty
-              title="还没有成品"
-              hint="切到「生成过程」点一下开始生成，完成后这里会出现打开成品的入口。"
-              action={{ label: "去生成", onClick: () => setTab("generate") }}
-            />
-          ))}
-
-        {tab === "source" && (
-          <div className="scroll-hint h-full overflow-auto">
-            {loadingSource ? (
-              <p className="p-4 text-[11px] text-slate-500">正在读取源码…</p>
+          {tab === "artifact" &&
+            (hasArtifact ? (
+              <Opener runId={runId} bytes={artifactBytes} onDownload={download} />
             ) : (
-              <pre className="px-4 py-3 text-[11px] leading-relaxed whitespace-pre-wrap text-slate-400">
-                {source ?? "（暂无内容）"}
-              </pre>
-            )}
-          </div>
-        )}
-      </div>
+              <Empty
+                title="还没有成品"
+                hint="切到「生成过程」点一下开始生成，完成后这里会出现打开成品的入口。"
+                action={{ label: "去生成", onClick: () => pick("generate") }}
+              />
+            ))}
+
+          {tab === "source" && (
+            <div className="scroll-hint h-full overflow-auto">
+              {loadingSource ? (
+                <p className="p-4 text-[11px] text-slate-500">正在读取源码…</p>
+              ) : (
+                <pre className="px-4 py-3 text-[11px] leading-relaxed whitespace-pre-wrap text-slate-400">
+                  {source ?? "（暂无内容）"}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -172,8 +222,8 @@ export function RunWorkbench({
  * **半截的预览比没有预览更糟**，它让人以为成品坏了。
  *
  * 这里只做一件事：把「整页打开」这件事说清楚、点得到。
- * 用的是**新标签页**而不是当前页跳转 —— 生成过程、源码这些
- * 都还在这一页上，跳走了就回不来了。
+ * 用新标签页而不是当前页跳转 —— 生成过程、源码都还在这一页上，
+ * 跳走了就回不来。
  */
 function Opener({
   runId,

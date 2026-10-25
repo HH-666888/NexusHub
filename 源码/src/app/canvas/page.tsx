@@ -129,13 +129,15 @@ export default async function CanvasPage({
         </div>
 
         {/*
-          下半区：生成过程 / 成品预览 / 源码。
+          下半区：生成过程 / 成品 / 源码。**它是可折叠的**。
 
-          高度写死一个区间（最小 200、最多 45%），不跟着内容长 ——
-          否则一次生成把它撑高之后，上面的画布会被挤没，
-          而生成的时候恰恰最需要看着上面那张图。
+          ⚠️ 高度由 RunWorkbench 自己定，这里只写 shrink-0 ——
+             因为开关状态在它里面（客户端），服务端拿不到。
+             这个容器写死高度的话，收起时就收不干净。
+             `shrink-0` 保证它不被上面的画布挤扁：
+             收起时它是 40px 的标签条，展开时是 38vh。
         */}
-        <div className="h-[38%] max-h-[45%] min-h-[200px] flex-none border-t border-[var(--color-border-soft)] bg-[var(--color-canvas)]">
+        <div className="shrink-0 border-t border-[var(--color-border-soft)] bg-[var(--color-canvas)]">
           {selectedRun ? (
             <RunWorkbench
               key={selectedRun.id}
@@ -144,14 +146,10 @@ export default async function CanvasPage({
               artifactBytes={artifact?.bytes ?? null}
             />
           ) : (
-            <div className="flex h-full items-center justify-center px-6 text-center">
-              <div>
-                <p className="text-sm text-slate-400">还没有选中任何构建</p>
-                <p className="mx-auto mt-1 max-w-sm text-[11px] leading-relaxed text-slate-500">
-                  回到首页，在输入框里说一句你想做的软件，点「↑」——
-                  它会出现在上面那条横带里，这里也就能开始生成了。
-                </p>
-              </div>
+            <div className="flex items-center justify-center px-6 py-4 text-center">
+              <p className="text-[11.5px] text-slate-500">
+                还没有选中任何构建 —— 回到首页说一句你想做的软件，点「↑」
+              </p>
             </div>
           )}
         </div>
