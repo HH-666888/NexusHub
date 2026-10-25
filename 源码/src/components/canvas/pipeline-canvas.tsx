@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { tintVarAt } from "@/core/domain/appearance";
 import { actorBadge } from "@/core/pipeline/authority";
 import type { GateOverride } from "@/core/pipeline/gate-policy";
@@ -14,8 +14,12 @@ import {
 } from "@/core/canvas/pipeline-layout";
 import {
   FOREST_GEOMETRY,
+  isNewNode,
   layoutForest,
+  lerpLayout,
+  treeLinks,
   type ForestGeometry,
+  type LaidNode,
 } from "@/core/canvas/forest-layout";
 import {
   childIndex,
@@ -154,8 +158,14 @@ function StageCard({
       }`}
       style={
         {
-          left: rect.x,
-          top: rect.y,
+          /*
+            ⚠️ 用 transform 而不是 left/top —— 和子卡同一个理由：
+            动画每帧都要改位置，left/top 会每帧触发布局重算。
+            配 transform-origin: 0 0，translate(x,y) 和 left:x; top:y
+            落在同一个位置上，坐标含义不变。
+          */
+          transform: `translate(${rect.x}px, ${rect.y}px)`,
+          transformOrigin: "0 0",
           width: rect.w,
           height: rect.h,
           ["--ring-color" as string]: `rgb(${tint})`,
@@ -339,7 +349,16 @@ function AuthorityChip({ node, dim }: { node: PipelineNode; dim: boolean }) {
  *   不表达"重要程度""归属"这些 —— 一个方块只该有一层含义，
  *   叠上第二层之后，缩小了看就只剩"一片花花绿绿"。
  */
-function ChildChip({ rect, child }: { rect: NodeRect; child: StageChild }) {
+function ChildChip({
+  rect,
+  child,
+  entering = false,
+}: {
+  rect: NodeRect;
+  child: StageChild;
+  /** 这一帧刚冒出来 —— 要淡入 */
+  entering?: boolean;
+}) {
   const tone =
     child.tone === "pass"
       ? "74 222 128"
@@ -351,30 +370,113 @@ function ChildChip({ rect, child }: { rect: NodeRect; child: StageChild }) {
     <div
       data-canvas-child={child.id}
       data-child-tone={child.tone}
+      data-child-entering={entering ? "1" : undefined}
       title={child.detail}
-      className="absolute overflow-hidden rounded-md border px-2.5 py-2"
+      /*
+        pointer-events-auto 的理由和主卡一样：
+        世界坐标那层是 pointer-events-none（为了拖着空白处能平移画布），
+        子卡得自己把事件收回来。
+      */
+      className="pointer-events-auto absolute overflow-hidden rounded-xl border px-3 py-2.5 transition-opacity duration-200"
       style={{
-        left: rect.x,
-        top: rect.y,
+        /*
+          ⚠️ 用 transform 而不是 left/top —— 和主卡同一个理由。
+
+          两个好处：
+            一、left/top 的动画会**每帧触发布局重算**（reflow），
+                而 transform 只走合成层，三十个方块同时动也不掉帧；
+            二、生长动画本身就是位移，用 left/top 写等于每帧重排一次版。
+          配 transform-origin: 0 0，坐标含义和 left/top 完全一致 ——
+          translate(x, y) 落在同一个位置上。
+        */
+        transform: `translate(${rect.x}px, ${rect.y}px)`,
+        transformOrigin: "0 0",
         width: rect.w,
         height: rect.h,
-        borderColor: `rgb(${tone} / 0.42)`,
-        background: `rgb(${tone} / 0.08)`,
+        /*
+          刚冒出来的方块从透明淡入。
+          光有尺寸插值不够 —— 一个从 0 长到 172×112 的方块如果
+          一上来就是全不透明，看起来像"弹出来"而不是"长出来"。
+        */
+        opacity: entering ? 0.25 : 1,
+        borderColor: `rgb(${tone} / 0.45)`,
+        backgroundColor: "var(--color-surface)",
+        backgroundImage: `linear-gradient(150deg, rgb(${tone} / 0.14) 0%, rgb(${tone} / 0.03) 58%, transparent 100%)`,
       }}
     >
-      <div className="flex items-center gap-1.5">
+      {/* 顶部细亮线。和主卡同一件事：说明这一格是"活的" */}
+      <span
+        aria-hidden
+        className="absolute inset-x-0 top-0 h-px"
+        style={{ background: `linear-gradient(90deg, transparent, rgb(${tone} / 0.9), transparent)` }}
+      />
+
+      {/* ---------- 第一行：状态点 + 状态胶囊 ----------
+          和主卡那一行同构（主卡是「点 + 序号 01」+ 状态胶囊）。
+          点和胶囊都在说同一个 tone，看着重复 —— 但主卡也是这么重复的，
+          而用户要的正是"同一套"，所以这里保持一致而不是自作主张去掉一个。 */}
+      <div className="flex items-start justify-between gap-2">
         <span
           aria-hidden
-          className="inline-block h-1.5 w-1.5 flex-none rounded-full"
-          style={{ background: `rgb(${tone})` }}
+          className="mt-1 inline-block h-1.5 w-1.5 flex-none rounded-full"
+          style={{ background: `rgb(${tone})`, boxShadow: `0 0 9px 1px rgb(${tone} / 0.6)` }}
         />
-        {/* data-canvas-label 让它在缩小时跟着让位，见 globals.css */}
         <span
+          data-child-status
           data-canvas-label="minor"
-          className="truncate text-[11px] leading-tight text-slate-300"
+          className="rounded border px-1.5 py-px text-[10px] whitespace-nowrap"
+          style={{
+            borderColor: `rgb(${tone} / 0.5)`,
+            color: `rgb(${tone})`,
+            background: `rgb(${tone} / 0.12)`,
+          }}
         >
-          {child.label}
+          {child.statusLabel}
         </span>
+      </div>
+
+      {/* ---------- 名称。对应主卡的「规格化」那一行 ---------- */}
+      <div
+        data-canvas-label="major"
+        className="mt-1.5 truncate text-[13px] leading-tight font-medium text-slate-100"
+      >
+        {child.label}
+      </div>
+
+      {/* ---------- 判定依据。对应主卡的「产物名 / 看什么数」----------
+          两行截断：依据有长有短，不截会把卡片撑破（高度是布局算死的）。 */}
+      <div
+        data-child-detail
+        data-canvas-label="minor"
+        className="mt-0.5 line-clamp-2 text-[10.5px] leading-snug text-slate-500"
+      >
+        {child.detail}
+      </div>
+
+      {/* ---------- 关键字胶囊。对应主卡那排「AI·干活」「要人点头」----------
+          ★ 现在是占位符「——」，见 core/pipeline/forest.ts 的 CHILD_PLACEHOLDER。 */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        {child.chips.map((c, i) => (
+          <span
+            key={i}
+            data-canvas-label="minor"
+            className="rounded px-1.5 py-px text-[10px] leading-tight text-slate-600"
+            style={{ border: "1px solid var(--color-border-soft)" }}
+          >
+            {c}
+          </span>
+        ))}
+      </div>
+
+      {/* ---------- 分隔线 + 数值。对应主卡的「花费 ¥0.0082」----------
+          ★ 同样是占位符。 */}
+      <div
+        data-child-metric
+        data-canvas-label="minor"
+        className="mt-1.5 border-t pt-1 text-[10.5px] tabular-nums text-slate-500"
+        style={{ borderColor: `rgb(${tone} / 0.15)` }}
+      >
+        {child.metric}
       </div>
     </div>
   );
@@ -439,9 +541,27 @@ export function PipelineCanvas({
     [nodes, childrenByStage, g],
   );
 
+  /*
+    ⚠️ 从这一行往下，画面上用的是 **animated.nodes**，不是 forest.nodes。
+
+    区别：forest 是"这一刻应该长成什么样"（目标），
+    animated 是"这一帧实际画在哪"（可能是插值中的中间态）。
+
+    子树长出来的那 320ms 里，两者不同 —— 六个根正在被撑开、
+    七个方块正在从父卡里往外长。动画结束后两者收敛到同一个值。
+
+    `animatedNodes` 这个别名是为了让下面的代码读起来不用一直写 .nodes，
+    同时**显式地**告诉读的人：这里用的是动画态。
+  */
+  const animated = useAnimatedLayout(forest.nodes);
+  const animatedNodes = animated.nodes;
+
   const rects = useMemo(
-    () => nodes.map((n) => forest.byId.get(n.id) ?? { x: 0, y: 0, w: g.nodeW, h: g.nodeH }),
-    [nodes, forest, g],
+    () =>
+      nodes.map(
+        (n) => animatedNodes.find((a) => a.id === n.id) ?? forest.byId.get(n.id) ?? { x: 0, y: 0, w: g.nodeW, h: g.nodeH },
+      ),
+    [nodes, animatedNodes, forest, g],
   );
 
   /** 有聚焦点时，不在链上的压暗 —— 让链自己浮出来 */
@@ -525,47 +645,75 @@ export function PipelineCanvas({
           ---------- 父子连线 ----------
           **这是让子树读起来像「树」的东西。**
 
-          在此之前子节点是画出来了，但它们和父工序之间没有任何连线 ——
-          结果七个方块看着就是**漂在下面的另一堆卡片**，
-          而不是「挂在这一步下面」。用户的原话：「为什么没有树节点的效果」。
+          起因：子节点画出来了，但和父工序之间没有连线 ——
+          结果七个方块看着是**漂在下面的另一堆卡片**。
+          用户原话：「为什么没有树节点的效果」。
 
-          ── 形状用正交折线，不用斜线 ──
-               父卡底边中点
-                   │
-                   ├───────────┐     ← 先下去一段，再横过去，再下去
-                   │           │
-                 子1          子2
-            正交折线让「同属一个父亲」一眼看得出来：它们共用父节点下面那一小竖。
-            斜线（贝塞尔或直线）在多个子节点时会散成一把扇子，反而看不清归属。
+          ── 第一版的做法是错的 ──
+            第一版让每个孩子各自从父节点连一条线（父底 → 下去 → 横过去 → 子顶）。
+            一排孩子时没问题，但孩子是**两列四行**的：
+            第 2/3/4 行的竖线必须从第 1 行的方块底下穿过，
+            而方块画在线**上面**，于是那些线全被盖住 ——
+            **只有第一行看起来连着。**
+
+          ── 现在的做法 ──
+            几何全交给 core 的 treeLinks（纯函数，7 条单测钉着）：
+            一条**躯干**从父卡底边中点往下拉，每个孩子一根**短横枝**
+            从躯干插到孩子朝向躯干那条边的中点。
+
+            脊线走父卡中心，而那恰好是两块子卡区的中缝 ——
+            **所以它永远不会从任何方块底下穿过。**
+            这一点由单测保证（对 n=1/2/3/4/5/7 逐行验过）。
 
           ── 画在节点**下面** ──
-            这段在 <svg> 里，而卡片和子方块是 svg 之后渲染的 ——
-            所以线会从卡片底下穿过，端口自然被遮住，不用手动裁剪。
+            这段在 <svg> 里，卡片和子方块是 svg 之后渲染的 ——
+            线从卡片底下穿过，端口自然被遮住，不用手动裁剪。
         */}
-        {forest.nodes
-          .filter((n) => n.depth > 0 && n.parentId)
-          .map((n) => {
-            const parent = forest.byId.get(n.parentId!);
-            if (!parent) return null;
+        {/*
+          ⚠️ 连线也必须用**动画态**（animatedNodes），不能用 forest.nodes。
 
-            const x1 = parent.x + parent.w / 2;
-            const y1 = parent.y + parent.h;
-            const x2 = n.x + n.w / 2;
-            const y2 = n.y;
-            /* 拐弯处取中点；父底到子顶本来就留了 gapY，这里只用其中一半 */
-            const midY = y1 + (y2 - y1) / 2;
+          否则动画那 320ms 里会出现最难看的错位：
+          卡片正在被撑开滑向新位置，而连线**已经跳到终点**了 ——
+          于是线头和卡片对不上，看起来像断的。
 
-            return (
+          连线本来就是"从这一帧的父卡连到这一帧的子卡"，
+          所以它跟着同一套坐标走才是对的。
+        */}
+        {treeLinks(animatedNodes).map((l) => (
+          <g key={`tree-${l.parentId}`}>
+            {/* 躯干：一条竖线。它不属于任何一个孩子，单独标记 */}
+            <path
+              data-canvas-tree-trunk={l.parentId}
+              d={`M ${l.trunk.x} ${l.trunk.y1} V ${l.trunk.y2}`}
+              fill="none"
+              stroke="rgb(148 163 184 / 0.38)"
+              strokeWidth={1.2}
+            />
+            {/*
+              横枝：**一个孩子一根**，各带 data-canvas-tree-link。
+              断言「连线条数 === 子方块数」靠的就是它。
+
+              ⚠️ 退化情形（孩子横跨脊线）**也要渲染，不能 filter 掉**。
+                 那种孩子（两列排布时最后一行只有 1 个、居中摆）
+                 正好坐在脊线上，横枝长度为 0 —— 视觉上它靠躯干连着
+                 （躯干一直伸到它的顶边），本来就看不见横枝。
+                 但过滤掉的话 DOM 里就少一个标记，断言会误报「有孤儿方块」
+                 ——**测试的红绿就不再对应事实**。
+                 画一根零长度的线不花代价，却让计数保持诚实。
+            */}
+            {l.branches.map((b) => (
               <path
-                key={`link-${n.id}`}
-                data-canvas-tree-link={n.id}
-                d={`M ${x1} ${y1} V ${midY} H ${x2} V ${y2}`}
+                key={b.childId}
+                data-canvas-tree-link={b.childId}
+                data-canvas-tree-link-degenerate={b.degenerate ? "1" : undefined}
+                d={`M ${b.x1} ${b.y} H ${b.x2}`}
                 fill="none"
                 stroke="rgb(148 163 184 / 0.38)"
                 strokeWidth={1.2}
               />
-            );
-          })}
+            ))}
+          </g>
+        ))}
       </svg>
 
       {/* ---------- 节点 ---------- */}
@@ -585,14 +733,146 @@ export function PipelineCanvas({
         ---------- 子节点 ----------
         挂在每道工序下面。depth > 0 的就是它们 ——
         布局只吐出位置，这里按 id 把数据找回来。
+
+        ⚠️ 用 animatedNodes（动画态），理由同上面的连线。
+        另外带上 `entering`：这一帧里刚冒出来的方块要淡入 ——
+        光有位置插值不够，一个从 0 尺寸长到 172×112 的方块
+        如果一上来就是全不透明，看起来像"弹出来"而不是"长出来"。
       */}
-      {forest.nodes
+      {animatedNodes
         .filter((n) => n.depth > 0)
         .map((n) => {
           const child = childOf.get(n.id);
           if (!child) return null;
-          return <ChildChip key={n.id} rect={n} child={child} />;
+          return (
+            <ChildChip
+              key={n.id}
+              rect={n}
+              child={child}
+              entering={animated.newIds.has(n.id)}
+            />
+          );
         })}
     </div>
   );
+}
+
+/* ============================================================
+   生长动画
+   ============================================================ */
+
+/**
+ * 让布局变化动起来
+ * ============================================================
+ * 子树是**跑起来才长出来的**：一开始六个根节点挨在一起，跑到验收时
+ * 「验收」下面突然多出七个方块，六道工序被撑开让位。
+ *
+ * 不做动画的话这些位移是**瞬间**发生的 —— 看起来像"闪了一下换了一张图"，
+ * 而不是"东西长出来了"。用户要的「动态效果拉满」，一半就落在这里。
+ *
+ * ── 为什么写在组件文件里，而不是单独一个 use-animated-layout.ts ──
+ *   本来是单独一个文件的，写法也对。但那个文件**建不出来** ——
+ *   这个仓库所在的环境有个行为：**新建的未跟踪文件会被删掉**
+ *   （`git add` 都追不上它）。这个会话里已经撞过好几次。
+ *   而"改一个已有文件"是好的。
+ *
+ *   所以它先住在这里 —— 反正唯一的使用者就是下面那个组件。
+ *   ⚠️ 等环境正常了应该挪回单独的文件：一个 hook 混在组件文件里
+ *      只是权宜之计，不是设计。
+ *
+ * ── 插值本身不在这里 ──
+ *   在 core 的 lerpLayout 里（纯函数，8 条单测钉着）。
+ *   这个 hook 只负责**什么时候调用它、传什么 t**。
+ *
+ * ── 三个必须处理的情形 ──
+ *   ① 首次渲染：没有上一帧，直接给终态。否则六个根会从中心"炸开"
+ *   ② prefers-reduced-motion：直接给终态，一帧都不插
+ *   ③ 目标没变：不动。省掉一次没意义的 rAF 循环
+ */
+
+/** 动画时长。320ms 是"看得见在动"又"不挡着下一步"的折中 */
+const GROW_MS = 320;
+
+/**
+ * ease-out：起步快、收尾慢。
+ * 用 ease-in-out 的话起步那一下会显得"粘"，而这里要的正是"弹出来"。
+ */
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+/** 用户是不是要求减少动效 */
+function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined") return true; // 服务端渲染时当真，别动
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
+function useAnimatedLayout(target: LaidNode[]): { nodes: LaidNode[]; newIds: Set<string> } {
+  /*
+    prev 用 ref 而不是 state：它只是"上一帧是什么"的书签，
+    变它不该触发重渲染 —— 触发重渲染的只有当前这一帧。
+  */
+  const prevRef = useRef<LaidNode[]>([]);
+  const rafRef = useRef<number | null>(null);
+
+  const [nodes, setNodes] = useState<LaidNode[]>(target);
+  const [newIds, setNewIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const from = prevRef.current;
+
+    /*
+      ① 首次渲染，或者用户要求减少动效 → 直接落终态。
+         首次那一帧不能动：那时 prev 是空的，lerpLayout 会把
+         每个节点都当成"新节点"从父节点中心长出来 ——
+         整片森林会从中间炸开，那不是"生长"，是"爆炸"。
+    */
+    if (from.length === 0 || prefersReducedMotion()) {
+      prevRef.current = target;
+      setNodes(target);
+      setNewIds(new Set());
+      return;
+    }
+
+    /* 目标没变就不动 */
+    const same =
+      from.length === target.length &&
+      target.every(
+        (n, i) => n.id === from[i]?.id && n.x === from[i]?.x && n.y === from[i]?.y,
+      );
+    if (same) return;
+
+    /* 这一帧里新冒出来的节点。渲染层拿去决定谁要淡入 */
+    setNewIds(new Set(target.filter((n) => isNewNode(from, n.id)).map((n) => n.id)));
+
+    const started = performance.now();
+
+    const step = (now: number) => {
+      const raw = Math.min(1, (now - started) / GROW_MS);
+      setNodes(lerpLayout(from, target, easeOutCubic(raw)));
+
+      if (raw < 1) {
+        rafRef.current = requestAnimationFrame(step);
+      } else {
+        /*
+          收尾：把 prev 记成**目标**（不是最后一帧的插值）。
+          记插值的话，下一次动画会从一个"差一点点"的状态出发，
+          误差会一帧帧攒起来。
+          同时把 newIds 清空 —— 动画结束了就不该再淡入。
+        */
+        prevRef.current = target;
+        rafRef.current = null;
+        setNewIds(new Set());
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(step);
+
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    };
+  }, [target]);
+
+  return { nodes, newIds };
 }

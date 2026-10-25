@@ -437,6 +437,102 @@ export function treeLinks(nodes: LaidNode[]): TreeLink[] {
 }
 
 /* ============================================================
+   生长动画：两套布局之间的插值
+   ============================================================ */
+
+/**
+ * 在上一帧的布局和这一帧的布局之间取一个中间态。
+ *
+ * ── 为什么要有它 ──
+ *   子树是**跑起来才长出来的**：一开始六个根节点挨在一起，
+ *   跑到验收时「验收」下面突然多出七个方块，六道工序被撑开让位。
+ *   不做插值的话，这些位移是**瞬间**发生的 —— 画面上看起来
+ *   就像"闪了一下换了一张图"，而不是"东西长出来了"。
+ *
+ *   用户要的「动态效果拉满」，一半就落在这个函数上。
+ *
+ * ── 纯函数 ──
+ *   它只做算术：吃两套布局和一个 0~1 的数，吐一套中间布局。
+ *   没有 requestAnimationFrame、没有时间、没有 React ——
+ *   所以它可以被单测钉死（"t=0 等于上一帧、t=1 等于这一帧"
+ *   这种性质用眼睛是验不出来的）。
+ *
+ * ── 新节点从哪儿冒出来 ──
+ *   这是这个函数里唯一有判断的地方。
+ *
+ *   上一帧没有的节点（新长出来的子方块），如果直接从它的终点开始，
+ *   就是硬生生"凭空出现"。让它**从父节点的位置长出来**，
+ *   才有"挂上去"的感觉 —— 而那正是这棵树想表达的东西。
+ *
+ *   起点取父节点**上一帧**的位置：这样方块看起来是从父卡里钻出来的。
+ *   上一帧也没有父节点（父子同时新增）时退而取父节点这一帧的位置；
+ *   再退而取它自己 —— 至少不会算出 NaN。
+ *
+ * @param prev 上一帧的节点，按 id 认。第一次渲染传空数组
+ * @param next 这一帧的目标节点
+ * @param t    0 = 完全在上一帧，1 = 完全在这一帧。中间值自动夹到 [0,1]
+ */
+export function lerpLayout(
+  prev: readonly LaidNode[],
+  next: readonly LaidNode[],
+  t: number,
+): LaidNode[] {
+  /* 夹一下：rAF 的时间戳偶尔会溢出或倒退，不夹的话会算出负尺寸 */
+  const k = Math.max(0, Math.min(1, t));
+
+  const prevById = new Map(prev.map((n) => [n.id, n]));
+  const nextById = new Map(next.map((n) => [n.id, n]));
+
+  const mix = (a: number, b: number) => a + (b - a) * k;
+
+  return next.map((to) => {
+    const from = prevById.get(to.id);
+
+    if (from) {
+      /* 老节点：位置和尺寸都插值。六个根被撑开时走的就是这条路 */
+      return {
+        ...to,
+        x: mix(from.x, to.x),
+        y: mix(from.y, to.y),
+        w: mix(from.w, to.w),
+        h: mix(from.h, to.h),
+      };
+    }
+
+    /*
+      新节点：从父节点那儿长出来。
+      起点是一个**退化的矩形**（宽高为 0，落在父节点中心）——
+      这样它看起来是从父卡里"钻"出来再展开的，而不是淡入一个成品。
+    */
+    const parent = to.parentId
+      ? (prevById.get(to.parentId) ?? nextById.get(to.parentId))
+      : undefined;
+
+    const originX = parent ? parent.x + parent.w / 2 : to.x + to.w / 2;
+    const originY = parent ? parent.y + parent.h / 2 : to.y + to.h / 2;
+
+    return {
+      ...to,
+      x: mix(originX, to.x + to.w / 2) - (to.w * k) / 2,
+      y: mix(originY, to.y + to.h / 2) - (to.h * k) / 2,
+      w: to.w * k,
+      h: to.h * k,
+    };
+  });
+}
+
+/**
+ * 某个节点是不是这一帧新冒出来的。
+ *
+ * 渲染层用它决定透明度：新节点要 0 → 1 淡入，老节点一直是 1。
+ * 单独抽出来是因为**"新"这件事只有比较两套布局才知道**，
+ * 而 lerpLayout 的返回值里没有这个信息（它只给中间位置）。
+ */
+export function isNewNode(prev: readonly LaidNode[], id: string): boolean {
+  return !prev.some((n) => n.id === id);
+}
+
+/* ============================================================
    关于「所有深度共用一套子节点尺寸」
    ============================================================
    现在第 2 层和第 5 层的方块一样大。
