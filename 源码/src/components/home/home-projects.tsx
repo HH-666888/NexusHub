@@ -3,6 +3,7 @@ import { computeStageStatuses } from "@/core/pipeline/progress";
 import { STAGES } from "@/core/pipeline/stages";
 import { tintVarAt } from "@/core/domain/appearance";
 import type { RunView } from "@/components/cockpit/run-list";
+import { NAV_GUTTER } from "@/components/shell/gutter";
 
 /**
  * 项目卡片行
@@ -34,7 +35,7 @@ export function HomeProjects({ runs }: HomeProjectsProps) {
   const shown = runs.slice(0, 3);
 
   return (
-    <section className="w-full px-14 pb-16">
+    <section className={`w-full ${NAV_GUTTER} pb-16`}>
       <div className="mb-4 flex items-end justify-between">
         <h2 className="text-[15px] font-medium text-slate-200">我的项目</h2>
         {runs.length > 0 && (

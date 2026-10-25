@@ -6,6 +6,7 @@ import { logoutAction } from "@/app/actions/auth";
 import { createRunAction, type RunFormState } from "@/app/actions/run";
 import { PROMPT_MAX } from "@/core/domain/run";
 import { AppNav } from "@/components/shell/app-nav";
+import { NAV_GUTTER } from "@/components/shell/gutter";
 
 const INITIAL: RunFormState = {};
 
@@ -97,7 +98,7 @@ export function CockpitHeader({
         state.error ? (
           <div
             role="alert"
-            className="border-t border-amber-900/50 bg-amber-950/30 px-14 py-2 text-xs text-amber-300"
+            className={`border-t border-amber-900/50 bg-amber-950/30 ${NAV_GUTTER} py-2 text-xs text-amber-300`}
           >
             {state.error}
           </div>

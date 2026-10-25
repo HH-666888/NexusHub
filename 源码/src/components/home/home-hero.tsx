@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { NAV_GUTTER } from "@/components/shell/gutter";
 
 /**
  * 首页主区：标题 + 类型分段 + 输入框
@@ -41,7 +42,7 @@ export function HomeHero() {
     setNotice(`${what}还没接上 —— 这一版先把画面搭出来，功能是下一步。`);
 
   return (
-    <section className="w-full px-14">
+    <section className={`w-full ${NAV_GUTTER}`}>
       {/* ---------- 大标题 ---------- */}
       <h1 className="pt-16 pb-7 text-center text-[42px] leading-tight font-semibold tracking-tight text-slate-100">
         说一句，做出来
