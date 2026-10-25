@@ -1,5 +1,5 @@
 import { HomeHero } from "@/components/home/home-hero";
-import { HomeNav } from "@/components/home/home-nav";
+import { AppNav } from "@/components/shell/app-nav";
 import { HomeProjects } from "@/components/home/home-projects";
 import { HomeShowcase } from "@/components/home/home-showcase";
 import type { RunView } from "@/components/cockpit/run-list";
@@ -70,7 +70,7 @@ export default async function HomePage() {
       />
 
       <div className="relative">
-        <HomeNav
+        <AppNav
           spentCny={spent > 0 ? spent : null}
           user={{ displayName: user.displayName, username: user.username }}
           themeToggle={<ThemeToggleServer />}

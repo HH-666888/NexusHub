@@ -68,6 +68,13 @@ export default async function StudioPage({
     : null;
 
   /*
+    累计花费：顶栏右侧要显示它。
+    以前工作台顶栏只显示 @用户名，没有这个数 —— 换成全局统一的顶栏之后，
+    三个页面右侧那一组必须一模一样，所以这里也得查出来传下去。
+  */
+  const spent = await sqliteCostStore.totalByUser(user.id);
+
+  /*
     分阶段的花费。
     cost_records 的每一行本来就带 stage —— 也就是说「钱花在哪道工序」
     一直记着，只是界面上没用上，于是摆了两个假数字：
@@ -83,6 +90,7 @@ export default async function StudioPage({
   return (
     <Cockpit
       user={{ displayName: user.displayName, username: user.username }}
+      spentCny={spent > 0 ? spent : null}
       runs={runs}
       selectedRun={selectedRun}
       artifactBytes={artifact?.bytes ?? null}

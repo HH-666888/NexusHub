@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AppNav } from "@/components/shell/app-nav";
 import { ThemeToggleServer } from "@/components/theme-toggle-server";
 import { Features } from "@/components/welcome/features";
 import { PipelineFlow } from "@/components/welcome/pipeline-flow";
@@ -76,46 +77,36 @@ export default async function WelcomePage() {
 
       {/* ============================================================
           顶栏
-          ============================================================ */}
-      <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5">
-        <div className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className="inline-block h-2.5 w-2.5 rounded-full bg-[var(--app-accent)]"
-          />
-          <span className="text-lg font-semibold tracking-tight">Nexus</span>
-          <span className="ml-2 hidden text-xs text-slate-500 sm:inline">
-            一个网页里的软件工厂
-          </span>
-        </div>
+          ============================================================
+          用的是全局那一个。这里是**公开模式**（user 可能是 null）——
+          右侧从「花费 + 用户」换成「登录 / 免费开始」，但**位置一样**。
 
-        <nav className="flex items-center gap-2 text-sm">
-          <ThemeToggleServer />
-          {user ? (
-            <Link
-              href="/studio"
-              className="rounded-lg bg-[var(--app-accent)] px-4 py-2 font-medium text-white transition-[transform,background-color] duration-150 ease-out hover:-translate-y-px hover:opacity-90"
-            >
-              进入工作台
-            </Link>
-          ) : (
-            <>
+          原来这里是第四套顶栏（max-w-6xl 居中 + px-5），
+          于是登录前后导航会横跳一次，而且和首页那套也对不上。
+          ============================================================ */}
+      <div className="relative z-10">
+        <AppNav
+          user={user ? { displayName: user.displayName, username: user.username } : null}
+          spentCny={null}
+          themeToggle={<ThemeToggleServer />}
+          /*
+            已登录的人在这一页需要一个**醒目的**入口。
+            顶栏中间那排链接里虽然也有「构建」，但那是灰的、不显眼 ——
+            而一个已经登录的人停在落地页上，最该看到的就是「进去」。
+            未登录时不用给：SignedOut 自己会显示「免费开始」。
+          */
+          actions={
+            user ? (
               <Link
-                href="/login"
-                className="px-3 py-2 text-slate-400 transition-colors duration-150 hover:text-slate-100"
+                href="/studio"
+                className="rounded-lg bg-[var(--app-accent)] px-4 py-1.5 text-[13px] font-medium text-white transition-[transform,opacity] duration-150 ease-out hover:-translate-y-px hover:opacity-90"
               >
-                登录
+                进入工作台
               </Link>
-              <Link
-                href="/register"
-                className="rounded-lg bg-[var(--app-accent)] px-4 py-2 font-medium text-white transition-[transform,background-color] duration-150 ease-out hover:-translate-y-px hover:opacity-90"
-              >
-                免费开始
-              </Link>
-            </>
-          )}
-        </nav>
-      </header>
+            ) : null
+          }
+        />
+      </div>
 
       {/* ============================================================
           主视觉

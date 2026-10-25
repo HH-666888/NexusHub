@@ -1,5 +1,5 @@
 import { CanvasWorkbench } from "@/components/canvas/canvas-workbench";
-import { HomeNav } from "@/components/home/home-nav";
+import { AppNav } from "@/components/shell/app-nav";
 import { ThemeToggleServer } from "@/components/theme-toggle-server";
 import { sqliteCostStore } from "@/adapters/store/cost-repo";
 import { sqliteRunStore } from "@/adapters/store/run-repo";
@@ -46,7 +46,7 @@ export default async function CanvasPage() {
 
   return (
     <div className="flex h-screen flex-col bg-[var(--color-canvas)]">
-      <HomeNav
+      <AppNav
         spentCny={spent > 0 ? spent : null}
         user={{ displayName: user.displayName, username: user.username }}
         themeToggle={<ThemeToggleServer />}

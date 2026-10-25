@@ -43,6 +43,14 @@ const STATUS_STYLE: Record<StageStatus, { text: string; cls: string }> = {
 
 export interface CockpitProps {
   user: { displayName: string; username: string };
+  /**
+   * 累计已花费。交给顶栏显示。
+   *
+   * 以前工作台顶栏不显示这个数（它显示的是 @用户名）。
+   * 现在顶栏是全局统一的那一个，右侧那组三处一模一样 ——
+   * 所以这个值必须一路传下来。
+   */
+  spentCny: number | null;
   runs: RunView[];
   selectedRun: Run | null;
   /** 选中运行的成品大小（字节）。null 表示还没有成品 */
@@ -70,6 +78,7 @@ export interface CockpitProps {
 
 export function Cockpit({
   user,
+  spentCny,
   runs,
   selectedRun,
   artifactBytes,
@@ -132,6 +141,7 @@ export function Cockpit({
     <div className="flex h-screen flex-col">
       <CockpitHeader
         user={user}
+        spentCny={spentCny}
         themeToggle={themeToggle}
         seed={seed?.text}
         seedKey={seed?.n}

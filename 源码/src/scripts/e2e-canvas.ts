@@ -708,8 +708,77 @@ async function main() {
       `卡片只有 ${pn.cardW}px 宽 —— 字会缩到看不清`,
     );
 
+    /* ---------- 12. 全局顶栏在所有页面上的位置一致 ---------- */
+    /*
+      这一条守的是**以后**：新加页面时如果自己写一个 header，
+      或者忘了用全局的 AppNav，这里会红。
+
+      为什么值得一条断言：
+        以前有三套顶栏，页边距各不相同 ——
+          HomeNav        px-8 + max-w-1400
+          CockpitHeader  px-6
+          设置页现写的    max-w-5xl 居中（品牌落在 x=472）
+        表现是**换一个页面，导航就横向跳一下**，而宽屏上跳得更多。
+        这种东西靠自觉守不住，得让它在测试里红一次。
+    */
+    heading("第十二步 · 顶栏在所有页面上位置一致");
+
+    const routes = ["/", "/canvas", "/studio?tab=graph", "/settings", "/welcome"];
+    const seen: Array<{ route: string; brandLeft: number | null; navCount: number }> = [];
+
+    for (const route of routes) {
+      await cdp.send("Page.navigate", { url: `${BASE}${route}` });
+      await sleep(2200);
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: `(() => {
+          /*
+            ⚠️ 按 data-app-nav 认顶栏，**不能**按"页面里第一个 header"。
+            <header> 是个合法的语义化标签，卡片和区块都会用 ——
+            设置页就有三个（顶栏 + 两张卡片）。按标签数会把它们一起数进来，
+            于是报"出现了多个顶栏"，而实际上只有一个。
+          */
+          const navs = [...document.querySelectorAll('[data-app-nav]')];
+          const nav = navs[0] ?? null;
+          const brand = nav ? nav.querySelector('a') : null;
+          const b = brand ? brand.getBoundingClientRect() : null;
+          return JSON.stringify({
+            brandLeft: b ? Math.round(b.left) : null,
+            navCount: navs.length,
+          });
+        })()`,
+        returnByValue: true,
+      });
+      const v = JSON.parse(r.result!.value!) as { brandLeft: number | null; navCount: number };
+      seen.push({ route, ...v });
+    }
+
+    info(seen.map((s) => `${s.route}=${s.brandLeft}`).join("  "));
+
+    const missing = seen.filter((s) => s.brandLeft === null);
+    expect_(
+      missing.length === 0,
+      "五个页面都有顶栏",
+      `这几个页面没有顶栏：${missing.map((s) => s.route).join(" ")}`,
+    );
+
+    // 位置必须**完全一样** —— 差一像素都说明有人自己写了一层
+    const lefts = new Set(seen.map((s) => s.brandLeft));
+    expect_(
+      lefts.size === 1,
+      `顶栏品牌在所有页面都落在同一个 x（${[...lefts][0]}px）`,
+      `品牌位置不一致：${seen.map((s) => `${s.route}=${s.brandLeft}`).join(" ")}`,
+    );
+
+    // 一页只能有一个顶栏。两个的话多半是路由组的 layout 和页面各写了一个
+    const doubled = seen.filter((s) => s.navCount > 1);
+    expect_(
+      doubled.length === 0,
+      "每个页面只有一个顶栏",
+      `这几个页面出现了多个顶栏：${doubled.map((s) => `${s.route}(${s.navCount})`).join(" ")}`,
+    );
+
     cdp.close();
-    ok("画布交互、详情与工作台面板全部通过");
+    ok("画布交互、详情、工作台面板与顶栏一致性全部通过");
   } finally {
     browser.kill();
     setTimeout(() => {

@@ -10,7 +10,9 @@ import {
 } from "@/core/settings/service";
 import { AppearancePanel } from "@/components/settings/appearance-panel";
 import { ModelPanel } from "@/components/settings/model-panel";
+import { AppNav } from "@/components/shell/app-nav";
 import { ThemeToggleServer } from "@/components/theme-toggle-server";
+import { sqliteCostStore } from "@/adapters/store/cost-repo";
 import { requireUser } from "@/server/auth-context";
 
 export const metadata: Metadata = {
@@ -31,12 +33,13 @@ export const metadata: Metadata = {
  *   不是靠界面不去显示它，而是它压根没被传出来。
  */
 export default async function SettingsPage() {
-  await requireUser();
+  const user = await requireUser();
 
-  const [appearance, modelConfig, allSettings] = await Promise.all([
+  const [appearance, modelConfig, allSettings, spent] = await Promise.all([
     loadAppearance(sqliteSettingsStore),
     loadModelConfig(sqliteSettingsStore),
     sqliteSettingsStore.list(),
+    sqliteCostStore.totalByUser(user.id),
   ]);
 
   const appearanceUpdatedAt =
@@ -44,9 +47,17 @@ export default async function SettingsPage() {
 
   return (
     <div className="min-h-screen">
-      {/* 顶栏 */}
-      <header className="border-b border-[var(--color-border-soft)]">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-4">
+      {/*
+        顶栏：全局统一的那一个。
+        中间放「返回工作台 | 设置」—— 两头的品牌和右侧那组和别的页面一模一样。
+        以前这里是第四套顶栏（max-w-5xl 居中 + px-6），
+        于是从首页点进设置时导航会**横向跳 450 像素**。
+      */}
+      <AppNav
+        spentCny={spent > 0 ? spent : null}
+        user={{ displayName: user.displayName, username: user.username }}
+        themeToggle={<ThemeToggleServer />}
+        center={
           <div className="flex items-center gap-3">
             <Link
               href="/studio"
@@ -57,21 +68,8 @@ export default async function SettingsPage() {
             <span className="text-slate-700">|</span>
             <h1 className="text-sm font-medium text-slate-100">设置</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggleServer />
-            <Link
-              href="/"
-              className="flex items-center gap-2 text-xs text-slate-400 transition-colors duration-150 hover:text-slate-100"
-            >
-              <span
-                aria-hidden
-                className="inline-block h-2 w-2 rounded-full bg-[var(--app-accent)]"
-              />
-              查看首页
-            </Link>
-          </div>
-        </div>
-      </header>
+        }
+      />
 
       <main className="mx-auto w-full max-w-5xl space-y-5 px-6 py-6">
         <AppearancePanel
