@@ -3,8 +3,10 @@ import { AppNav } from "@/components/shell/app-nav";
 import { ThemeToggleServer } from "@/components/theme-toggle-server";
 import { sqliteCostStore } from "@/adapters/store/cost-repo";
 import { sqliteRunStore } from "@/adapters/store/run-repo";
+import { sqliteEventStore } from "@/adapters/store/event-repo";
 import { env } from "@/config/env";
 import { groupCostByStage, type CostByStage } from "@/core/domain/stage-cost";
+import { checksToChildren, type ChildrenByStage } from "@/core/pipeline/forest";
 import { listRuns } from "@/core/run/service";
 import { requireUser } from "@/server/auth-context";
 
@@ -26,6 +28,16 @@ import { requireUser } from "@/server/auth-context";
  *     一、画布本来就是这张图该在的地方（无限、能缩、能拖）
  *     二、它一直是空的 —— 从首页点「新建项目」过来是一片网格，
  *         而「从一句话开始」这句承诺什么也没兑现
+ *
+ * ── 子树：每一步内部产出了什么 ──
+ *   六道工序里现在只有「验收与交付」能长出**真的**子树：
+ *   它那七项检查（完整 HTML 结构 / 内联样式 / 内联脚本 /
+ *   完全自包含 / 有事件处理 / 数据能持久化 / 中文界面）
+ *   是**纯本地正则**跑出来的确定结果，已经记在事件日志里
+ *   （kind:"check"），不是 AI 生成的、也不是编的。
+ *
+ *   别的五步没有产物可拆（四步还没接入，④ 直通模式下只有一次调用），
+ *   就不给子节点 —— **空着是实话**，比画几个占位的假方块强得多。
  */
 export default async function CanvasPage() {
   const user = await requireUser();
@@ -44,6 +56,24 @@ export default async function CanvasPage() {
     costByStage = groupCostByStage(records);
   }
 
+  /*
+    子节点：取最后一次 kind:"check" 的结果。
+
+    为什么取**最后一条**而不是第一条：
+      一次尝试里 check 事件只该有一条（检查是跑完才做的），
+      但万一写了多条（比如中途崩了重来），最后一条才是最终结论。
+      这和 core/pipeline/callback.ts 里那段回流逻辑取法一致。
+  */
+  let childrenByStage: ChildrenByStage = {};
+  if (latest) {
+    const events = await sqliteEventStore.listByRun(latest.id);
+    let checks = null;
+    for (const e of events) {
+      if (e.payload.kind === "check") checks = e.payload.results;
+    }
+    childrenByStage = { verify: checksToChildren(checks) };
+  }
+
   return (
     <div className="flex h-screen flex-col bg-[var(--color-canvas)]">
       <AppNav
@@ -59,6 +89,7 @@ export default async function CanvasPage() {
           run={latest ? { stage: latest.stage, status: latest.status } : null}
           costByStage={costByStage}
           gateOverride={env.run.specGate}
+          childrenByStage={childrenByStage}
         />
       </main>
     </div>

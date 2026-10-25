@@ -7,24 +7,21 @@ import { StageDetail } from "./stage-detail";
 import type { CostByStage } from "@/core/domain/stage-cost";
 import type { GateOverride } from "@/core/pipeline/gate-policy";
 import { buildPipelineGraph, tracePath } from "@/core/pipeline/graph";
+import { toLayoutNodes, type ChildrenByStage } from "@/core/pipeline/forest";
 import type { RunProgressInput } from "@/core/pipeline/progress";
-import { pipelineBounds, PANEL_GEOMETRY, WIDE_GEOMETRY } from "@/core/canvas/pipeline-layout";
+import { PANEL_GEOMETRY, WIDE_GEOMETRY, pipelineBounds } from "@/core/canvas/pipeline-layout";
+import { FOREST_GEOMETRY, layoutForest } from "@/core/canvas/forest-layout";
 import { STAGES } from "@/core/pipeline/stages";
 import type { StageId } from "@/core/pipeline/stages";
 
 /**
  * 画布工作台
  * ============================================================
- * 把「六道工序」画在自绘画布上。
- *
- * ── 和 /studio 里那张图的关系 ──
- *   这两处画的是同一件事，之前一处用 React Flow、一处用自绘。
- *   正在把它们合成一处：这一版做完之后 /studio 那张也会换成它，
- *   React Flow 卸掉。合成之前两处并存，是一段**有意的过渡**，
- *   不是两套设计。
+ * 把「画布」和「这张图上的业务状态」拼在一起：
+ * 平移缩放交给 CanvasStage，点了哪个节点、高亮哪条链留在这里。
  *
  * ── 为什么交互状态放在这里而不是画布里 ──
- *   画布只管"东西摆在哪、怎么平移缩放"。
+ *   画布只管「东西摆在哪、怎么平移缩放」。
  *   点了哪个节点、高亮哪条链，是这张图的业务状态 ——
  *   放进去的话，画布就不再是通用件，以后想画别的东西就得再拆一次。
  */
@@ -40,20 +37,20 @@ export interface CanvasWorkbenchProps {
    *   panel   工作台面板（/studio?tab=graph）—— 八百来像素，三列两行
    *
    * ── 为什么必须分两档 ──
-   *   一行六个是 1840 宽。放进 830 宽的面板里，自动适应会把它缩到 37% ——
-   *   六个节点确实全看见了，可**字看不清**，等于白看。
+   *   一行六个是 1860 宽。放进 808 宽的面板里，自动适应会把它缩到 55% ——
+   *   六个节点确实全看见了，可字看不清，等于白看。
    *   一行放不下就该换行，这是排版最基本的一件事。
    */
   variant?: "page" | "panel";
   /**
    * 每一步**内部**产出了什么，画成挂在它下面的子节点。
    *
-   * 只有整页画布（`variant="page"`）会真的画出来 ——
-   * 面板那一档 808×371，塞进子树之后自动适应会掉到 40% 以下，
-   * 六道工序自己都读不清了。**面板只当总览用**，
-   * 要看内部就点进 /canvas，或者双击那一道（见下一页的聚焦）。
+   * **只有整页画布会真的画出来** —— 面板那一档 808×371，
+   * 塞进子树之后自动适应会掉到 40% 以下，六道工序自己都读不清了。
+   * 面板只当总览用，要看内部就点进 /canvas。
    *
-   * 与其在面板里画一坨看不清的东西，不如干脆不画。
+   * 与其在面板里画一坨看不清的东西，不如干脆不画 ——
+   * 「看不清就不该假装看得清」这条规矩在这里也适用。
    */
   childrenByStage?: ChildrenByStage;
 }
@@ -63,9 +60,12 @@ export function CanvasWorkbench({
   costByStage,
   gateOverride = "declared",
   variant = "page",
+  childrenByStage,
 }: CanvasWorkbenchProps) {
   const [activeId, setActiveId] = useState<StageId | null>(null);
   const geometry = variant === "panel" ? PANEL_GEOMETRY : WIDE_GEOMETRY;
+  /** 面板不画子树，见 childrenByStage 上的说明 */
+  const kids = variant === "page" ? childrenByStage : undefined;
   /**
    * 自动适应的缩放下限。
    *
@@ -76,8 +76,8 @@ export function CanvasWorkbench({
    * 0.62 是量出来的：卡片 240×0.62 ≈ 149 宽，15px 的标题还剩 9px，
    * 正文 11px 还剩 7px —— 刚好读得出来。再小就不行了。
    *
-   * 代价是纵向要平移一下（内容 337 高、可视 259）。
-   * 平移本来就是无限画布该干的事，而"读不清"是没有补救的。
+   * 面板之外不给下限（0）：整页画布要让整片森林装得下，
+   * 该缩就缩 —— 那是「看位置」那一档该有的样子。
    */
   const minFitScale = variant === "panel" ? 0.62 : 0;
 
@@ -112,10 +112,31 @@ export function CanvasWorkbench({
     };
   }, [graph, activeId]);
 
-  const bounds = useMemo(
-    () => pipelineBounds(STAGES.length, geometry),
-    [geometry],
-  );
+  /*
+    「打开时对准哪儿」。
+
+    ⚠️ 分两种情况，不能一律用 pipelineBounds：
+
+      没有子树（面板那一档，或者这次运行还没跑到验收）
+        → 用旧算法。它逐像素等于改之前的布局（有单测钉着）
+
+      有子树
+        → 用**森林自己的包围盒**（含子树）。
+          用只按六个根算的话，「打开时看得全」会变成
+          「看得全六个根、子树全在屏幕外」—— 而子树正是要给人看的东西
+  */
+  const bounds = useMemo(() => {
+    if (!kids || Object.keys(kids).length === 0) {
+      return pipelineBounds(STAGES.length, geometry);
+    }
+    return layoutForest(
+      toLayoutNodes(
+        STAGES.map((s) => s.id),
+        kids,
+      ),
+      FOREST_GEOMETRY,
+    ).bounds;
+  }, [kids, geometry]);
 
   const pick = useCallback(
     (id: StageId) => setActiveId((cur) => (cur === id ? null : id)),
@@ -131,6 +152,7 @@ export function CanvasWorkbench({
           activeId={activeId}
           onPick={pick}
           geometry={geometry}
+          childrenByStage={kids}
           gateOverride={gateOverride}
         />
       </CanvasStage>
@@ -138,9 +160,13 @@ export function CanvasWorkbench({
       {/*
         详情面板浮在画布**上面**，不是画在世界坐标里 ——
         放进去的话它会跟着平移缩放一起漂，缩小时字糊成一团。
-        而它是一块"读数面板"，该像 HUD 一样钉在屏幕上。
+        而它是一块「读数面板」，该像 HUD 一样钉在屏幕上。
       */}
-      <StageDetail node={detail?.node ?? null} trace={detail?.trace ?? null} onClose={() => setActiveId(null)} />
+      <StageDetail
+        node={detail?.node ?? null}
+        trace={detail?.trace ?? null}
+        onClose={() => setActiveId(null)}
+      />
     </div>
   );
 }
