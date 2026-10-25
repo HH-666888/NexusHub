@@ -9,10 +9,23 @@ import { GenerationConsole } from "./generation-console";
  * ============================================================
  * 底部这一块承担三件事，用标签页切换：
  *   生成过程 —— 实时看模型在写什么、花了多少、检查过了几项
- *   预览     —— 直接加载生成出来的成品，能点能用
+ *   成品     —— 在新页面打开生成出来的成品（能点能用）
  *   源码     —— 看它到底写了什么，并下载成单文件
  *
- * 为什么源码按需拉取而不是服务端直接传下来：
+ * ── ⚠️ 成品这里**故意不放 iframe 预览** ──
+ *   原来这一格是内嵌 iframe，直接在工作台里把成品跑起来。
+ *   做法本身没错（省得来回切页面），但实际用下来是**半打开**：
+ *   这一格高度只有屏高的一小半，成品应用进去之后要么显示不全、
+ *   要么卡在半截上，看着像坏了。
+ *
+ *   「要么全部打开，要么全部不打开」——
+ *   半截的预览比没有预览更糟：它让人以为成品有问题，
+ *   而实际上成品是好的，只是没地方显示。
+ *
+ *   所以现在给的是一枚**明确的按钮**：点一下在新标签页里整页打开。
+ *   那里有整屏，滚动、点击、localStorage 全都正常。
+ *
+ * ── 为什么源码按需拉取而不是服务端直接传下来 ──
  *   一次生成的 HTML 有二十多 KB。放进服务端渲染的 props 里，
  *   意味着每次进工作台都要把它序列化进页面 ——
  *   而多数时候用户只是来看看记录，不会点源码。
@@ -28,13 +41,12 @@ export function RunWorkbench({
   artifactBytes: number | null;
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"generate" | "preview" | "source">(
-    hasArtifact ? "preview" : "generate",
+  /** 有成品时默认停在「成品」—— 用户点进来最想看的通常是做出来的东西 */
+  const [tab, setTab] = useState<"generate" | "artifact" | "source">(
+    hasArtifact ? "artifact" : "generate",
   );
   const [source, setSource] = useState<string | null>(null);
   const [loadingSource, setLoadingSource] = useState(false);
-  /** 用 key 强制 iframe 重新加载：生成完再点预览时，浏览器可能还缓存着旧内容 */
-  const [previewNonce, setPreviewNonce] = useState(0);
 
   const openSource = useCallback(async () => {
     setTab("source");
@@ -50,10 +62,9 @@ export function RunWorkbench({
     }
   }, [runId, source, loadingSource]);
 
-  /** 生成结束：刷新服务端数据，并把预览的 iframe 换一次 key */
+  /** 生成结束：刷新服务端数据，并让缓存的源码作废 */
   const onSettled = useCallback(() => {
-    setSource(null); // 内容变了，缓存的源码作废
-    setPreviewNonce((n) => n + 1);
+    setSource(null);
     router.refresh();
   }, [router]);
 
@@ -76,7 +87,7 @@ export function RunWorkbench({
         {(
           [
             ["generate", "生成过程"],
-            ["preview", "成品预览"],
+            ["artifact", "成品"],
             ["source", "源码"],
           ] as const
         ).map(([key, label]) => (
@@ -96,12 +107,11 @@ export function RunWorkbench({
 
         <div className="ml-auto flex items-center gap-3 text-[11px] text-slate-500">
           {artifactBytes !== null && (
-            <span className="tabular-nums">
-              成品 {(artifactBytes / 1024).toFixed(1)} KB
-            </span>
+            <span className="tabular-nums">成品 {(artifactBytes / 1024).toFixed(1)} KB</span>
           )}
           {hasArtifact && (
             <>
+              {/* 这两枚是标签栏上的快捷入口，和「成品」那一页里的按钮做同一件事 */}
               <a
                 href={`/api/runs/${runId}/artifact`}
                 target="_blank"
@@ -125,37 +135,16 @@ export function RunWorkbench({
       {/* 内容区 */}
       <div className="min-h-0 flex-1">
         {tab === "generate" && (
-          <GenerationConsole
-            runId={runId}
-            hasArtifact={hasArtifact}
-            onSettled={onSettled}
-          />
+          <GenerationConsole runId={runId} hasArtifact={hasArtifact} onSettled={onSettled} />
         )}
 
-        {tab === "preview" &&
+        {tab === "artifact" &&
           (hasArtifact ? (
-            <iframe
-              key={previewNonce}
-              src={`/api/runs/${runId}/artifact`}
-              title="成品预览"
-              /*
-                sandbox 的两项都有明确用途：
-                  allow-scripts     —— 生成的应用靠 JS 渲染，不给就只是一张静态图
-                  allow-same-origin —— 生成的应用靠 localStorage 存数据，
-                                       不给的话一刷新数据就没了
-                刻意不给的：allow-top-navigation（不能把整页跳走）、
-                            allow-forms（不能伪造表单提交）、
-                            allow-popups。
-                真正切断「把数据送出去」的是服务端那张 CSP 上的
-                connect-src 'none'，见 artifact 接口的说明。
-              */
-              sandbox="allow-scripts allow-same-origin"
-              className="h-full w-full border-0"
-            />
+            <Opener runId={runId} bytes={artifactBytes} onDownload={download} />
           ) : (
             <Empty
               title="还没有成品"
-              hint="切到「生成过程」点一下开始生成，完成后这里会直接出现能点能用的成品。"
+              hint="切到「生成过程」点一下开始生成，完成后这里会出现打开成品的入口。"
               action={{ label: "去生成", onClick: () => setTab("generate") }}
             />
           ))}
@@ -171,6 +160,59 @@ export function RunWorkbench({
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 成品入口
+ * ============================================================
+ * 不放 iframe。理由见文件开头那段 —— 一句话：
+ * **半截的预览比没有预览更糟**，它让人以为成品坏了。
+ *
+ * 这里只做一件事：把「整页打开」这件事说清楚、点得到。
+ * 用的是**新标签页**而不是当前页跳转 —— 生成过程、源码这些
+ * 都还在这一页上，跳走了就回不来了。
+ */
+function Opener({
+  runId,
+  bytes,
+  onDownload,
+}: {
+  runId: string;
+  bytes: number | null;
+  onDownload: () => void;
+}) {
+  return (
+    <div className="flex h-full items-center justify-center px-6">
+      <div className="text-center">
+        <p className="text-sm text-slate-300">成品已经做好了</p>
+        <p className="mx-auto mt-1.5 max-w-md text-[11.5px] leading-relaxed text-slate-500">
+          它是一个自包含的单文件网页
+          {bytes !== null && <>（{(bytes / 1024).toFixed(1)} KB）</>}。
+          <br />
+          <span className="text-slate-400">在新标签页里整页打开</span>
+          ，能点、能用、数据存得住。
+        </p>
+
+        <div className="mt-4 flex items-center justify-center gap-2.5">
+          <a
+            href={`/api/runs/${runId}/artifact`}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg bg-[var(--app-accent)] px-5 py-2 text-[12px] font-medium text-white transition-[transform,background-color] duration-150 ease-out hover:-translate-y-px hover:opacity-90"
+          >
+            打开成品 ↗
+          </a>
+          <button
+            type="button"
+            onClick={onDownload}
+            className="rounded-lg border border-[var(--color-border-soft)] px-4 py-2 text-[12px] text-slate-300 transition-[border-color,color] duration-150 hover:border-slate-500 hover:text-slate-100"
+          >
+            下载单文件
+          </button>
+        </div>
       </div>
     </div>
   );

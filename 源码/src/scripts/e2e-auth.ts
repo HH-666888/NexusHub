@@ -168,9 +168,9 @@ async function main() {
     `提交后没有跳转，状态码 ${post.status}`,
   );
   expect_(
-    (post.headers.get("location") ?? "").includes("/studio"),
-    "注册成功后直接进工作台，不在首页兜圈",
-    `跳到了 ${post.headers.get("location")}，不是工作台`,
+    (post.headers.get("location") ?? "").includes("/canvas"),
+    "注册成功后直接进画布，不在首页兜圈",
+    `跳到了 ${post.headers.get("location")}，不是画布`,
   );
   expect_(
     cookie !== null,
@@ -280,8 +280,8 @@ async function main() {
   const welcomeAuthed = await fetch(`${BASE}/welcome`, { headers: { cookie: cookie2! } });
   const welcomeAuthedHtml = await welcomeAuthed.text();
   expect_(
-    welcomeAuthedHtml.includes("进入工作台"),
-    "已登录时欢迎页的按钮变成「进入工作台」，而不是「免费开始」",
+    welcomeAuthedHtml.includes("进入画布"),
+    "已登录时欢迎页的按钮变成「进入画布」，而不是「免费开始」",
     "已登录时欢迎页没有感知到登录态",
   );
 
