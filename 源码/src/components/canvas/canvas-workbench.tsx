@@ -45,6 +45,17 @@ export interface CanvasWorkbenchProps {
    *   一行放不下就该换行，这是排版最基本的一件事。
    */
   variant?: "page" | "panel";
+  /**
+   * 每一步**内部**产出了什么，画成挂在它下面的子节点。
+   *
+   * 只有整页画布（`variant="page"`）会真的画出来 ——
+   * 面板那一档 808×371，塞进子树之后自动适应会掉到 40% 以下，
+   * 六道工序自己都读不清了。**面板只当总览用**，
+   * 要看内部就点进 /canvas，或者双击那一道（见下一页的聚焦）。
+   *
+   * 与其在面板里画一坨看不清的东西，不如干脆不画。
+   */
+  childrenByStage?: ChildrenByStage;
 }
 
 export function CanvasWorkbench({

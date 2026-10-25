@@ -19,6 +19,12 @@ import {
   layoutForest,
   type ForestGeometry,
 } from "@/core/canvas/forest-layout";
+import {
+  childIndex,
+  toLayoutNodes,
+  type ChildrenByStage,
+  type StageChild,
+} from "@/core/pipeline/forest";
 import type { StageId } from "@/core/pipeline/stages";
 
 /**
@@ -57,6 +63,16 @@ export interface PipelineCanvasProps {
    * 可字看不清，等于白看。一行放不下就该换行。
    */
   geometry?: CanvasPipelineGeometry;
+  /**
+   * 每一步**内部**产出了什么 —— 画成挂在它下面的子节点。
+   *
+   * 现在只有「验收与交付」有：七项检查，来自事件日志里
+   * kind:"check" 那条（纯本地正则跑的确定结果，不是 AI 生成的）。
+   * 别的五步没有产物可拆，就不给 —— 空着是实话。
+   *
+   * 不给的话六道工序就是六个孤立的根节点，和以前一样。
+   */
+  childrenByStage?: ChildrenByStage;
 }
 
 /* ============================================================
@@ -308,6 +324,65 @@ function AuthorityChip({ node, dim }: { node: PipelineNode; dim: boolean }) {
 }
 
 /* ============================================================
+   一个子节点
+   ============================================================ */
+
+/**
+ * 挂在工序下面的一个小方块 —— 「这一步内部产出了什么」。
+ *
+ * ── 为什么比工序卡小这么多 ──
+ *   工序卡是**骨架**，六张要在一屏里都读得清，所以它是 240×156。
+ *   子节点是**内容**，可能几十个 —— 每个都那么大就没法看了。
+ *   168×44 只放得下一行字，那正好：一行说清"这一项是什么"，
+ *   依据（凭什么说它通过了）留给悬停和详情。
+ *
+ * ── 颜色只表达一件事：这一项过了没有 ──
+ *   绿 = 过、红 = 没过、灰 = 无所谓过不过。
+ *   不表达"重要程度""归属"这些 —— 一个方块只该有一层含义，
+ *   叠上第二层之后，缩小了看就只剩"一片花花绿绿"。
+ */
+function ChildChip({ rect, child }: { rect: NodeRect; child: StageChild }) {
+  const tone =
+    child.tone === "pass"
+      ? "74 222 128"
+      : child.tone === "fail"
+        ? "248 113 113"
+        : "148 163 184";
+
+  return (
+    <div
+      data-canvas-child={child.id}
+      data-child-tone={child.tone}
+      title={child.detail}
+      className="absolute overflow-hidden rounded-md border px-2.5 py-2"
+      style={{
+        left: rect.x,
+        top: rect.y,
+        width: rect.w,
+        height: rect.h,
+        borderColor: `rgb(${tone} / 0.42)`,
+        background: `rgb(${tone} / 0.08)`,
+      }}
+    >
+      <div className="flex items-center gap-1.5">
+        <span
+          aria-hidden
+          className="inline-block h-1.5 w-1.5 flex-none rounded-full"
+          style={{ background: `rgb(${tone})` }}
+        />
+        {/* data-canvas-label 让它在缩小时跟着让位，见 globals.css */}
+        <span
+          data-canvas-label="minor"
+          className="truncate text-[11px] leading-tight text-slate-300"
+        >
+          {child.label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    整张图
    ============================================================ */
 
@@ -338,22 +413,32 @@ export function PipelineCanvas({
   activeId = null,
   onPick,
   geometry = PIPELINE_GEOMETRY,
+  childrenByStage,
 }: PipelineCanvasProps) {
   const g = geometry;
   const total = nodes.length;
 
+  /** id → 子节点数据。渲染时按 id 查，O(1) */
+  const childOf = useMemo(() => childIndex(childrenByStage ?? {}), [childrenByStage]);
+
   /*
     位置交给森林布局算。
-    「森林」就是六道工序 —— 现在每棵都还没有子节点，
-    所以结果和旧的 nodeRect **逐像素相同**
-    （tests/unit/canvas-forest-layout.test.ts 里有一组锚点断言钉着这件事，
-      换布局时任何意外位移都会当场变红）。
+    没有子节点时结果和旧的 nodeRect **逐像素相同**
+    （tests/unit/canvas-forest-layout.test.ts 里有一组锚点断言钉着这件事）。
 
-    等子树接上，只要在这里把 children 喂进去，其余全不用改。
+    有子节点时，根节点之间的距离会按**子树宽**自动撑开 ——
+    这就是「自动扩展」，不需要任何额外的推动逻辑。
   */
   const forest = useMemo(
-    () => layoutForest(nodes.map((n) => ({ id: n.id })), forestGeometryOf(g)),
-    [nodes, g],
+    () =>
+      layoutForest(
+        toLayoutNodes(
+          nodes.map((n) => n.id),
+          childrenByStage ?? {},
+        ),
+        forestGeometryOf(g),
+      ),
+    [nodes, childrenByStage, g],
   );
 
   const rects = useMemo(
@@ -470,6 +555,19 @@ export function PipelineCanvas({
           onPick={onPick}
         />
       ))}
+
+      {/*
+        ---------- 子节点 ----------
+        挂在每道工序下面。depth > 0 的就是它们 ——
+        布局只吐出位置，这里按 id 把数据找回来。
+      */}
+      {forest.nodes
+        .filter((n) => n.depth > 0)
+        .map((n) => {
+          const child = childOf.get(n.id);
+          if (!child) return null;
+          return <ChildChip key={n.id} rect={n} child={child} />;
+        })}
     </div>
   );
 }
