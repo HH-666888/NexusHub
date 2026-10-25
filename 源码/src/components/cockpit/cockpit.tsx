@@ -462,7 +462,7 @@ export function Cockpit({
           />
         ) : (
           <div className="flex h-12 items-center gap-2 px-4 text-[11px] text-slate-500">
-            {["生成过程", "成品预览", "源码"].map((label) => (
+            {["生成过程", "成品", "源码"].map((label) => (
               <span
                 key={label}
                 className="rounded-md px-2.5 py-1 text-slate-600"
@@ -475,7 +475,7 @@ export function Cockpit({
                 aria-hidden
                 className="inline-block h-1.5 w-1.5 rounded-full bg-slate-600"
               />
-              选中一条构建记录后，这里会出现实时生成过程、成品预览和源码
+              选中一条构建记录后，这里会出现实时生成过程、成品入口和源码
             </span>
           </div>
         )}
