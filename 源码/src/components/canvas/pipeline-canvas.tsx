@@ -8,15 +8,17 @@ import type { PipelineNode } from "@/core/pipeline/graph";
 import {
   PIPELINE_GEOMETRY,
   fallbackLabelAt,
-  fallbackLaneX,
   fallbackPath,
   flowArrowAt,
   flowPath,
-  nodeRect,
-  pipelineBounds,
   type CanvasPipelineGeometry,
   type NodeRect,
 } from "@/core/canvas/pipeline-layout";
+import {
+  FOREST_GEOMETRY,
+  layoutForest,
+  type ForestGeometry,
+} from "@/core/canvas/forest-layout";
 import type { StageId } from "@/core/pipeline/stages";
 
 /**
@@ -285,6 +287,27 @@ function AuthorityChip({ node, dim }: { node: PipelineNode; dim: boolean }) {
    整张图
    ============================================================ */
 
+/**
+ * 把画布那一档几何翻译成森林布局的几何。
+ *
+ * 为什么要翻译而不是共用一个类型：
+ *   两者关心的事不一样 —— 画布那套只说"一个方块多大、隔多远"，
+ *   森林这套还要说"子节点多大、每行几个、父子隔多远"。
+ *   硬合成一个类型的话，面板那一档就得凭空填一堆用不到的子树参数。
+ *
+ * 根的三个值直接搬过去，这样**没有子树时结果和旧布局逐像素相同**。
+ */
+function forestGeometryOf(g: CanvasPipelineGeometry): ForestGeometry {
+  return {
+    ...FOREST_GEOMETRY,
+    root: { w: g.nodeW, h: g.nodeH, gapX: g.gapX, perRow: g.perRow },
+    rowOffsetY: g.rowOffsetY,
+    // 根节点换行时两行之间的距离，沿用画布那套的 gapY
+    // （它已经保证装得下回退弧线了 —— 这正是 gapY 当年被定成 136 的原因）
+    rootRowGap: g.gapY,
+  };
+}
+
 export function PipelineCanvas({
   nodes,
   chain = null,
@@ -295,9 +318,23 @@ export function PipelineCanvas({
   const g = geometry;
   const total = nodes.length;
 
+  /*
+    位置交给森林布局算。
+    「森林」就是六道工序 —— 现在每棵都还没有子节点，
+    所以结果和旧的 nodeRect **逐像素相同**
+    （tests/unit/canvas-forest-layout.test.ts 里有一组锚点断言钉着这件事，
+      换布局时任何意外位移都会当场变红）。
+
+    等子树接上，只要在这里把 children 喂进去，其余全不用改。
+  */
+  const forest = useMemo(
+    () => layoutForest(nodes.map((n) => ({ id: n.id })), forestGeometryOf(g)),
+    [nodes, g],
+  );
+
   const rects = useMemo(
-    () => nodes.map((_, i) => nodeRect(i, total, g)),
-    [nodes, total, g],
+    () => nodes.map((n) => forest.byId.get(n.id) ?? { x: 0, y: 0, w: g.nodeW, h: g.nodeH }),
+    [nodes, forest, g],
   );
 
   /** 有聚焦点时，不在链上的压暗 —— 让链自己浮出来 */
@@ -312,9 +349,13 @@ export function PipelineCanvas({
     [hasFocus, chain],
   );
 
-  const bounds = pipelineBounds(total, g);
-  /** 跨行回退边共用的那根竖线。算一次，所有跨行边都用它 */
-  const lane = fallbackLaneX(total, g);
+  const bounds = forest.bounds;
+  /*
+    跨行回退边共用的那根竖线 —— 摆在**整片森林的左边**。
+    以前是按 pipelineWidth 算的；现在森林会因为子树变宽，
+    bounds.x 就是那个"最左边"，用它更直接。
+  */
+  const lane = bounds.x - 32;
 
   return (
     <div data-canvas-pipeline className="absolute" style={{ left: 0, top: 0 }}>
