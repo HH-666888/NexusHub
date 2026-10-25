@@ -8,11 +8,13 @@ import type { PipelineNode } from "@/core/pipeline/graph";
 import {
   PIPELINE_GEOMETRY,
   fallbackLabelAt,
+  fallbackLaneX,
   fallbackPath,
   flowArrowAt,
   flowPath,
   nodeRect,
   pipelineBounds,
+  type CanvasPipelineGeometry,
   type NodeRect,
 } from "@/core/canvas/pipeline-layout";
 import type { StageId } from "@/core/pipeline/stages";
@@ -45,6 +47,14 @@ export interface PipelineCanvasProps {
   activeId?: StageId | null;
   onPick?: (id: StageId) => void;
   gateOverride?: GateOverride;
+  /**
+   * 摆几行。
+   *
+   * 整页画布给 WIDE（一行六个），工作台面板给 PANEL（三列两行）。
+   * 面板只有 830 宽，一行六个会被自动缩到 37% —— 六个都看见了，
+   * 可字看不清，等于白看。一行放不下就该换行。
+   */
+  geometry?: CanvasPipelineGeometry;
 }
 
 /* ============================================================
@@ -280,8 +290,9 @@ export function PipelineCanvas({
   chain = null,
   activeId = null,
   onPick,
+  geometry = PIPELINE_GEOMETRY,
 }: PipelineCanvasProps) {
-  const g = PIPELINE_GEOMETRY;
+  const g = geometry;
   const total = nodes.length;
 
   const rects = useMemo(
@@ -302,6 +313,8 @@ export function PipelineCanvas({
   );
 
   const bounds = pipelineBounds(total, g);
+  /** 跨行回退边共用的那根竖线。算一次，所有跨行边都用它 */
+  const lane = fallbackLaneX(total, g);
 
   return (
     <div data-canvas-pipeline className="absolute" style={{ left: 0, top: 0 }}>
@@ -351,12 +364,17 @@ export function PipelineCanvas({
           const a = rects[i];
           const b = rects[targetIdx];
           const lit = onChain(node.id) && onChain(to);
-          const label = fallbackLabelAt(a, b);
+          /*
+            跨行的那几条要共用同一根竖线（lane），
+            并且按源节点序号错开标签 —— 不然几个标签会精确地叠在一个点上。
+            两件事的原因都写在 pipeline-layout 里那两个函数的注释上。
+          */
+          const label = fallbackLabelAt(a, b, lane, i);
 
           return (
             <g key={`fb-${node.id}`} opacity={lit ? 1 : 0.12}>
               <path
-                d={fallbackPath(a, b)}
+                d={fallbackPath(a, b, g, lane)}
                 fill="none"
                 stroke="rgb(248 113 113 / 0.4)"
                 strokeWidth={1.2}

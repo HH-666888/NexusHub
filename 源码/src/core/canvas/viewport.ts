@@ -210,21 +210,51 @@ export function fitViewport(
   viewportW: number,
   viewportH: number,
   padding = 56,
+  /**
+   * 缩放的**下限**。自动适应不允许缩到这个值以下。
+   *
+   * ── 为什么需要这条底线 ──
+   *   工作台面板只有 808×371。摆成三列两行之后内容高 544，
+   *   自动适应算出 48% —— 六个节点全都看见了，
+   *   可卡片在屏幕上只有 114×74，**字 7 像素，读不清**。
+   *
+   *   也就是说"全都看见"和"看得清"在这里是矛盾的，
+   *   而自动适应**只顾了前者**。一份看不清的全景图等于没看。
+   *
+   *   所以：宁可让用户平移一下（这本来就是无限画布该干的事），
+   *   也不把字缩到读不出来。缩放到全部仍然可以手动做 ——
+   *   右下角那个倍率按钮就是干这个的，而且是**用户主动**选的。
+   */
+  minScale = 0,
 ): Viewport {
   // 空区域没有"适合"可言，退回核心格 —— 不然会算出 Infinity
   if (bounds.w <= 0 || bounds.h <= 0) return homeViewport(viewportW, viewportH);
 
   const usableW = Math.max(1, viewportW - padding * 2);
   const usableH = Math.max(1, viewportH - padding * 2);
-  const s = clampScale(Math.min(usableW / bounds.w, usableH / bounds.h));
+  const fitted = Math.min(usableW / bounds.w, usableH / bounds.h);
+  const s = clampScale(Math.max(fitted, minScale));
 
   const cx = bounds.x + bounds.w / 2;
   const cy = bounds.y + bounds.h / 2;
+
+  /*
+    纵向对齐分两种情况 —— 这是被截图逼出来的：
+
+      装得下    按 0.34 放（和 homeViewport 同一个理由：下面还要长东西）
+      装不下    按**顶对齐**放（上边留一个 padding）
+
+    一律用 0.34 的话，内容比视口高的时候会从中间对齐 ——
+    上半截被推到可视区外，用户第一眼看到的是一排**被切掉头的卡片**。
+    比缩小更糟：缩小至少还看得见全貌，切头是什么都看不出来。
+  */
+  const contentH = bounds.h * s;
+  const fits = contentH <= viewportH - padding * 2;
+
   return {
     scale: s,
     panX: clampPan(viewportW / 2 - cx * s),
-    // 纵向仍然偏上（和 homeViewport 同一个理由：下面还要长东西）
-    panY: clampPan(viewportH * HOME_SCREEN_Y_RATIO - cy * s),
+    panY: clampPan(fits ? viewportH * HOME_SCREEN_Y_RATIO - cy * s : padding - bounds.y * s),
   };
 }
 

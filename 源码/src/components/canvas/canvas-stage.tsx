@@ -79,6 +79,14 @@ export interface CanvasStageProps {
   fitBounds?: { x: number; y: number; w: number; h: number };
   /** 「回到原点」按钮去的地方。不传就是核心格 */
   homeBounds?: { x: number; y: number; w: number; h: number };
+  /**
+   * 自动适应的缩放下限。
+   *
+   * 面板里要给一个值（0.62 左右）—— 不设的话，一个 808×371 的面板
+   * 会把六道工序缩到 48%，卡片上字 7 像素，读不清。
+   * 见 fitViewport 里那段说明。
+   */
+  minFitScale?: number;
 }
 
 /**
@@ -164,6 +172,7 @@ export function CanvasStage({
   children,
   fitBounds,
   homeBounds,
+  minFitScale = 0,
 }: CanvasStageProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   /*
@@ -187,7 +196,7 @@ export function CanvasStage({
 
     /** 打开时对准哪儿：给了区域就装下它，没给就对准核心格 */
     const initial = (w: number, h: number) =>
-      fitBounds ? fitViewport(fitBounds, w, h) : homeViewport(w, h);
+      fitBounds ? fitViewport(fitBounds, w, h, 56, minFitScale) : homeViewport(w, h);
 
     const observer = new ResizeObserver(() => {
       const rect = el.getBoundingClientRect();
@@ -283,9 +292,11 @@ export function CanvasStage({
     const rect = el.getBoundingClientRect();
     // 有 homeBounds 就回到"装下那块区域"的视口，否则回到核心格
     setViewport(
-      homeBounds ? fitViewport(homeBounds, rect.width, rect.height) : homeViewport(rect.width, rect.height),
+      homeBounds
+        ? fitViewport(homeBounds, rect.width, rect.height, 56, minFitScale)
+        : homeViewport(rect.width, rect.height),
     );
-  }, [homeBounds]);
+  }, [homeBounds, minFitScale]);
 
   const step = gridStepScreen(viewport.scale);
 

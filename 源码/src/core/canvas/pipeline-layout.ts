@@ -23,26 +23,53 @@ export interface CanvasPipelineGeometry {
   nodeH: number;
   /** 节点之间的横向空隙 —— 连线走在这里 */
   gapX: number;
-  /** 节点行距画布核心格的垂直偏移。0 表示节点顶边就在核心格中心那条线上 */
+  /**
+   * 换行时两行之间的纵向空隙。
+   *
+   * ⚠️ 它**必须装得下回退边往下绕的那一段**（FALLBACK_DROP）。
+   *    装不下的话，上一行的回退弧线会横穿下一行的节点 ——
+   *    和"回退边不画直线"是同一个毛病，只是换了个方向。
+   */
+  gapY: number;
+  /**
+   * 一行放几道。
+   *
+   * ── 为什么这个必须能变 ──
+   *   一开始写死一行六个。整页画布（1440 宽）上很好看。
+   *   但嵌进工作台的面板（830×330）之后，自动适应把它缩到了 **37%** ——
+   *   六个节点确实全看见了，可**字看不清**，等于白看。
+   *
+   *   一行放不下就该换行，这是排版最基本的一件事。
+   *   面板里放三列两行，同样的字号下缩到 74%，读得清。
+   */
+  perRow: number;
+  /** 节点行距画布核心格的垂直偏移 */
   rowOffsetY: number;
 }
 
 /**
  * ⚠️ 尺寸和 core/pipeline/graph.ts 里那套**故意不一样**。
  *
- * 那边的节点是 208×136，因为 React Flow 的画布窄、要挤两行。
- * 这边一行六个、每个 240 宽 —— 总宽 1840，在 1440 的屏幕上
- * 缩放一次就能看全，而不用像两行那样上下找。
- *
- * 两套尺寸并存不是重复建设：等 React Flow 卸掉之后，
- * 那边那套会跟着删掉，留下的是这一套。
+ * 那边是给 React Flow 用的（208×136、一行三个）；这一套给自己的画布用。
+ * 等 React Flow 卸掉之后，那边那套会跟着删掉，留下的是这一套。
  */
 export const PIPELINE_GEOMETRY: CanvasPipelineGeometry = {
   nodeW: 240,
   nodeH: 156,
   gapX: 84,
+  gapY: 136,
+  perRow: 3,
   rowOffsetY: -78,
 };
+
+/** 整页画布上用的：屏幕宽，一行摆得下六个 */
+export const WIDE_GEOMETRY: CanvasPipelineGeometry = {
+  ...PIPELINE_GEOMETRY,
+  perRow: 6,
+};
+
+/** 一行放不下时换行。这个几何是"面板里"那一档 */
+export const PANEL_GEOMETRY: CanvasPipelineGeometry = PIPELINE_GEOMETRY;
 
 /** 一个节点在世界坐标里的矩形 */
 export interface NodeRect {
@@ -56,14 +83,38 @@ export interface NodeRect {
    摆放
    ============================================================ */
 
+/** 一行放几道。至少 1，不然除零 */
+function colsOf(g: CanvasPipelineGeometry): number {
+  return Math.max(1, Math.floor(g.perRow));
+}
+
+/** 要几行 */
+export function rowCount(total: number, g = PIPELINE_GEOMETRY): number {
+  return Math.max(1, Math.ceil(total / colsOf(g)));
+}
+
+/** 第 index 道在第几列第几行（都从 0 起） */
+export function slotOf(index: number, g = PIPELINE_GEOMETRY): { col: number; row: number } {
+  const cols = colsOf(g);
+  return { col: index % cols, row: Math.floor(index / cols) };
+}
+
 /**
- * 整条流水线的总宽。
+ * 整条流水线的总宽 —— **按最宽的那一行算**。
  *
- * 注意是 `(n-1)` 个空隙而不是 `n` 个 —— 写错的话整条会偏半个空隙，
- * 而"偏一点"在画面上看不出来，只有拿两个节点的间距去量才发现。
+ * 最后一行可能没排满（六道、一行四个的话，第二行只有两个）。
+ * 按 total 算宽度的话会多出两个空位，于是整条看起来偏左。
  */
 export function pipelineWidth(total: number, g = PIPELINE_GEOMETRY): number {
-  return total * g.nodeW + Math.max(0, total - 1) * g.gapX;
+  const cols = colsOf(g);
+  const full = Math.min(total, cols);
+  return full * g.nodeW + Math.max(0, full - 1) * g.gapX;
+}
+
+/** 整条流水线的总高 */
+export function pipelineHeight(total: number, g = PIPELINE_GEOMETRY): number {
+  const rows = rowCount(total, g);
+  return rows * g.nodeH + Math.max(0, rows - 1) * g.gapY;
 }
 
 /**
@@ -75,10 +126,11 @@ export function pipelineWidth(total: number, g = PIPELINE_GEOMETRY): number {
  *   不需要额外调视口 —— 一个常量对齐比一段额外的对准逻辑可靠。
  */
 export function nodeRect(index: number, total: number, g = PIPELINE_GEOMETRY): NodeRect {
+  const { col, row } = slotOf(index, g);
   const left = HOME_WORLD.x - pipelineWidth(total, g) / 2;
   return {
-    x: left + index * (g.nodeW + g.gapX),
-    y: HOME_WORLD.y + g.rowOffsetY,
+    x: left + col * (g.nodeW + g.gapX),
+    y: HOME_WORLD.y + g.rowOffsetY + row * (g.nodeH + g.gapY),
     w: g.nodeW,
     h: g.nodeH,
   };
@@ -100,8 +152,10 @@ export function pipelineBounds(
   return {
     x: first.x,
     y: first.y,
-    w: last.x + last.w - first.x,
-    h: g.nodeH + FALLBACK_DROP,
+    w: pipelineWidth(total, g),
+    // 用最后一行节点的底边算，不用 last.y + last.h ——
+    // 最后一行没排满时 last 不一定在最右边，但一定在最下一行
+    h: last.y + last.h - first.y + FALLBACK_DROP,
   };
 }
 
@@ -128,15 +182,33 @@ export function bottomOf(r: NodeRect) {
 }
 
 /**
- * 顺序流转：一条直线，从右边中点到左边中点。
+ * 顺序流转：从右边中点到下一道的左边中点。
  *
- * 两端各留 10 像素不画 —— 不然箭头顶在节点的边框上，
- * 看起来像"线和框黏在一起"。
+ * ── 换行那一条要特别处理 ──
+ *   一行排满之后，"下一道"跳到了下一行的**开头**（在最左边）。
+ *   照直画的话，线会从最右边一路往左横穿整行 ——
+ *   穿过几个节点就盖住几段正文。
+ *
+ *   所以换行那条走"下进上出"：从当前节点**底边**出去，
+ *   在行间空隙里横走，再从目标节点**顶边**进来。
+ *   行间空隙本来就是空的（那里只放得下回退弧线，而弧线更靠下）。
  */
-export function flowPath(from: NodeRect, to: NodeRect): string {
+export function flowPath(from: NodeRect, to: NodeRect, g = PIPELINE_GEOMETRY): string {
+  const pad = 10;
+
+  // 换行：目标在下一行（y 明显更大），走"下出上进"
+  if (to.y > from.y + from.h / 2) {
+    const a = bottomOf(from);
+    // 横走的那条线摆在行间空隙里，但要在回退弧线之上
+    const busY = from.y + from.h + g.gapY * 0.34;
+    const b = { x: to.x + to.w / 2, y: to.y };
+    return `M ${a.x} ${a.y + pad} L ${a.x} ${busY} L ${b.x} ${busY} L ${b.x} ${b.y - pad}`;
+  }
+
+  // 同一行：一条水平线，两端各缩进来一点 ——
+  // 不缩的话箭头顶在节点边框上，看起来像"线和框黏在一起"
   const a = rightOf(from);
   const b = leftOf(to);
-  const pad = 10;
   return `M ${a.x + pad} ${a.y} L ${b.x - pad} ${b.y}`;
 }
 
@@ -154,17 +226,78 @@ export function flowPath(from: NodeRect, to: NodeRect): string {
  *   折线（下去、横走、上来）在拐角处是直角，两条回退边并排时
  *   拐角会叠在一起分不清哪条是哪条。
  *   弧线的中段自然分开，而且"绕回去"这个动作用弧线表达更准。
+ *
+ * ── 跨行的回退边要另走一条路 ──
+ *   换行之后，有一条回退是"第二行的某道 → 第一行的某道"。
+ *   还走下面那条弧的话：弧的下半段在第二行下面 ✓，
+ *   可它**回升到第一行**的那一段会竖着穿过第二行正中间那个节点。
+ *   竖直方向也会穿透，和水平方向一样。
+ *
+ *   所以跨行的改走**整条流水线左边那条空白带**：
+ *   从左边出去、沿着空白带竖着走、再从目标的左边进来。
+ *
+ *   ⚠️ 那条竖线的位置必须由**调用方**给（laneX），不能按源节点的左边算。
+ *      第一版写的是 `from.x - 32` —— 对"第二行第一道"是对的，
+ *      但对"第二行第二道"就偏了整整一个列宽，
+ *      于是那条竖线落进了节点范围里，照样竖穿过去。
+ *      一个自己算、一个由外面给，差别就在这里：
+ *      "整条流水线左边在哪"是**布局整体**的事，单个节点不知道。
  */
-export function fallbackPath(from: NodeRect, to: NodeRect): string {
+export function fallbackPath(
+  from: NodeRect,
+  to: NodeRect,
+  /*
+    几何参数这里其实用不到 —— 两条路都只看节点的矩形。
+    留着它是为了让调用方不用记"哪个函数要传哪个不要"：
+    flowPath 要、fallbackPath 不要的话，两处调用会长得不一样，
+    而那种不一致在改动时最容易漏掉一个。
+  */
+  _g = PIPELINE_GEOMETRY,
+  laneX?: number,
+): string {
+  /* ---------- 跨行：走左边的空白带 ---------- */
+  if (to.y < from.y - from.h / 2) {
+    const a = leftOf(from);
+    const b = leftOf(to);
+    const lane = laneX ?? Math.min(from.x, to.x) - 32;
+    return `M ${a.x - 6} ${a.y} L ${lane} ${a.y} L ${lane} ${b.y} L ${b.x - 6} ${b.y}`;
+  }
+
+  /* ---------- 同一行（或往下）：走下面那条弧 ---------- */
   const a = bottomOf(from);
   const b = bottomOf(to);
   const drop = Math.max(a.y, b.y) + FALLBACK_DROP;
   return `M ${a.x} ${a.y + 6} Q ${a.x} ${drop} ${(a.x + b.x) / 2} ${drop} Q ${b.x} ${drop} ${b.x} ${b.y + 6}`;
 }
 
-/** 回退边弧顶的位置。用来放标签 */
-export function fallbackLabelAt(from: NodeRect, to: NodeRect) {
+/**
+ * 回退边标签的位置。用来放「失败可退回」
+ *
+ * `stagger` 是给跨行用的错位量 —— 同一条竖线上可能挂着好几条跨行的回退边
+ * （第二行每一道都可能退到第一行的某一道），而它们的中点**算出来一模一样**：
+ * 起点都在第二行的中线、终点都在第一行的中线。
+ * 不岔开的话几个标签会精确地叠在一个点上，看起来只有一个。
+ * 调用方把源节点的序号传进来当错位量。
+ */
+export function fallbackLabelAt(from: NodeRect, to: NodeRect, laneX?: number, stagger = 0) {
+  // 跨行的标签挂在左边那条竖线上，不放弧顶 ——
+  // 弧顶在第二行下面，而线是从左边绕上去的，两者对不上
+  if (to.y < from.y - from.h / 2) {
+    const lane = laneX ?? Math.min(from.x, to.x) - 32;
+    return { x: lane, y: (leftOf(from).y + leftOf(to).y) / 2 + stagger * 24 };
+  }
   return { x: (bottomOf(from).x + bottomOf(to).x) / 2, y: bottomOf(from).y + FALLBACK_DROP };
+}
+
+/**
+ * 跨行回退边那条竖线该放在哪 —— 整条流水线的左边再往左一点。
+ *
+ * 调用方算一次、所有跨行边共用。**不能每条边各算各的**：
+ * 各算各的话，第二行第二道算出来的竖线会比第一道偏一个列宽，
+ * 于是落进节点范围里，照样竖穿。
+ */
+export function fallbackLaneX(total: number, g = PIPELINE_GEOMETRY): number {
+  return HOME_WORLD.x - pipelineWidth(total, g) / 2 - 32;
 }
 
 /**
@@ -175,6 +308,11 @@ export function fallbackLabelAt(from: NodeRect, to: NodeRect) {
  *   放大时又变成一个巨大的三角。手画一个小三角可以按需夹紧。
  */
 export function flowArrowAt(from: NodeRect, to: NodeRect, g = PIPELINE_GEOMETRY) {
+  // 换行那条：箭头在横走那一段的中间，方向向右
+  if (to.y > from.y + from.h / 2) {
+    const busY = from.y + from.h + g.gapY * 0.34;
+    return { x: (from.x + from.w / 2 + to.x + to.w / 2) / 2, y: busY, dir: "right" as const, width: g.gapX };
+  }
   const a = rightOf(from);
   const b = leftOf(to);
   return { x: (a.x + b.x) / 2, y: a.y, dir: "right" as const, width: g.gapX };

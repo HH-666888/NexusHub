@@ -612,128 +612,104 @@ async function main() {
       `点中之后还是灰的（opacity=${sel.opacity}）—— 最需要看清的时候它最暗`,
     );
 
-    /* ---------- 10. 任务图上的权限四件套（React Flow 那版，待退役） ---------- */
-    /*
-      任务图是**纯客户端渲染**的 —— SSR 出来的 HTML 里一个节点都没有
-      （实测过：data-node-actor / 「要人点头」/「AI · 只读」全是 false）。
-      所以这一组只能在浏览器里验，加在这个脚本里而不是 e2e-run 里。
+    /* ---------- 10. 详情面板 ---------- */
+    heading("第十步 · 点开工序看详情");
 
-      这一组测的是**设计意图有没有真的传到界面上**：
-      核心层改了 access 而图上还画着旧徽章的话，看的人仍然会误解。
-    */
-    heading("第十步 · 任务图上的权限（React Flow 那版，待退役）");
-
-    await cdp.send("Page.navigate", { url: `${BASE}/studio?tab=graph` });
-    await sleep(4000);
-
-    const graphCheck = await cdp.send("Runtime.evaluate", {
+    const detail = await cdp.send("Runtime.evaluate", {
       expression: `(() => {
-        const q = (s) => [...document.querySelectorAll(s)];
+        const el = document.querySelector('[data-stage-detail]');
+        if (!el) return JSON.stringify({ missing: true });
+        const t = el.textContent;
         return JSON.stringify({
-          actors: q('[data-node-actor]').map(el => ({
-            id: el.getAttribute('data-node-actor'),
-            label: el.textContent.trim(),
-          })),
-          gates: q('[data-node-gate]').map(el => el.getAttribute('data-node-gate')),
-          watches: q('[data-node-watches]').map(el => ({
-            id: el.getAttribute('data-node-watches'),
-            text: el.textContent.trim(),
-          })),
+          hasAuthority: t.includes("谁在做"),
+          hasWatches: t.includes("看什么数"),
+          hasRationale: t.length > 120,
+          text: t.slice(0, 60),
         });
       })()`,
       returnByValue: true,
     });
-    const gd = JSON.parse(graphCheck.result!.value!) as {
-      actors: Array<{ id: string; label: string }>;
-      gates: string[];
-      watches: Array<{ id: string; text: string }>;
+    const dt = JSON.parse(detail.result!.value!) as {
+      missing?: boolean;
+      hasAuthority?: boolean;
+      hasWatches?: boolean;
+      hasRationale?: boolean;
+      text?: string;
     };
 
-    info(`节点上的角色徽章：${gd.actors.map((a) => `${a.id}=${a.label}`).join(" ")}`);
-
-    expect_(
-      gd.actors.length === 6,
-      "六道工序都带了角色徽章",
-      `只有 ${gd.actors.length} 道工序带了角色徽章`,
-    );
-
+    expect_(!dt.missing, "点开工序后有详情面板", "点了却没出现详情面板");
+    expect_(dt.hasRationale === true, "详情里有「这一步为什么存在」", "详情里没有原理那一段");
     /*
-      【最要紧】验收在图上必须是「AI · 只读」。
-      核心层有一条单测钉着 STAGE_MAP.verify.access === "read"，
-      这一条钉的是它有没有真的画出来。
+      权限说明和「看什么数」是这一版新长出来的两段 ——
+      卡片上只放得下几个字（AI · 干活 / 要人点头），
+      而"为什么是这样"需要一整句话，只能放这儿。
     */
-    const verifyActor = gd.actors.find((a) => a.id === "verify");
-    expect_(
-      verifyActor?.label === "AI · 只读",
-      "验收在图上标着「AI · 只读」",
-      `验收标成了「${verifyActor?.label}」—— 判定者不该参与生产`,
-    );
+    expect_(dt.hasAuthority === true, "详情里有权限说明", "详情里缺权限说明");
+    expect_(dt.hasWatches === true, "详情里有「看什么数」", "详情里缺看什么数");
 
-    expect_(
-      gd.actors.filter((a) => a.label === "AI · 干活").length === 5,
-      "其余五道都是「AI · 干活」",
-      `「AI · 干活」有 ${gd.actors.filter((a) => a.label === "AI · 干活").length} 道，应该是 5 道`,
-    );
-
-    expect_(
-      gd.gates.length === 1 && gd.gates[0] === "spec",
-      "只有规格化标着「要人点头」",
-      `带门禁的是：${gd.gates.join(" ") || "（无）"}`,
-    );
-
+    /* ---------- 11. 工作台面板里是同一张图 ---------- */
     /*
-      ---------- 门禁的「声明」与「实际」 ----------
-      改之前 stages.ts 里那句 humanGate: true 没有任何代码读它，
-      实际控制门禁的是 SPEC_GATE 环境变量。两个真相来源，
-      而且放行是静默的 —— 界面上写着「要人点头」而实际不停。
+      /studio?tab=graph 那张图以前是 React Flow 画的（208×136、一行三个）。
+      现在换成和 /canvas 同一个组件，@xyflow/react 也卸了。
 
-      现在图上会同时说出两件事：声明要不要批（那段文字），
-      以及实际会不会停（data-node-gate-active）。
-      两者不一致时，文字会变成「要人点头（已放行）」并且划掉。
+      这一组守的是"两处真的合成一处了"：
+      如果哪天有人把工作台那份改回另一套实现，节点上就没有
+      data-pipeline-stage，这里会红。
     */
-    const gateActive = await cdp.send("Runtime.evaluate", {
+    heading("第十一步 · 工作台面板里是同一张图");
+
+    await cdp.send("Page.navigate", { url: `${BASE}/studio?tab=graph` });
+    await sleep(4500);
+
+    const panel = await cdp.send("Runtime.evaluate", {
       expression: `(() => {
-        const el = document.querySelector('[data-node-gate]');
-        return el ? el.getAttribute('data-node-gate-active') : null;
+        const q = (s) => [...document.querySelectorAll(s)];
+        const zoom = document.querySelector('[data-canvas-zoom]');
+        const first = q('[data-pipeline-stage]')[0];
+        const b = first ? first.getBoundingClientRect() : null;
+        return JSON.stringify({
+          ids: q('[data-pipeline-stage]').map(el => el.getAttribute('data-pipeline-stage')),
+          hasWorld: !!document.querySelector('[data-canvas-world]'),
+          zoom: zoom ? zoom.textContent.trim() : null,
+          cardW: b ? Math.round(b.width) : null,
+        });
       })()`,
       returnByValue: true,
     });
-    const active = gateActive.result!.value as string | null;
-    info(`门禁标记：${active === "1" ? "会停下问人" : "已放行（模型会替你猜）"}`);
+    const pn = JSON.parse(panel.result!.value!) as {
+      ids: string[];
+      hasWorld: boolean;
+      zoom: string | null;
+      cardW: number | null;
+    };
 
+    info(`面板里的工序：${pn.ids.join(" ")}，缩放 ${pn.zoom}，卡片宽 ${pn.cardW}px`);
+
+    expect_(pn.hasWorld, "面板里也用的是自绘画布", "面板里没有世界坐标层 —— 换回别的实现了？");
     expect_(
-      active === "0" || active === "1",
-      "门禁标记说出了实际会不会停",
-      `data-node-gate-active 是 ${active}`,
+      pn.ids.length === 6,
+      "面板里也是六道工序",
+      `只有 ${pn.ids.length} 道：${pn.ids.join(" ")}`,
     );
 
     /*
-      当前跑端到端时 SPEC_GATE 没设，也就是 "declared" ——
-      按权限模型来，规格化声明了要人点头，所以实际会停。
-      这条断言把"默认值就是声明"这件事钉住。
+      【关键】面板里的字必须读得清。
+
+      面板实测 808×371。一开始摆成一行六个，自动适应算出 37%，
+      卡片只有 114 宽 —— 六个全看见了，可字 7 像素。
+      现在摆成三列两行、并且给自动适应加了下限，卡片 149 宽。
+
+      这条断言的阈值是量出来的：15px 的标题乘 0.62 还剩 9px，
+      正文 11px 还剩 7px —— 刚好读得出来。再小就不行了。
     */
     expect_(
-      active === "1",
-      "没设 SPEC_GATE 时按权限模型来：规格化会停下问人",
-      `没设 SPEC_GATE，但门禁标记是 ${active} —— 默认值不是 declared？`,
-    );
-
-    expect_(
-      gd.watches.length === 6,
-      "六道工序都写了「看什么数」",
-      `只有 ${gd.watches.length} 道写了看什么数`,
-    );
-
-    // 看什么数不能是空壳
-    const emptyWatches = gd.watches.filter((w) => w.text.replace(/^看：/, "").trim().length === 0);
-    expect_(
-      emptyWatches.length === 0,
-      "「看什么数」都不是空的",
-      `有 ${emptyWatches.length} 道工序的「看什么数」是空的`,
+      pn.cardW !== null && pn.cardW >= 130,
+      `面板里的卡片宽 ${pn.cardW}px，字读得清`,
+      `卡片只有 ${pn.cardW}px 宽 —— 字会缩到看不清`,
     );
 
     cdp.close();
-    ok("画布交互与任务图权限全部通过");
+    ok("画布交互、详情与工作台面板全部通过");
   } finally {
     browser.kill();
     setTimeout(() => {
@@ -749,8 +725,10 @@ async function main() {
 }
 
 main().catch((err: unknown) => {
-  // 用 expect_ 把异常也计入失败数，这样 finish 会以退出码 1 结束 ——
-  // 直接 console.error 再 return 的话，退出码是 0，等于「崩了也算通过」
-  expect_(false, "脚本正常结束", `异常终止：${err instanceof Error ? err.message : String(err)}`);
+  /*
+    用 expect_ 把异常也计入失败数，这样 finish 会以退出码 1 结束 ——
+    直接 console.error 再 return 的话，退出码是 0，等于「崩了也算通过」。
+  */
+  expect_(false, "端到端脚本没有异常退出", err instanceof Error ? err.message : String(err));
   finish(Date.now());
 });

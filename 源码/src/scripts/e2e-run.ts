@@ -391,9 +391,18 @@ async function main() {
     "任务图标签存在",
     "没有找到任务图标签",
   );
+
+  /*
+    ⚠️ 这条以前检查的是 `react-flow` 这个类名（React Flow 挂载成功）。
+    那张图现在搬到了自绘画布上，React Flow 也卸了。
+
+    改查 data-canvas-world —— 它是世界坐标层，**无条件**渲染的
+    （不像节点那样要等量完尺寸），所以 SSR 出来的 HTML 里就有。
+    /canvas 上也有一条同样的断言，两处一起守住"画布真的在"。
+  */
   expect_(
-    graphHtml.includes("react-flow") || graphHtml.includes("React Flow"),
-    "画布容器已渲染（React Flow 挂载成功）",
+    graphHtml.includes("data-canvas-world"),
+    "画布容器已渲染（世界坐标层在）",
     "画布没有渲染出来",
   );
 

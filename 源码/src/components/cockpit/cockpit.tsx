@@ -18,7 +18,7 @@ import type { GateOverride } from "@/core/pipeline/gate-policy";
 import { CockpitHeader } from "./cockpit-header";
 import { RunList, type RunView } from "./run-list";
 import { RunWorkbench } from "./run-workbench";
-import { TaskGraph } from "./task-graph";
+import { CanvasWorkbench } from "@/components/canvas/canvas-workbench";
 
 /**
  * 驾驶舱
@@ -253,7 +253,19 @@ export function Cockpit({
             )}
           </div>
 
-          <div className="scroll-hint flex min-h-0 flex-1 flex-col overflow-y-auto">
+          {/*
+            容器在两张标签页下的行为**必须不同**：
+              runs  一列卡片，长了要能滚 → overflow-y-auto
+              graph 一张画布，要撑满剩余高度 → overflow-hidden
+
+            都用 overflow-y-auto 的话，画布会去按内容算高度，
+            而画布的内容是绝对定位的（高度记 0），于是画布塌成一条线。
+          */}
+          <div
+            className={`scroll-hint flex min-h-0 flex-1 flex-col ${
+              tab === "runs" ? "overflow-y-auto" : "overflow-hidden"
+            }`}
+          >
             {tab === "runs" ? (
               <>
                 <RunList
@@ -290,19 +302,25 @@ export function Cockpit({
 
                 图上放的全是真实数据：工序、状态、依赖、回退、花费、产物。
                 没接入的工序照旧灰显并标注「未接入」，不参与进度推算。
+
+                ⚠️ 这张图以前是 React Flow 画的，现在用的是自己的画布 ——
+                和 /canvas 上那张是**同一个组件**。两处画同一件事却用两套实现，
+                是这轮要消掉的东西；换掉之后 @xyflow/react 也就卸了。
               */
-              <TaskGraph
-                run={selectedRun}
-                /*
-                  用真实的分阶段花费，不用 attributeCost 那个近似。
-                  attributeCost 是图单独可用时的兜底（它把整次运行的钱
-                  都算在会花钱的那道工序上）；现在服务端已经把
-                  cost_records 按阶段归集好了，就该用真的。
-                */
-                costByStage={costByStage}
-                gateOverride={gateOverride}
-                className="-m-1"
-              />
+              <div className="relative h-full w-full">
+                <CanvasWorkbench
+                  run={selectedRun}
+                  /*
+                    用真实的分阶段花费，不用 attributeCost 那个近似。
+                    attributeCost 是图单独可用时的兜底（它把整次运行的钱
+                    都算在会花钱的那道工序上）；现在服务端已经把
+                    cost_records 按阶段归集好了，就该用真的。
+                  */
+                  costByStage={costByStage}
+                  gateOverride={gateOverride}
+                  variant="panel"
+                />
+              </div>
             )}
           </div>
         </section>
