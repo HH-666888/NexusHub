@@ -10,6 +10,6 @@ export const metadata: Metadata = {
 
 export default async function LoginPage() {
   // 已登录的人不应该再看到登录页，直接送进工作台
-  if (await getCurrentUser()) redirect("/studio");
+  if (await getCurrentUser()) redirect("/canvas");
   return <LoginForm />;
 }

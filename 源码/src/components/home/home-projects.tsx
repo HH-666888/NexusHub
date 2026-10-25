@@ -40,7 +40,7 @@ export function HomeProjects({ runs }: HomeProjectsProps) {
         <h2 className="text-[15px] font-medium text-slate-200">我的项目</h2>
         {runs.length > 0 && (
           <Link
-            href="/studio"
+            href="/canvas"
             className="text-[12.5px] text-slate-500 transition-colors duration-150 hover:text-slate-300"
           >
             所有项目 ›
@@ -91,7 +91,7 @@ function ProjectCard({ run }: { run: RunView }) {
 
   return (
     <Link
-      href={`/studio?run=${run.id}`}
+      href={`/canvas?run=${run.id}`}
       className="group flex flex-col overflow-hidden rounded-2xl border border-[var(--color-border-soft)] bg-[var(--color-surface)]/60 transition-colors duration-150 hover:border-slate-600"
     >
       {/* 缩略图：这条记录的流水线进度 */}

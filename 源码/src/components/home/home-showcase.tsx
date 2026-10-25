@@ -32,23 +32,40 @@ interface Capability {
   art: "graph" | "timeline" | "cost";
 }
 
+/*
+  ⚠️ 三个 href 全部指向 /canvas —— **不是顺手改的，是核过的**。
+
+  工作台（/studio）退役之后，这三张卡原来都指向它。
+  但卡片承诺的是功能，不是位置，所以先确认了三件事各自在哪：
+
+    任务图       → 就是 /canvas 上那张自绘画布本身
+    时间轴回放   → 渲染在 GenerationConsole 里，而它在 RunWorkbench 里，
+                   现在挂在 /canvas 下半区
+    成本明细     → 卡片描述的是"按阶段分开、钱花在哪一步"，
+                   那是 StageDetail 面板里的分阶段花费，
+                   点画布上任一工序就能看到
+
+  三件都在 /canvas 上。**如果哪天搬走了一件，这里必须跟着改** ——
+  否则卡片会把人送到一个没有那个东西的地方，
+  而"点了看不到"比"没有入口"更让人怀疑整个产品。
+*/
 const CAPS: Capability[] = [
   {
-    href: "/studio?tab=graph",
+    href: "/canvas",
     tint: "--tint-4",
     title: "任务图",
     desc: "六道工序的依赖与失败回退画成一张图，点一个节点就能看清它是怎么来的。",
     art: "graph",
   },
   {
-    href: "/studio",
+    href: "/canvas",
     tint: "--tint-1",
     title: "时间轴回放",
     desc: "生成过程会录下来。拖滑块回到任意一刻，看那一刻已经写了多少、花了多少。",
     art: "timeline",
   },
   {
-    href: "/studio",
+    href: "/canvas",
     tint: "--tint-6",
     title: "成本明细",
     desc: "每一次模型调用都单独记账，按阶段分开。钱花在哪一步，一眼看得到。",

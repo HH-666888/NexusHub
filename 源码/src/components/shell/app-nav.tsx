@@ -61,10 +61,23 @@ export interface AppNavProps {
   notice?: React.ReactNode;
 }
 
+/*
+  三项，不是四项。
+
+  ── 为什么去掉了「产物」 ──
+    它原来指向 `/studio?tab=graph` —— 工作台的一个标签页。
+    工作台退役之后那一项就没有落点了。
+    而"产物"这件事本身没有消失：**成品预览就在画布下面那块**，
+    和画布是同一屏里的两半，不该再单开一个入口。
+
+  ── 为什么「构建」指向 /canvas 而不是 /studio ──
+    画布现在是主界面，而且它下面就是生成区。
+    导航里留一个指向退役页面的「构建」，比没有这一项更糟 ——
+    点进去是一个界面上再也回不去的地方。
+*/
 const LINKS = [
   { href: "/", label: "首页" },
-  { href: "/studio", label: "构建" },
-  { href: "/studio?tab=graph", label: "产物" },
+  { href: "/canvas", label: "构建" },
   { href: "/settings", label: "设置" },
 ] as const;
 

@@ -68,7 +68,7 @@ export async function registerAction(
 
   await establishSession(result.value.token, result.value.session.expiresAt);
   // 注册成功直接进工作台，不要在首页再兜一圈
-  redirect("/studio");
+  redirect("/canvas");
 }
 
 /* ============================================================
@@ -97,7 +97,7 @@ export async function loginAction(
 
   await establishSession(result.value.token, result.value.session.expiresAt);
   // 注册成功直接进工作台，不要在首页再兜一圈
-  redirect("/studio");
+  redirect("/canvas");
 }
 
 /* ============================================================

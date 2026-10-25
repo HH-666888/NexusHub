@@ -98,7 +98,7 @@ export default async function WelcomePage() {
           actions={
             user ? (
               <Link
-                href="/studio"
+                href="/canvas"
                 className="rounded-lg bg-[var(--app-accent)] px-4 py-1.5 text-[13px] font-medium text-white transition-[transform,opacity] duration-150 ease-out hover:-translate-y-px hover:opacity-90"
               >
                 进入工作台
@@ -225,7 +225,7 @@ export default async function WelcomePage() {
               <div className="flex shrink-0 flex-wrap items-center gap-3">
                 {user ? (
                   <Link
-                    href="/studio"
+                    href="/canvas"
                     className="rounded-lg bg-[var(--app-accent)] px-6 py-3 text-sm font-medium text-white transition-[transform,background-color] duration-150 ease-out hover:-translate-y-0.5 hover:opacity-90"
                   >
                     回到我的工作台

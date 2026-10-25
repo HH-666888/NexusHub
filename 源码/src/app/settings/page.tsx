@@ -60,10 +60,10 @@ export default async function SettingsPage() {
         center={
           <div className="flex items-center gap-3">
             <Link
-              href="/studio"
+              href="/canvas"
               className="text-xs text-slate-400 transition-colors duration-150 hover:text-slate-100"
             >
-              ← 返回工作台
+              ← 返回画布
             </Link>
             <span className="text-slate-700">|</span>
             <h1 className="text-sm font-medium text-slate-100">设置</h1>

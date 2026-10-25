@@ -9,6 +9,6 @@ export const metadata: Metadata = {
 };
 
 export default async function RegisterPage() {
-  if (await getCurrentUser()) redirect("/studio");
+  if (await getCurrentUser()) redirect("/canvas");
   return <RegisterForm />;
 }

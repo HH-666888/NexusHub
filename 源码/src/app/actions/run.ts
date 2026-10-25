@@ -39,9 +39,18 @@ export async function createRunAction(
     return { error: result.reason, value: prompt };
   }
 
-  // 让工作台的服务端组件重新取数据，新记录立刻出现在列表里
-  revalidatePath("/studio");
-  redirect(`/studio?run=${result.value.id}`);
+  /*
+    建完直接送到**画布**上，并且带上这条运行的 id。
+
+    以前送到 /studio?run=…。工作台退役之后那条路不改的话，
+    用户点完「↑」会落到一个界面上再也没有入口的页面上 —— 那是死路。
+
+    带上 run 参数而不是光去 /canvas：不传的话页面会默认选最近一条，
+    虽然此刻最近一条就是它，但"靠默认"和"明确指过去"是两回事 ——
+    并发建两条时前者会指错。
+  */
+  revalidatePath("/canvas");
+  redirect(`/canvas?run=${result.value.id}`);
 }
 
 export async function deleteRunAction(formData: FormData): Promise<void> {
@@ -52,6 +61,11 @@ export async function deleteRunAction(formData: FormData): Promise<void> {
   if (!runId) return;
 
   await deleteRun(sqliteRunStore, runId, user.id);
-  revalidatePath("/studio");
-  redirect("/studio");
+  /*
+    删完回画布，不回工作台 ——
+    画布现在是主界面，工作台（/studio）已经退役。
+    删一条记录却把人送到一个"不再入口"的页面上，是说不通的。
+  */
+  revalidatePath("/canvas");
+  redirect("/canvas");
 }

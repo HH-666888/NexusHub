@@ -124,7 +124,8 @@ export async function saveModelConfigAction(
   }
 
   revalidatePath("/settings");
-  revalidatePath("/studio");
+  // 画布上也显示模型相关的状态（顶栏的「已接入模型」），改了配置要让它重取
+  revalidatePath("/canvas");
 
   const view = toModelConfigView(config);
   return {

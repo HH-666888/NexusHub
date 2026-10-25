@@ -1,72 +1,96 @@
+import { notFound } from "next/navigation";
 import { CanvasWorkbench } from "@/components/canvas/canvas-workbench";
+import { RunSwitcher } from "@/components/canvas/run-switcher";
+import { RunWorkbench } from "@/components/cockpit/run-workbench";
+import type { RunView } from "@/components/cockpit/run-list";
 import { AppNav } from "@/components/shell/app-nav";
 import { ThemeToggleServer } from "@/components/theme-toggle-server";
+import { fsArtifactStore } from "@/adapters/store/artifact-repo";
 import { sqliteCostStore } from "@/adapters/store/cost-repo";
-import { sqliteRunStore } from "@/adapters/store/run-repo";
 import { sqliteEventStore } from "@/adapters/store/event-repo";
+import { sqliteRunStore } from "@/adapters/store/run-repo";
 import { env } from "@/config/env";
+import { describeTime } from "@/core/domain/run";
 import { groupCostByStage, type CostByStage } from "@/core/domain/stage-cost";
 import { checksToChildren, type ChildrenByStage } from "@/core/pipeline/forest";
-import { listRuns } from "@/core/run/service";
+import { getOwnedRun, listRuns } from "@/core/run/service";
 import { requireUser } from "@/server/auth-context";
+import { serverNow } from "@/server/clock";
 
 /**
- * 画布 /canvas
+ * 主界面 /canvas
  * ============================================================
- * 从首页的「新建项目」进来。**导航栏保留**，下面整块是画布。
+ * **这是产品的唯一主界面。** 工作台（/studio）已经退役 ——
+ * 文件还在、路由还通，但界面上不再有任何入口指向它。
  *
- * ── 为什么高度要减掉导航栏 ──
- *   导航栏是 sticky、高 64px。画布如果写 100vh，
- *   底部那 64px 会被推到屏幕外，缩放控件正好在右下角 ——
- *   用户看不到它，还会以为「怎么没有缩放按钮」。
+ * ── 一屏里放两件事 ──
  *
- * ── 这一版画布上有东西了 ──
- *   六道工序：一行六个、顺序流转的实线、失败回退的弧线、
- *   每道工序的权限（谁做 / 能不能改 / 要不要人点头 / 看什么数）。
+ *   上面：**画布** —— 六道工序各自跑到哪一步、每步内部产出了什么。
+ *         它是"看"的地方，可以平移缩放，双击聚焦。
  *
- *   以前这张图是 React Flow 画在 /studio 里的。搬到这里有两个理由：
- *     一、画布本来就是这张图该在的地方（无限、能缩、能拖）
- *     二、它一直是空的 —— 从首页点「新建项目」过来是一片网格，
- *         而「从一句话开始」这句承诺什么也没兑现
+ *   下面：**生成过程 / 成品预览 / 源码** —— 它是"做"的地方。
+ *         开始生成、看模型在写什么、看成品点得动点不动。
  *
- * ── 子树：每一步内部产出了什么 ──
- *   六道工序里现在只有「验收与交付」能长出**真的**子树：
- *   它那七项检查（完整 HTML 结构 / 内联样式 / 内联脚本 /
- *   完全自包含 / 有事件处理 / 数据能持久化 / 中文界面）
- *   是**纯本地正则**跑出来的确定结果，已经记在事件日志里
- *   （kind:"check"），不是 AI 生成的、也不是编的。
+ *   为什么不是两个页面：
+ *     生成的时候最想看的恰恰是上面那张图（哪一步在跑、跑到哪了），
+ *     而看图的下一步动作往往就是"点一下开始生成"。
+ *     两个页面来回切，等于把一件事掰成两半。
  *
- *   别的五步没有产物可拆（四步还没接入，④ 直通模式下只有一次调用），
- *   就不给子节点 —— **空着是实话**，比画几个占位的假方块强得多。
+ * ── 选中的运行从 URL 上来 ──
+ *   ?run=<id>。这样刷新、分享、后退都能回到同一条记录上。
+ *   不传就取最近一条 —— 从首页输入框过来的那条。
  */
-export default async function CanvasPage() {
+export default async function CanvasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ run?: string }>;
+}) {
   const user = await requireUser();
+  const { run: runId } = await searchParams;
+
+  const now = serverNow();
+  const rawRuns = await listRuns(sqliteRunStore, user.id);
+  const runs: RunView[] = rawRuns.map((r) => ({
+    ...r,
+    timeLabel: describeTime(r.createdAt, now),
+  }));
+
+  let selectedRun = null;
+  if (runId) {
+    selectedRun = await getOwnedRun(sqliteRunStore, runId, user.id);
+    // id 存在但不属于当前用户：当作不存在，不泄露「这个 id 是有效的」
+    if (!selectedRun) notFound();
+  }
+  // 没指定 run 时，默认选中最近的一条
+  if (!selectedRun && runs.length > 0) selectedRun = runs[0];
+
   const spent = await sqliteCostStore.totalByUser(user.id);
 
-  /*
-    取最近一次运行：画布是「一个项目一块画布」，
-    而在有项目选择功能之前，最近一次就是用户正在看的那个。
-  */
-  const runs = await listRuns(sqliteRunStore, user.id);
-  const latest = runs[0] ?? null;
-
   let costByStage: CostByStage = {};
-  if (latest) {
-    const records = await sqliteCostStore.listByRun(latest.id);
+  if (selectedRun) {
+    const records = await sqliteCostStore.listByRun(selectedRun.id);
     costByStage = groupCostByStage(records);
   }
 
   /*
-    子节点：取最后一次 kind:"check" 的结果。
+    成品只传「大小」这一个数字，不传内容 —— 内容二十多 KB，
+    放进页面会让每次进画布都多传一份，而多数时候用户并不看它。
+    「有没有成品」决定下面那块默认停在「预览」还是「生成过程」。
+  */
+  const artifact = selectedRun
+    ? await fsArtifactStore.findLatest(selectedRun.id, "html")
+    : null;
 
-    为什么取**最后一条**而不是第一条：
-      一次尝试里 check 事件只该有一条（检查是跑完才做的），
-      但万一写了多条（比如中途崩了重来），最后一条才是最终结论。
-      这和 core/pipeline/callback.ts 里那段回流逻辑取法一致。
+  /*
+    子树：取最后一次 kind:"check" 的结果。
+
+    只有「验收与交付」有 —— 它那七项检查是纯本地正则跑出来的
+    确定结果，记在事件日志里。别的五步没有产物可拆，就不给，
+    **空着是实话**。
   */
   let childrenByStage: ChildrenByStage = {};
-  if (latest) {
-    const events = await sqliteEventStore.listByRun(latest.id);
+  if (selectedRun) {
+    const events = await sqliteEventStore.listByRun(selectedRun.id);
     let checks = null;
     for (const e of events) {
       if (e.payload.kind === "check") checks = e.payload.results;
@@ -82,15 +106,55 @@ export default async function CanvasPage() {
         themeToggle={<ThemeToggleServer />}
       />
 
-      {/* min-h-0 是必须的：flex 子项默认 min-height:auto，
-          不会收缩到比内容更小，画布就会把页面撑高出现滚动条 */}
-      <main className="min-h-0 flex-1">
-        <CanvasWorkbench
-          run={latest ? { stage: latest.stage, status: latest.status } : null}
-          costByStage={costByStage}
-          gateOverride={env.run.specGate}
-          childrenByStage={childrenByStage}
-        />
+      {/* 切换运行：一条横带。画布是主角，它只能占一行 */}
+      <RunSwitcher runs={runs} selectedRunId={selectedRun?.id ?? null} />
+
+      <main className="flex min-h-0 flex-1 flex-col">
+        {/*
+          画布区。
+          min-h-0 是必须的：flex 子项默认 min-height:auto，
+          不加的话画布会撑破容器，滚轮缩放和自动适应都会算错。
+        */}
+        <div className="min-h-0 flex-1">
+          <CanvasWorkbench
+            run={
+              selectedRun
+                ? { stage: selectedRun.stage, status: selectedRun.status }
+                : null
+            }
+            costByStage={costByStage}
+            gateOverride={env.run.specGate}
+            childrenByStage={childrenByStage}
+          />
+        </div>
+
+        {/*
+          下半区：生成过程 / 成品预览 / 源码。
+
+          高度写死一个区间（最小 200、最多 45%），不跟着内容长 ——
+          否则一次生成把它撑高之后，上面的画布会被挤没，
+          而生成的时候恰恰最需要看着上面那张图。
+        */}
+        <div className="h-[38%] max-h-[45%] min-h-[200px] flex-none border-t border-[var(--color-border-soft)] bg-[var(--color-canvas)]">
+          {selectedRun ? (
+            <RunWorkbench
+              key={selectedRun.id}
+              runId={selectedRun.id}
+              hasArtifact={artifact !== null}
+              artifactBytes={artifact?.bytes ?? null}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center px-6 text-center">
+              <div>
+                <p className="text-sm text-slate-400">还没有选中任何构建</p>
+                <p className="mx-auto mt-1 max-w-sm text-[11px] leading-relaxed text-slate-500">
+                  回到首页，在输入框里说一句你想做的软件，点「↑」——
+                  它会出现在上面那条横带里，这里也就能开始生成了。
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       </main>
     </div>
   );
