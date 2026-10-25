@@ -535,6 +535,36 @@ async function main() {
     );
 
     /*
+      ⚠️ 父子连线：**没有它，子树就只是"另一堆漂着的卡片"。**
+
+      用户的反馈原话：「为什么没有树节点的效果」——
+      当时子方块确实画出来了，但和父工序之间没有任何连线，
+      所以看起来不像「挂在这一步下面」。
+
+      这条断言守的不是"有没有画子方块"（那有别的断言管），
+      而是**父子之间有没有被连起来**。数目必须等于子节点数 ——
+      少一条就意味着某个子节点是个孤儿方块。
+    */
+    const linkCheck = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const links = document.querySelectorAll('[data-canvas-tree-link]');
+        const chips = document.querySelectorAll('[data-canvas-child]');
+        return JSON.stringify({ links: links.length, chips: chips.length });
+      })()`,
+      returnByValue: true,
+    });
+    const lk = JSON.parse(linkCheck.result!.value!) as { links: number; chips: number };
+    info(`子树：${lk.chips} 个子方块，${lk.links} 条父子连线`);
+
+    if (lk.chips > 0) {
+      expect_(
+        lk.links === lk.chips,
+        `每个子方块都有一条线连回父工序（${lk.links}/${lk.chips}）`,
+        `有 ${lk.chips} 个子方块，却只有 ${lk.links} 条父子连线 —— 会有孤儿方块`,
+      );
+    }
+
+    /*
       缩放自动适应：整条流水线 1840 宽，窗口 1440，
       打开时应该已经缩到看得全 —— 而不是要用户自己滚一下滚轮。
     */

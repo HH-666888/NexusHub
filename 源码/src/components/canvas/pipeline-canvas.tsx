@@ -520,6 +520,52 @@ export function PipelineCanvas({
             暂时留在 pipeline-layout 里没删 —— 它们是这条边的几何，
             留着是「随时能装回去」，不是因为还有人在调。
         */}
+
+        {/*
+          ---------- 父子连线 ----------
+          **这是让子树读起来像「树」的东西。**
+
+          在此之前子节点是画出来了，但它们和父工序之间没有任何连线 ——
+          结果七个方块看着就是**漂在下面的另一堆卡片**，
+          而不是「挂在这一步下面」。用户的原话：「为什么没有树节点的效果」。
+
+          ── 形状用正交折线，不用斜线 ──
+               父卡底边中点
+                   │
+                   ├───────────┐     ← 先下去一段，再横过去，再下去
+                   │           │
+                 子1          子2
+            正交折线让「同属一个父亲」一眼看得出来：它们共用父节点下面那一小竖。
+            斜线（贝塞尔或直线）在多个子节点时会散成一把扇子，反而看不清归属。
+
+          ── 画在节点**下面** ──
+            这段在 <svg> 里，而卡片和子方块是 svg 之后渲染的 ——
+            所以线会从卡片底下穿过，端口自然被遮住，不用手动裁剪。
+        */}
+        {forest.nodes
+          .filter((n) => n.depth > 0 && n.parentId)
+          .map((n) => {
+            const parent = forest.byId.get(n.parentId!);
+            if (!parent) return null;
+
+            const x1 = parent.x + parent.w / 2;
+            const y1 = parent.y + parent.h;
+            const x2 = n.x + n.w / 2;
+            const y2 = n.y;
+            /* 拐弯处取中点；父底到子顶本来就留了 gapY，这里只用其中一半 */
+            const midY = y1 + (y2 - y1) / 2;
+
+            return (
+              <path
+                key={`link-${n.id}`}
+                data-canvas-tree-link={n.id}
+                d={`M ${x1} ${y1} V ${midY} H ${x2} V ${y2}`}
+                fill="none"
+                stroke="rgb(148 163 184 / 0.38)"
+                strokeWidth={1.2}
+              />
+            );
+          })}
       </svg>
 
       {/* ---------- 节点 ---------- */}
