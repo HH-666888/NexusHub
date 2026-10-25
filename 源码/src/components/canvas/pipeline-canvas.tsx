@@ -181,12 +181,17 @@ function StageCard({
             className="inline-block h-1.5 w-1.5 rounded-full"
             style={{ background: `rgb(${tint})`, boxShadow: empty ? undefined : `0 0 9px 1px rgb(${tint} / 0.6)` }}
           />
-          <span className="font-mono text-[11px] font-semibold tabular-nums" style={{ color: `rgb(${tint})` }}>
+          <span
+            data-canvas-label="major"
+            className="font-mono text-[11px] font-semibold tabular-nums"
+            style={{ color: `rgb(${tint})` }}
+          >
             {String(node.order).padStart(2, "0")}
           </span>
         </div>
         <span
           data-stage-tone
+          data-canvas-label="minor"
           className="rounded border px-1.5 py-px text-[10px] whitespace-nowrap"
           style={{
             borderColor: `rgb(${tint} / 0.5)`,
@@ -198,8 +203,15 @@ function StageCard({
         </span>
       </div>
 
-      <div className="mt-2 text-[15px] leading-tight font-medium text-slate-100">{node.name}</div>
-      <div className="mt-0.5 font-mono text-[10.5px] text-slate-500">{node.artifact}</div>
+      <div
+        data-canvas-label="major"
+        className="mt-2 text-[15px] leading-tight font-medium text-slate-100"
+      >
+        {node.name}
+      </div>
+      <div data-canvas-label="minor" className="mt-0.5 font-mono text-[10.5px] text-slate-500">
+        {node.artifact}
+      </div>
 
       {/* ---------- 权限 ---------- */}
       <div className="mt-2 flex flex-wrap items-center gap-1">
@@ -207,6 +219,7 @@ function StageCard({
         {node.approval === "human" && (
           <span
             data-stage-gate={node.gateActive ? "on" : "off"}
+            data-canvas-label="minor"
             title={
               node.gateActive
                 ? "这一步会停下来问人"
@@ -227,20 +240,30 @@ function StageCard({
       </div>
 
       {/* ---------- 看什么数 ---------- */}
-      <div data-stage-watches className="mt-1.5 truncate text-[10.5px] text-slate-600">
+      <div
+        data-stage-watches
+        data-canvas-label="minor"
+        className="mt-1.5 truncate text-[10.5px] text-slate-600"
+      >
         看：{node.watches.map((w) => w.label).join(" · ")}
       </div>
 
       {/* ---------- 花费。没接入的不显示金额，见文件头那条硬约束 ---------- */}
       {node.costCny > 0 && (
-        <div className="mt-1.5 border-t border-[rgb(var(--tint)/0.15)] pt-1.5 text-[10.5px] tabular-nums">
+        <div
+          data-canvas-label="minor"
+          className="mt-1.5 border-t border-[rgb(var(--tint)/0.15)] pt-1.5 text-[10.5px] tabular-nums"
+        >
           <span className="text-slate-500">花费 </span>
           <span className="text-slate-300">¥{node.costCny.toFixed(4)}</span>
         </div>
       )}
 
       {empty && (
-        <div className="mt-1.5 border-t border-[var(--color-border-soft)] pt-1.5 text-[10.5px] text-slate-600">
+        <div
+          data-canvas-label="minor"
+          className="mt-1.5 border-t border-[var(--color-border-soft)] pt-1.5 text-[10.5px] text-slate-600"
+        >
           尚未产出契约
         </div>
       )}
@@ -269,6 +292,7 @@ function AuthorityChip({ node, dim }: { node: PipelineNode; dim: boolean }) {
   return (
     <span
       data-stage-actor={node.id}
+      data-canvas-label="minor"
       className="rounded px-1.5 py-px text-[10px] leading-tight whitespace-nowrap"
       style={
         dim || !color

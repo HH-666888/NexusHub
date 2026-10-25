@@ -777,8 +777,144 @@ async function main() {
       `这几个页面出现了多个顶栏：${doubled.map((s) => `${s.route}(${s.navCount})`).join(" ")}`,
     );
 
+    /* ---------- 13. 缩小时文字让位 ---------- */
+    /*
+      这一条守的是「缩小之后屏幕上还剩什么」。
+
+      缩小到一定程度，卡片上的小字会变成一层 6 像素的灰渣 ——
+      看着像渲染坏了，而不像「故意缩小」。
+      所以要藏的是**字**，不是信息：色块、边框、状态色全都留着。
+
+      ⚠️ 断言的是 `color: transparent` 而不是 `display: none`。
+         屏幕阅读器用户不经历「缩放」，对他们内容必须还在 ——
+         display:none 会把文字从可访问性树里摘掉。
+         这条断言就是在守这件事，别让人以后"顺手"改成 display:none。
+    */
+    heading("第十三步 · 缩小时文字让位（但信息不消失）");
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas` });
+    await sleep(3500);
+
+    /** 读当前档位 + 一条次要文字的实际颜色 */
+    const readTier = async () => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: `(() => {
+          const world = document.querySelector('[data-canvas-world]');
+          const minor = document.querySelector('[data-canvas-label="minor"]');
+          const major = document.querySelector('[data-canvas-label="major"]');
+          const zoom = document.querySelector('[data-canvas-zoom]');
+          const cs = (el) => (el ? getComputedStyle(el).color : null);
+          return JSON.stringify({
+            tier: world ? world.getAttribute('data-label-tier') : null,
+            zoom: zoom ? zoom.textContent.trim() : null,
+            minor: cs(minor),
+            major: cs(major),
+            // 元素还在不在 DOM 里 —— 在，只是看不见
+            minorCount: document.querySelectorAll('[data-canvas-label="minor"]').length,
+          });
+        })()`,
+        returnByValue: true,
+      });
+      return JSON.parse(r.result!.value!) as {
+        tier: string | null;
+        zoom: string | null;
+        minor: string | null;
+        major: string | null;
+        minorCount: number;
+      };
+    };
+
+    const clickZoom = async (label: string, times: number) => {
+      for (let i = 0; i < times; i++) {
+        await cdp.send("Runtime.evaluate", {
+          expression: `(() => {
+            const b = document.querySelector('button[aria-label="${label}"]');
+            if (b && !b.disabled) b.click();
+            return true;
+          })()`,
+          returnByValue: true,
+        });
+        await sleep(260);
+      }
+    };
+
+    /**
+     * 一直缩，直到档位不再是「全都显示」。
+     *
+     * 为什么不用固定的点击次数：每点一次是 ÷1.25，
+     * 而起始倍率取决于自动适应（屏宽不同就不一样）。
+     * 第一版写死「点三次」—— 70% 点三次直接到 36%，
+     * **越过了中间那一档**，于是断言在测一个根本没出现过的状态。
+     * 按「档位变了就停」来找，换任何屏宽都成立。
+     */
+    const shrinkUntilTierChanges = async (max = 8) => {
+      for (let i = 0; i < max; i++) {
+        await clickZoom("缩小", 1);
+        const t = await readTier();
+        if (t.tier !== "all") return { ...t, clicks: i + 1 };
+      }
+      return { ...(await readTier()), clicks: max };
+    };
+
+    const start = await readTier();
+    info(`打开时：缩放 ${start.zoom}，档位 ${start.tier}`);
+    expect_(
+      start.tier === "all",
+      `打开时字全都在（缩放 ${start.zoom}）`,
+      `打开时档位就是 ${start.tier} —— 自动适应的倍率不该低到藏字`,
+    );
+    expect_(
+      (start.minor ?? "").startsWith("rgb") || (start.minor ?? "").startsWith("#"),
+      "倍率够大时次要文字是有颜色的",
+      `次要文字的颜色是 ${start.minor}`,
+    );
+
+    // 缩到中间档
+    const mid = await shrinkUntilTierChanges();
+    info(`缩 ${mid.clicks} 次后：缩放 ${mid.zoom}，档位 ${mid.tier}`);
+    expect_(
+      mid.tier === "major",
+      `缩到 ${mid.zoom} 时只剩次要文字被藏（档位 ${mid.tier}）`,
+      `档位是 ${mid.tier}，期望 major`,
+    );
+    expect_(
+      mid.minor === "rgba(0, 0, 0, 0)" || mid.minor === "transparent",
+      "次要文字变成了透明",
+      `次要文字的颜色还是 ${mid.minor} —— 缩小后它会糊成一层灰渣`,
+    );
+    expect_(
+      mid.major !== null && mid.major !== "rgba(0, 0, 0, 0)" && mid.major !== "transparent",
+      "工序名和序号还留着（这一档还要看得见是哪一道",
+      `连工序名也没了（颜色 ${mid.major}）—— 那就不是"让位"，是把信息一起藏了`,
+    );
+
+    // 再缩到只剩色块
+    await clickZoom("缩小", 3);
+    const far = await readTier();
+    info(`再缩三次后：缩放 ${far.zoom}，档位 ${far.tier}`);
+    expect_(
+      far.tier === "none",
+      `缩到 ${far.zoom} 时文字全藏（档位 ${far.tier}）`,
+      `档位是 ${far.tier}，期望 none`,
+    );
+    expect_(
+      far.minorCount > 0,
+      "文字只是看不见，元素仍然在 DOM 里（屏幕阅读器还读得到）",
+      "次要文字从 DOM 里消失了 —— 那是把无障碍做成了功能缺失",
+    );
+
+    // 放大回来，字要自己回来
+    await clickZoom("放大", 6);
+    const back = await readTier();
+    info(`放大回来：缩放 ${back.zoom}，档位 ${back.tier}`);
+    expect_(
+      back.tier === "all",
+      "放大之后文字自己回来了",
+      `放大到 ${back.zoom} 档位还是 ${back.tier}`,
+    );
+
     cdp.close();
-    ok("画布交互、详情、工作台面板与顶栏一致性全部通过");
+    ok("画布交互、详情、工作台面板、顶栏一致性与缩放让位全部通过");
   } finally {
     browser.kill();
     setTimeout(() => {

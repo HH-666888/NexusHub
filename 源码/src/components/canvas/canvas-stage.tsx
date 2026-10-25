@@ -9,6 +9,7 @@ import {
   fitViewport,
   gridStepScreen,
   homeViewport,
+  labelTier,
   panBy,
   zoomAt,
   type Viewport,
@@ -116,6 +117,15 @@ function WorldLayer({ viewport, children }: { viewport: Viewport; children: Reac
   return (
     <div
       data-canvas-world
+      /*
+        当前倍率下文字该显示到哪一档。globals.css 按它决定藏哪些字。
+
+        为什么放在这一层而不是每个组件各自判断：
+          这是一个**全局的显示档位**，同一屏里所有节点的判断必须一致 ——
+          各自算的话，边界上会出现"这张卡的字没了、旁边那张还在"。
+          而且缩放变化在这里是唯一的事实来源，往下传一个状态就够了。
+      */
+      data-label-tier={labelTier(viewport.scale)}
       className="pointer-events-none absolute top-0 left-0 origin-top-left"
       style={{
         transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.scale})`,
