@@ -123,14 +123,33 @@ const READ = `(() => {
   const zoom = document.querySelector('[data-canvas-zoom]');
   const size = parseFloat(cs.backgroundSize) || 0;
   const posParts = cs.backgroundPosition.split(' ');
+
+  /*
+    ⚠️ 原点标记的屏幕位置要**量**（getBoundingClientRect），不能读 style.left。
+
+    以前它在屏幕上绝对定位，style.left 就是屏幕坐标，读它没问题。
+    现在它在世界坐标层里 —— style.left 是固定的世界坐标（400），
+    永远不变。于是「拖动后原点跟着动」那条断言永远红，
+    而画面其实动得好好的。
+
+    量出来的才是屏幕上真实的位置。减掉 stage 的 rect 得到相对视口的坐标，
+    和 panX / panY 量的是同一个基准。
+  */
+  let originX = -1, originY = -1;
+  if (origin) {
+    const orect = origin.getBoundingClientRect();
+    originX = orect.left - rect.left;
+    originY = orect.top - rect.top;
+  }
+
   return JSON.stringify({
     bgPos: cs.backgroundPosition,
     bgSize: cs.backgroundSize,
     gridStep: size,
     panX: parseFloat(posParts[0]) || 0,
     panY: parseFloat(posParts[1]) || 0,
-    originX: origin ? parseFloat(origin.style.left) || 0 : -1,
-    originY: origin ? parseFloat(origin.style.top) || 0 : -1,
+    originX,
+    originY,
     zoomLabel: zoom ? zoom.textContent.trim() : '',
     stageW: Math.round(rect.width),
     stageH: Math.round(rect.height),
@@ -207,31 +226,40 @@ async function main() {
     const vh = initial.stageH;
     info(`画布实际尺寸 ${vw}×${vh}，网格间距 ${initial.gridStep}px，倍率 ${initial.zoomLabel}`);
 
-    /* ---------- 3. 初始视口对准核心格 ---------- */
-    heading("第三步 · 初始视口对准核心格（第 3 列第 2 行）");
+    /* ---------- 3. 初始视口：整条流水线一屏看得下 ---------- */
+    /*
+      ⚠️ 这一条以前是「初始视口对准核心格、倍率 100%」。
+      那是画布还空着的时候 —— 打开它就该看到第 3 列第 2 行的那一格。
+
+      现在画布上有六道工序（整条 1840 宽），所以打开时该做的是
+      **把整条装进视口**：窗口 1440 时装不下，要缩到 ~70%。
+      仍然缩到 100% 的话，用户第一眼只看到四道半，剩下的一道半
+      要自己滚一下滚轮才知道在 —— 而"还有东西在右边"这件事，
+      不滚是看不出来的。
+    */
+    heading("第三步 · 初始视口装下整条流水线");
 
     expect_(
-      Math.abs(initial.gridStep - 160) < 1,
-      "初始倍率下网格间距 160px",
-      `实际 ${initial.gridStep}px`,
+      initial.zoomLabel !== "100%",
+      `打开时自动缩放（${initial.zoomLabel}），整条看得下`,
+      "打开时还是 100% —— 六道工序一屏装不下",
     );
-    expect_(initial.zoomLabel === "100%", "倍率显示 100%", `实际显示 ${initial.zoomLabel}`);
+    expect_(
+      initial.gridStep > 60 && initial.gridStep < 160,
+      `网格间距 ${initial.gridStep}px，说明确实缩小了`,
+      `网格间距是 ${initial.gridStep}px，看着不像缩过`,
+    );
 
     /*
-      核心格中心应当落在「水平正中、纵向 34%」。
-      34% 是刻意不是 50%：流水线往下长，下面要留地方。
+      原点标记（核心格）在这种视口下**不该**落在正中 ——
+      整条流水线以核心格的 x 居中，但纵向的偏移不一样。
+      这里只断言它在视口内，不断言具体位置：
+      具体位置由 fitViewport 的算法决定，而那个算法有自己的单测。
     */
-    const targetX = vw / 2;
-    const targetY = vh * 0.34;
     expect_(
-      Math.abs(initial.originX - targetX) < 2,
-      `原点横向落在正中（${Math.round(initial.originX)} ≈ ${targetX}）`,
-      `横向偏了：${Math.round(initial.originX)} vs ${targetX}`,
-    );
-    expect_(
-      Math.abs(initial.originY - targetY) < 2,
-      `原点纵向偏上（${Math.round(initial.originY)} ≈ ${Math.round(targetY)}）`,
-      `纵向不对：${Math.round(initial.originY)} vs ${Math.round(targetY)}`,
+      initial.originX > 0 && initial.originX < vw && initial.originY > 0 && initial.originY < vh,
+      "原点标记落在视口里",
+      `原点跑到了视口外：(${Math.round(initial.originX)}, ${Math.round(initial.originY)})`,
     );
 
     /* ---------- 4. 滚轮缩放 ---------- */
@@ -338,7 +366,13 @@ async function main() {
     );
 
     /* ---------- 6. 回到原点 ---------- */
-    heading("第六步 · 回到原点");
+    /*
+      ⚠️ 这一条以前断言「回到原点后倍率复位到 100%、核心格回到正中」。
+      现在这个按钮的意思是**回到初始视口** —— 也就是重新装下整条流水线，
+      而初始视口是缩放的（~70%）。所以断言对象从"核心格的位置"
+      换成了"整条流水线的位置"，那才是这个按钮真正该保证的事。
+    */
+    heading("第六步 · 回到原点（重新装下整条流水线）");
 
     await cdp.send("Runtime.evaluate", {
       expression: `document.querySelector('[data-canvas-zoom]').click()`,
@@ -346,11 +380,15 @@ async function main() {
     await sleep(400);
     const home = await read(cdp);
 
-    expect_(home.zoomLabel === "100%", "回到原点后倍率复位到 100%", `实际 ${home.zoomLabel}`);
     expect_(
-      Math.abs(home.originX - targetX) < 2 && Math.abs(home.originY - targetY) < 2,
-      "回到原点后核心格回到初始位置",
-      `回到 (${Math.round(home.originX)}, ${Math.round(home.originY)})，期望 (${targetX}, ${Math.round(targetY)})`,
+      home.zoomLabel === initial.zoomLabel,
+      `回到原点后倍率回到初始值 ${initial.zoomLabel}`,
+      `实际 ${home.zoomLabel}，初始是 ${initial.zoomLabel}`,
+    );
+    expect_(
+      Math.abs(home.originX - initial.originX) < 2 && Math.abs(home.originY - initial.originY) < 2,
+      "回到原点后画面回到初始位置",
+      `回到 (${Math.round(home.originX)}, ${Math.round(home.originY)})，初始是 (${Math.round(initial.originX)}, ${Math.round(initial.originY)})`,
     );
 
     /* ---------- 7. 缩放按钮 ---------- */
@@ -378,27 +416,203 @@ async function main() {
       `没缩回来：${afterMinus.gridStep}px，期望 ${home.gridStep}px`,
     );
 
-    /* ---------- 8. 画布确实是空的 ---------- */
-    heading("第八步 · 画布上没有内容");
+    /* ---------- 8. 画布上的六道工序 ---------- */
+    /*
+      这里原来有一条**反向**断言：「画布上没有流程、没有节点，只有原点标记」。
+      那是上一版：画布确实什么也没有，而首页的「新建项目」正好指向它 ——
+      「从一句话开始」这句承诺把人带进一片空白网格。
 
-    const emptyCheck = await cdp.send("Runtime.evaluate", {
+      现在六道工序画上去了，断言跟着反过来：**它必须有东西**，
+      而且东西要是对的（顺序、权限、连线、缩放）。
+    */
+    heading("第八步 · 画布上的六道工序");
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas` });
+    await sleep(3500);
+
+    const pipeline = await cdp.send("Runtime.evaluate", {
       expression: `(() => {
+        const q = (s) => [...document.querySelectorAll(s)];
         const stage = document.querySelector('[data-canvas-stage]');
-        // 画布的直接子元素：应当只有那个原点标记，没有别的
-        const kids = [...stage.children].map(el => el.tagName.toLowerCase() + (el.hasAttribute('data-canvas-origin') ? '[origin]' : ''));
-        return JSON.stringify({ count: stage.children.length, kids });
+        return JSON.stringify({
+          hasWorld: !!document.querySelector('[data-canvas-world]'),
+          hasPipeline: !!document.querySelector('[data-canvas-pipeline]'),
+          ids: q('[data-pipeline-stage]').map(el => el.getAttribute('data-pipeline-stage')),
+          actors: q('[data-stage-actor]').map(el => ({
+            id: el.getAttribute('data-stage-actor'),
+            label: el.textContent.trim(),
+          })),
+          gates: q('[data-stage-gate]').map(el => el.getAttribute('data-stage-gate')),
+          watches: q('[data-stage-watches]').length,
+          hasGrid: !!stage,
+          hasOrigin: !!document.querySelector('[data-canvas-origin]'),
+        });
       })()`,
       returnByValue: true,
     });
-    const empty = JSON.parse(emptyCheck.result!.value!) as { count: number; kids: string[] };
-    info(`画布子元素：${empty.kids.join(", ") || "（无）"}`);
+    const pl = JSON.parse(pipeline.result!.value!) as {
+      hasWorld: boolean;
+      hasPipeline: boolean;
+      ids: string[];
+      actors: Array<{ id: string; label: string }>;
+      gates: string[];
+      watches: number;
+      hasGrid: boolean;
+      hasOrigin: boolean;
+    };
+
+    info(`画布上的工序：${pl.ids.join(" ")}`);
+
+    expect_(pl.hasWorld, "画布有世界坐标层", "没有世界坐标层 —— 内容无处安放");
+    expect_(pl.hasPipeline, "画布上有流水线", "画布上还是一片空白");
     expect_(
-      empty.count <= 1,
-      "画布上没有流程、没有节点，只有原点标记",
-      `画布上多了 ${empty.count} 个元素：${empty.kids.join(", ")}`,
+      pl.ids.length === 6,
+      "六道工序都画出来了",
+      `只有 ${pl.ids.length} 道：${pl.ids.join(" ")}`,
+    );
+    expect_(
+      pl.ids.join(",") === "spec,arch,ui,build,assemble,verify",
+      "顺序是 ①②③④⑤⑥",
+      `顺序不对：${pl.ids.join(" ")}`,
+    );
+    expect_(pl.hasGrid && pl.hasOrigin, "网格和原点标记都还在", "画布本体的网格或原点标记没了");
+
+    /*
+      权限四件套也要跟着上画布 ——
+      在 /studio 那张图上有、搬到画布上就没了的话，
+      等于这一趟搬家把最重要的东西丢了。
+    */
+    const flowVerifyActor = pl.actors.find((a) => a.id === "verify");
+    expect_(
+      flowVerifyActor?.label === "AI · 只读",
+      "验收在画布上也是「AI · 只读」",
+      `验收标成了「${flowVerifyActor?.label}」—— 判定者不该参与生产`,
+    );
+    expect_(
+      pl.gates.length === 1 && pl.gates[0] === "on",
+      "只有规格化带门禁，且是「会停下问人」",
+      `门禁标记：${pl.gates.join(" ") || "（无）"}`,
+    );
+    expect_(
+      pl.watches === 6,
+      "六道工序都写了「看什么数」",
+      `只有 ${pl.watches} 道写了看什么数`,
     );
 
-    /* ---------- 9. 任务图上的权限四件套 ---------- */
+    /*
+      连线：顺序流转的实线 + 失败回退的虚线。
+      回退边是别家画不出来的东西（他们的流程里没定义失败退回到哪），
+      所以它必须真的画出来，而不是只存在于数据结构里。
+    */
+    const edgeCheck = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const paths = [...document.querySelectorAll('[data-canvas-pipeline] svg path')];
+        const dashed = paths.filter(p => p.getAttribute('stroke-dasharray'));
+        return JSON.stringify({ total: paths.length, dashed: dashed.length });
+      })()`,
+      returnByValue: true,
+    });
+    const ed = JSON.parse(edgeCheck.result!.value!) as { total: number; dashed: number };
+    info(`连线：共 ${ed.total} 条，其中虚线（失败回退）${ed.dashed} 条`);
+
+    expect_(
+      ed.dashed === 5,
+      "五道工序各有一条失败回退边",
+      `虚线的条数是 ${ed.dashed}，应该是 5`,
+    );
+
+    /*
+      缩放自动适应：整条流水线 1840 宽，窗口 1440，
+      打开时应该已经缩到看得全 —— 而不是要用户自己滚一下滚轮。
+    */
+    const zoomCheck = await cdp.send("Runtime.evaluate", {
+      expression: `document.querySelector('[data-canvas-zoom]')?.textContent?.trim() ?? ''`,
+      returnByValue: true,
+    });
+    const pct = Number(String(zoomCheck.result!.value).replace("%", ""));
+    info(`打开时的缩放：${pct}%`);
+    expect_(
+      pct > 40 && pct < 100,
+      `打开时自动缩到 ${pct}%，整条看得全`,
+      `打开时是 ${pct}% —— 六道工序应该一屏看得下`,
+    );
+
+    /* ---------- 9. 点节点高亮整条上下游链 ---------- */
+    heading("第九步 · 点节点高亮上下游链");
+
+    const clickAndRead = async (stageId: string) => {
+      await cdp.send("Runtime.evaluate", {
+        expression: `document.querySelector('[data-pipeline-stage="${stageId}"]')?.click()`,
+        returnByValue: true,
+      });
+      await sleep(500);
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: `(() => {
+          const cards = [...document.querySelectorAll('[data-pipeline-stage]')];
+          return JSON.stringify(cards.map(el => ({
+            id: el.getAttribute('data-pipeline-stage'),
+            opacity: Number(getComputedStyle(el).opacity),
+          })));
+        })()`,
+        returnByValue: true,
+      });
+      return JSON.parse(r.result!.value!) as Array<{ id: string; opacity: number }>;
+    };
+
+    /*
+      ---------- 点节点之后会发生什么 ----------
+      点「验收」：它的上游是全部五道，所以六个都该亮着。
+    */
+    const allLit = await clickAndRead("verify");
+    const dim1 = allLit.filter((c) => c.opacity < 0.5).map((c) => c.id);
+    expect_(dim1.length === 0, "点「验收」时六道全亮（它的上游是全部）", `这几道被压暗了：${dim1.join(" ")}`);
+
+    /*
+      ⚠️ 这里原来断言「点中间某一道会压暗它下游的那几道」。**那条是错的。**
+
+      tracePath 的 chain = 自己 + 全部上游 + 全部下游。
+      而这是一条**线性**流水线（spec→arch→ui→build→assemble→verify），
+      所以点任何一道，chain 都是全部六个 —— 一道也暗不下去。
+
+      也就是说，「点节点压暗其他」这个效果在这张图上**永远不会发生**。
+      断言写成"应该暗三道"是我照着"高亮一条链"这个说法想当然写的，
+      没去核 tracePath 实际返回什么。跑起来才看见。
+
+      那这个点击到底有什么用？—— 它选中那一道，
+      好让详情面板显示它的原理、验收标准、权限说明和失败退回目标。
+      所以下面断言的是**选中态**，不是压暗。
+    */
+    /*
+      点一道，它就该有选中态。
+      这里点的是「界面设计」—— 它是**未接入**的一道，
+      正好顺带验一件事：点灰的工序时它要**亮起来**，
+      因为点它恰恰是想看清它的详情。最需要看清的时候它最暗，是反的。
+    */
+    await clickAndRead("ui");
+
+    const selected = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const el = document.querySelector('[data-pipeline-stage="ui"]');
+        return JSON.stringify({
+          boxShadow: getComputedStyle(el).boxShadow,
+          opacity: Number(getComputedStyle(el).opacity),
+        });
+      })()`,
+      returnByValue: true,
+    });
+    const sel = JSON.parse(selected.result!.value!) as { boxShadow: string; opacity: number };
+    expect_(
+      sel.boxShadow !== "none",
+      "点中的那一道有外发光",
+      `没有外发光：boxShadow=${sel.boxShadow}`,
+    );
+    expect_(
+      sel.opacity > 0.9,
+      `未接入的工序被点中时亮起来（opacity=${sel.opacity}）`,
+      `点中之后还是灰的（opacity=${sel.opacity}）—— 最需要看清的时候它最暗`,
+    );
+
+    /* ---------- 10. 任务图上的权限四件套（React Flow 那版，待退役） ---------- */
     /*
       任务图是**纯客户端渲染**的 —— SSR 出来的 HTML 里一个节点都没有
       （实测过：data-node-actor / 「要人点头」/「AI · 只读」全是 false）。
@@ -407,7 +621,7 @@ async function main() {
       这一组测的是**设计意图有没有真的传到界面上**：
       核心层改了 access 而图上还画着旧徽章的话，看的人仍然会误解。
     */
-    heading("第九步 · 任务图上的权限");
+    heading("第十步 · 任务图上的权限（React Flow 那版，待退役）");
 
     await cdp.send("Page.navigate", { url: `${BASE}/studio?tab=graph` });
     await sleep(4000);

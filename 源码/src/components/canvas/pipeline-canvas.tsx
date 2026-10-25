@@ -1,0 +1,392 @@
+"use client";
+
+import { useCallback, useMemo, type CSSProperties } from "react";
+import { tintVarAt } from "@/core/domain/appearance";
+import { actorBadge } from "@/core/pipeline/authority";
+import type { GateOverride } from "@/core/pipeline/gate-policy";
+import type { PipelineNode } from "@/core/pipeline/graph";
+import {
+  PIPELINE_GEOMETRY,
+  fallbackLabelAt,
+  fallbackPath,
+  flowArrowAt,
+  flowPath,
+  nodeRect,
+  pipelineBounds,
+  type NodeRect,
+} from "@/core/canvas/pipeline-layout";
+import type { StageId } from "@/core/pipeline/stages";
+
+/**
+ * 画布上的六道工序
+ * ============================================================
+ * 这张图以前是 React Flow 画的。现在自己画 —— 一行六个节点、
+ * 顺序流转的实线、失败回退的弧线，全都落在画布的世界坐标上。
+ *
+ * ── 为什么自己画是值得的 ──
+ *   一、**位置可以说清楚。** 每个节点的世界坐标由纯函数给，
+ *       于是"第三道在哪儿"是一个能断言的数，而不是一个库的内部实现。
+ *   二、**回退边能画成它该有的样子。** React Flow 的边只能从
+ *       预设的手柄出来，绕行要么画不圆、要么得自己塞一个自定义边；
+ *       这里一条二次贝塞尔就够了。
+ *   三、少一个运行时依赖。
+ *
+ * ── 图上放什么，有一条硬约束 ──
+ *   只放**真实存在**的东西。
+ *   没接入的工序照样画出来，但状态如实标成「未接入」且不参与进度推算；
+ *   没有产物就不显示产物大小，没有耗时就不显示耗时。
+ *   图比列表更容易让人相信「这里真的有东西」，所以更不能画假的。
+ */
+
+export interface PipelineCanvasProps {
+  nodes: readonly PipelineNode[];
+  /** 高亮的节点。点了某个节点之后，整条上下游链上的都是它 */
+  chain?: ReadonlySet<StageId> | null;
+  activeId?: StageId | null;
+  onPick?: (id: StageId) => void;
+  gateOverride?: GateOverride;
+}
+
+/* ============================================================
+   状态的样子
+   ============================================================ */
+
+/**
+ * 五档状态各自的文案和颜色。
+ *
+ * ── 为什么「未接入」和「待执行」要分开 ──
+ *   它们看起来都像"还没跑"，但意思完全不同：
+ *     待执行  这一道**能跑**，只是还没轮到
+ *     未接入  这一道**还跑不了**，代码都没写
+ *   合并成一档的话，用户会以为"再等等它就会跑"，
+ *   而实际上等到最后也不会有产物 —— 那是虚假的期待。
+ */
+const TONE: Record<string, { label: string; cls: string; dot: string }> = {
+  pending: { label: "待执行", cls: "text-slate-500", dot: "var(--ink-6)" },
+  running: { label: "正在跑", cls: "text-cyan-300", dot: "rgb(34 211 238)" },
+  passed: { label: "已通过", cls: "text-green-400", dot: "rgb(74 222 128)" },
+  failed: { label: "失败", cls: "text-red-400", dot: "rgb(248 113 113)" },
+};
+
+function toneOf(node: PipelineNode) {
+  if (node.implementation === "planned") {
+    return { label: "未接入", cls: "text-slate-600", dot: "var(--ink-7)" };
+  }
+  const base = TONE[node.status] ?? TONE.pending;
+  /*
+    直通模式要单独标出来。
+    `direct` 的意思是"这件事做了，但没走完整的契约链路" ——
+    直接显示成「已通过」的话，用户会以为各阶段的产物都在。
+  */
+  if (node.implementation === "direct" && node.status === "passed") {
+    return { ...base, label: "已通过 · 直通" };
+  }
+  return base;
+}
+
+/* ============================================================
+   一个节点
+   ============================================================ */
+
+function StageCard({
+  node,
+  rect,
+  tint,
+  active,
+  dimmed,
+  onPick,
+}: {
+  node: PipelineNode;
+  rect: NodeRect;
+  tint: string;
+  active: boolean;
+  dimmed: boolean;
+  onPick?: (id: StageId) => void;
+}) {
+  const empty = node.implementation === "planned";
+  const tone = toneOf(node);
+  const running = node.status === "running" && !empty;
+
+  return (
+    <div
+      /*
+        ⚠️ 属性名是 data-pipeline-stage，不是 data-canvas-stage。
+        画布本体（canvas-stage.tsx 里那层网格）已经占了后者 ——
+        两个同名的话，`querySelectorAll('[data-canvas-stage]')` 会
+        把画布本身也数进去，于是"六道工序"变成七个。
+        这个错在画面上完全看不出来，只有数数才发现。
+      */
+      data-pipeline-stage={node.id}
+      data-stage-status={node.status}
+      /*
+        pointer-events-auto 是必须的：整层世界坐标内容是 pointer-events-none，
+        为的是让拖着空白处仍然能平移画布（见 canvas-stage 里的说明）。
+        节点自己把事件收回来，点击才落得到它身上。
+      */
+      className={`pointer-events-auto absolute cursor-pointer overflow-hidden rounded-xl border px-3.5 py-3 transition-[border-color,opacity] duration-200 ${
+        running ? "working-ring" : ""
+      }`}
+      style={
+        {
+          left: rect.x,
+          top: rect.y,
+          width: rect.w,
+          height: rect.h,
+          ["--ring-color" as string]: `rgb(${tint})`,
+          borderColor: `rgb(${tint} / ${active ? 0.8 : empty ? 0.28 : 0.45})`,
+          backgroundColor: "var(--color-surface)",
+          backgroundImage: empty
+            ? undefined
+            : `linear-gradient(150deg, rgb(${tint} / ${active ? 0.24 : 0.14}) 0%, rgb(${tint} / 0.03) 58%, transparent 100%)`,
+          boxShadow: active ? `0 0 0 1px rgb(${tint} / 0.8), 0 0 30px -8px rgb(${tint} / 0.95)` : undefined,
+          /*
+            ⚠️ active 要排在 empty 前面。
+
+            写成 `dimmed ? 0.25 : empty ? 0.55 : 1` 的话，
+            点一个「未接入」的工序时它**还是灰的**（0.55）——
+            而点它恰恰是想看清它的详情（原理、验收标准、权限）。
+            最需要看清的时候它最暗，是反的。
+          */
+          opacity: dimmed ? 0.25 : active ? 1 : empty ? 0.55 : 1,
+        } as CSSProperties
+      }
+      onClick={() => onPick?.(node.id)}
+    >
+      {/* 顶部细亮线。只有真正接入了的工序才有 ——
+          灰掉的工序连这条线都不该有，否则看起来还是「活的」 */}
+      {!empty && (
+        <span
+          aria-hidden
+          className="absolute inset-x-0 top-0 h-px"
+          style={{ background: `linear-gradient(90deg, transparent, rgb(${tint} / 0.9), transparent)` }}
+        />
+      )}
+
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{ background: `rgb(${tint})`, boxShadow: empty ? undefined : `0 0 9px 1px rgb(${tint} / 0.6)` }}
+          />
+          <span className="font-mono text-[11px] font-semibold tabular-nums" style={{ color: `rgb(${tint})` }}>
+            {String(node.order).padStart(2, "0")}
+          </span>
+        </div>
+        <span
+          data-stage-tone
+          className="rounded border px-1.5 py-px text-[10px] whitespace-nowrap"
+          style={{
+            borderColor: `rgb(${tint} / 0.5)`,
+            color: `rgb(${tint})`,
+            background: empty ? "none" : `rgb(${tint} / 0.12)`,
+          }}
+        >
+          {tone.label}
+        </span>
+      </div>
+
+      <div className="mt-2 text-[15px] leading-tight font-medium text-slate-100">{node.name}</div>
+      <div className="mt-0.5 font-mono text-[10.5px] text-slate-500">{node.artifact}</div>
+
+      {/* ---------- 权限 ---------- */}
+      <div className="mt-2 flex flex-wrap items-center gap-1">
+        <AuthorityChip node={node} dim={empty} />
+        {node.approval === "human" && (
+          <span
+            data-stage-gate={node.gateActive ? "on" : "off"}
+            title={
+              node.gateActive
+                ? "这一步会停下来问人"
+                : "这一步声明了要人点头，但当前设置是先放行 —— 模型会替你猜"
+            }
+            className="rounded px-1.5 py-px text-[10px] leading-tight whitespace-nowrap"
+            style={{
+              background: empty ? "none" : "rgb(249 115 22 / 0.16)",
+              color: empty ? "var(--ink-6)" : "rgb(253 186 116)",
+              border: `1px solid ${empty ? "var(--color-border-soft)" : "rgb(249 115 22 / 0.35)"}`,
+              textDecoration: node.gateActive ? undefined : "line-through",
+              opacity: node.gateActive ? 1 : 0.6,
+            }}
+          >
+            {node.gateActive ? "要人点头" : "要人点头（已放行）"}
+          </span>
+        )}
+      </div>
+
+      {/* ---------- 看什么数 ---------- */}
+      <div data-stage-watches className="mt-1.5 truncate text-[10.5px] text-slate-600">
+        看：{node.watches.map((w) => w.label).join(" · ")}
+      </div>
+
+      {/* ---------- 花费。没接入的不显示金额，见文件头那条硬约束 ---------- */}
+      {node.costCny > 0 && (
+        <div className="mt-1.5 border-t border-[rgb(var(--tint)/0.15)] pt-1.5 text-[10.5px] tabular-nums">
+          <span className="text-slate-500">花费 </span>
+          <span className="text-slate-300">¥{node.costCny.toFixed(4)}</span>
+        </div>
+      )}
+
+      {empty && (
+        <div className="mt-1.5 border-t border-[var(--color-border-soft)] pt-1.5 text-[10.5px] text-slate-600">
+          尚未产出契约
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 谁在做、能不能改。
+ *
+ * 视觉重量跟着风险走：「AI · 干活」是实心的，一屏里最先被看到。
+ * 这正是想让用户形成的直觉 —— 能改东西的那一步才需要盯。
+ */
+function AuthorityChip({ node, dim }: { node: PipelineNode; dim: boolean }) {
+  const label = actorBadge(node);
+  const solid = label === "AI · 干活" || label === "人";
+  const color =
+    label === "人"
+      ? "249 115 22"
+      : label === "AI · 干活"
+        ? "245 158 11"
+        : label === "AI · 只读"
+          ? "34 211 238"
+          : null;
+
+  return (
+    <span
+      data-stage-actor={node.id}
+      className="rounded px-1.5 py-px text-[10px] leading-tight whitespace-nowrap"
+      style={
+        dim || !color
+          ? { border: "1px solid var(--color-border-soft)", color: "var(--ink-6)" }
+          : solid
+            ? { background: `rgb(${color} / 0.85)`, color: "#1c1917", fontWeight: 500 }
+            : { border: `1px solid rgb(${color} / 0.38)`, color: `rgb(${color} / 0.95)` }
+      }
+    >
+      {label}
+    </span>
+  );
+}
+
+/* ============================================================
+   整张图
+   ============================================================ */
+
+export function PipelineCanvas({
+  nodes,
+  chain = null,
+  activeId = null,
+  onPick,
+}: PipelineCanvasProps) {
+  const g = PIPELINE_GEOMETRY;
+  const total = nodes.length;
+
+  const rects = useMemo(
+    () => nodes.map((_, i) => nodeRect(i, total, g)),
+    [nodes, total, g],
+  );
+
+  /** 有聚焦点时，不在链上的压暗 —— 让链自己浮出来 */
+  const hasFocus = chain !== null;
+  const onChain = useCallback(
+    (id: StageId) => (hasFocus ? chain!.has(id) : true),
+    [hasFocus, chain],
+  );
+
+  const dimmedExcept = useCallback(
+    (id: StageId) => hasFocus && !chain!.has(id),
+    [hasFocus, chain],
+  );
+
+  const bounds = pipelineBounds(total, g);
+
+  return (
+    <div data-canvas-pipeline className="absolute" style={{ left: 0, top: 0 }}>
+      {/* ---------- 连线 ---------- */}
+      <svg
+        aria-hidden
+        className="absolute overflow-visible"
+        style={{ left: bounds.x, top: bounds.y, width: bounds.w, height: bounds.h }}
+        viewBox={`${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`}
+      >
+        {nodes.map((node, i) => {
+          /* 顺序流转：第 i 道 → 第 i+1 道 */
+          if (i >= total - 1) return null;
+          const a = rects[i];
+          const b = rects[i + 1];
+          const lit = onChain(node.id) && onChain(nodes[i + 1].id);
+          const arrow = flowArrowAt(a, b, g);
+
+          return (
+            <g key={`flow-${node.id}`} opacity={lit ? 1 : 0.18}>
+              <path
+                d={flowPath(a, b)}
+                fill="none"
+                stroke={`rgb(${tintVarAt(i)} / 0.45)`}
+                strokeWidth={1.5}
+              />
+              {/* 箭头单独画：SVG marker 会跟着线一起缩放，
+                  缩小时糊成一团、放大时变成巨大的三角 */}
+              <path
+                d={`M ${arrow.x - 4} ${arrow.y - 4} L ${arrow.x + 4} ${arrow.y} L ${arrow.x - 4} ${arrow.y + 4} Z`}
+                fill={`rgb(${tintVarAt(i)} / 0.7)`}
+              />
+            </g>
+          );
+        })}
+
+        {/*
+          失败回退：从每道工序自己声明的 fallbackTo 展开。
+          这是别家画不出来的东西 —— 他们的流程里没定义失败退回到哪。
+        */}
+        {nodes.map((node, i) => {
+          const to = node.fallbackTo?.[0];
+          if (!to) return null;
+          const targetIdx = nodes.findIndex((n) => n.id === to);
+          if (targetIdx < 0) return null;
+
+          const a = rects[i];
+          const b = rects[targetIdx];
+          const lit = onChain(node.id) && onChain(to);
+          const label = fallbackLabelAt(a, b);
+
+          return (
+            <g key={`fb-${node.id}`} opacity={lit ? 1 : 0.12}>
+              <path
+                d={fallbackPath(a, b)}
+                fill="none"
+                stroke="rgb(248 113 113 / 0.4)"
+                strokeWidth={1.2}
+                strokeDasharray="5 4"
+              />
+              <text
+                x={label.x}
+                y={label.y + 4}
+                textAnchor="middle"
+                className="fill-[rgb(248_113_113_/_0.75)] text-[11px]"
+              >
+                失败可退回
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* ---------- 节点 ---------- */}
+      {nodes.map((node, i) => (
+        <StageCard
+          key={node.id}
+          node={node}
+          rect={rects[i]}
+          tint={tintVarAt(i)}
+          active={activeId === node.id}
+          dimmed={dimmedExcept(node.id)}
+          onPick={onPick}
+        />
+      ))}
+    </div>
+  );
+}

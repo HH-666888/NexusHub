@@ -76,6 +76,18 @@ export interface PipelineNode {
   gateActive: boolean;
   /** 这一阶段的判断依据 —— 「你凭什么说做完了」 */
   watches: StageMetric[];
+  /**
+   * 失败可以退回哪几道。
+   *
+   * ── 为什么节点上也要有一份（边里已经有一份了）──
+   *   边里那份是给"画线"用的；节点上这份是给"画线的人"用的 ——
+   *   自绘画布要按节点的位置去算弧线绕多远，而它手上只有节点。
+   *   让画布反过来去 edges 里查，等于把"谁是源、谁是目标"
+   *   这层映射又写一遍。
+   *
+   *   两份都来自 STAGES，同一个源头，不会漂。
+   */
+  fallbackTo: StageId[];
 
   /** 布局坐标 */
   x: number;
@@ -234,6 +246,7 @@ export function buildPipelineGraph(input: BuildGraphInput): PipelineGraph {
       */
       gateActive: resolveGatePolicy(s.id, gateOverride).active,
       watches: s.watches,
+      fallbackTo: [...s.fallbackTo],
 
       x: pos.x,
       y: pos.y,

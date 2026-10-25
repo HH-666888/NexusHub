@@ -191,6 +191,43 @@ export function homeViewport(viewportW: number, viewportH: number, scale = 1): V
   };
 }
 
+/**
+ * 让一块世界区域**完整落进视口**。
+ *
+ * ── 为什么需要它，而不是固定一个倍率 ──
+ *   流水线是 1840 宽。窗口 1440 时要缩到 0.78 才看得全，
+ *   窗口 2560 时又该是 1（甚至更大）。写死一个倍率的话，
+ *   小屏上看不全、大屏上白白缩得很小 —— 两头都不合适。
+ *
+ * ── 上下留白为什么不一样 ──
+ *   横向两侧各留 `padding`；纵向**上方留得多、下方留得少**。
+ *   因为回退边是从节点下方绕出去的（见 pipeline-layout 的 FALLBACK_DROP）——
+ *   下方不给够空间，那几条弧线会被切在屏幕外，
+ *   而它们是这张图上最该被看见的东西之一。
+ */
+export function fitViewport(
+  bounds: { x: number; y: number; w: number; h: number },
+  viewportW: number,
+  viewportH: number,
+  padding = 56,
+): Viewport {
+  // 空区域没有"适合"可言，退回核心格 —— 不然会算出 Infinity
+  if (bounds.w <= 0 || bounds.h <= 0) return homeViewport(viewportW, viewportH);
+
+  const usableW = Math.max(1, viewportW - padding * 2);
+  const usableH = Math.max(1, viewportH - padding * 2);
+  const s = clampScale(Math.min(usableW / bounds.w, usableH / bounds.h));
+
+  const cx = bounds.x + bounds.w / 2;
+  const cy = bounds.y + bounds.h / 2;
+  return {
+    scale: s,
+    panX: clampPan(viewportW / 2 - cx * s),
+    // 纵向仍然偏上（和 homeViewport 同一个理由：下面还要长东西）
+    panY: clampPan(viewportH * HOME_SCREEN_Y_RATIO - cy * s),
+  };
+}
+
 /* ============================================================
    显示
    ============================================================ */
