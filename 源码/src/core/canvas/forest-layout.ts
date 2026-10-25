@@ -91,10 +91,34 @@ export interface ForestGeometry {
 export const FOREST_GEOMETRY: ForestGeometry = {
   root: { w: 240, h: 156, gapX: 84, perRow: 6 },
   /*
-    子节点 168 宽、每行 2 个 —— 这个组合让总宽落在 2400，
-    1440 的屏上根节点还有 133px 宽（可读）。改大就会破这条线。
+    子节点 232×112、每行 2 个。
+
+    ── 为什么从 168×44 涨到这么大 ──
+      原来子卡片只有「一个圆点 + 一行字」，44 高就够了。
+      用户要求子卡和主卡**同一套视觉语言**：
+        「需要有关键的颜色和内容……不能只是一个标题」
+        「6 个根节点是主、后面的是子，但只是**位置**上的区分，样式先不区分」
+      于是一张子卡要装下：状态胶囊 + 名称 + 判定依据 + 关键字胶囊排
+      + 分隔线 + 一个数值 —— 和主卡同构，只是小一号。
+      44 高塞不下这五样，112 是量出来的。
+
+    ── 宽度预算（改大之前必须算这笔账）──
+      子树宽 = 2×232 + 28 = 492
+      总宽   = 5×240 + 492 + 5×84 = 2112     ← 必须 ≤ 2450
+      1440 屏上缩放 = 0.682
+      根卡实际宽 = 240 × 0.682 ≈ 163.6px     ← 必须 ≥ 130（否则工序名读不清）
+      子卡实际宽 ≈ 158.2px
+
+      2450 和 130 这两个数是**硬约束**，来自「六道工序要在一屏里
+      全部保持可读」——见文件头那段。2112 < 2450，还有余量，
+      所以这次放大是安全的。再往上加就要重新算这笔账。
+
+    ── gapY 从 40 降到 32 ──
+      卡片变高之后行距再留 40，子树就高到 640+，一屏装不下
+      （现在子树高 544）。32 是"同属一组"仍然看得出来、
+      又不浪费纵向空间的值。
   */
-  child: { w: 168, h: 44, gapX: 24, gapY: 40, perRow: 2 },
+  child: { w: 232, h: 112, gapX: 28, gapY: 32, perRow: 2 },
   parentGapY: 56,
   rowOffsetY: -78,
   rootRowGap: 136,
@@ -289,6 +313,127 @@ export function layoutForest(
     roots: rootLaid,
     bounds: { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h + FALLBACK_DROP },
   };
+}
+
+/* ============================================================
+   父子连线：一条脊线 + 每个孩子一根短横枝
+   ============================================================ */
+
+/**
+ * 一个父节点到它所有孩子的连线。
+ *
+ * ── 为什么不是"每个孩子各画一条线" ──
+ *   那种画法（第一版就是这样）在**一排孩子**时没问题，
+ *   但孩子的排布是**多行多列**的（每行 2 个、共 4 行）：
+ *   每个孩子各自从父节点连线，第 2/3/4 行的那几条竖线
+ *   必须**从第 1 行的方块底下穿过去** —— 而方块画在线**上面**，
+ *   于是那些线全被盖住。
+ *
+ *   结果是：**只有第一行看起来连着，下面三行像飘着的卡片。**
+ *   用户的反馈「为什么没有树节点的效果」，这就是直接原因。
+ *
+ * ── 现在怎么画 ──
+ *
+ *           父卡底边中点
+ *                │
+ *                │   ← trunk：一条竖线，从父卡底下拉到最下面那根横枝
+ *         ┌──────┼──────┐
+ *      [子1]     │    [子2]      ← 横枝接在孩子**朝向脊线的那条边**的中点
+ *         ┌──────┤
+ *      [子3]     │    [子4]
+ *                │
+ *             [子5]              ← 孩子横跨脊线时，横枝退化成从顶边直接下来
+ *
+ * **关键在脊线的位置**：父卡中心 x 恰好等于两块子卡区的中缝 ——
+ * 因为子树本来就是**以父卡中心为中心**摆的（见 place 里那句
+ * `cursor + m.w / 2`）。于是脊线天然落在两列之间的空隙里，
+ * **永远不会从任何方块底下穿过**。
+ *
+ * ── 接边而不是接顶 ──
+ *   横枝接在孩子**侧边的中点**，不接顶边中点。
+ *   接顶边的话每个孩子还要多一段自己的竖线，那一竖会和相邻行的
+ *   方块重叠；接侧边则是一根干净的横线插进去，扫描一眼就知道
+ *   谁挂在谁身上 —— 这是组织结构图的通行画法。
+ */
+export interface TreeLink {
+  parentId: string;
+  /** 脊线的 x。同一父节点的所有横枝都从这条线出发 */
+  spineX: number;
+  /** 竖线（躯干）：从父卡底边中点到最下面那根横枝 */
+  trunk: { x: number; y1: number; y2: number };
+  /** 横枝：从脊线插到孩子侧边中点（或顶边中点，见上） */
+  branches: {
+    childId: string;
+    x1: number;
+    x2: number;
+    y: number;
+    /** 横枝退化成了一个点（孩子横跨脊线）时为 true */
+    degenerate: boolean;
+  }[];
+}
+
+/**
+ * 算出所有「父 → 子」的连线。
+ *
+ * 只吃摆好的节点，不算布局 —— 和 layoutForest 一样是纯函数，
+ * 可以单独钉单测。
+ *
+ * @param nodes 一棵摆好的森林的全部节点（根 + 子）
+ */
+export function treeLinks(nodes: LaidNode[]): TreeLink[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const out: TreeLink[] = [];
+
+  /* 按父节点分组 —— 一个父节点只出一条躯干 */
+  const groups = new Map<string, LaidNode[]>();
+  for (const n of nodes) {
+    if (!n.parentId) continue;
+    const list = groups.get(n.parentId);
+    if (list) list.push(n);
+    else groups.set(n.parentId, [n]);
+  }
+
+  for (const [parentId, kids] of groups) {
+    const parent = byId.get(parentId);
+    if (!parent || kids.length === 0) continue;
+
+    /* 脊线走父卡中心 —— 那正是子卡区的中缝，见上面那段说明 */
+    const spineX = parent.x + parent.w / 2;
+    const top = parent.y + parent.h;
+
+    const branches = kids.map((kid) => {
+      const kidCx = kid.x + kid.w / 2;
+      const kidCy = kid.y + kid.h / 2;
+
+      /*
+        孩子自己就横跨脊线（单数列的最后一行会这样：一个孩子居中摆在
+        两列正中间）→ 横枝没有意义，让它从顶边直接下来。
+        不特判的话会画出一根插进自己肚子里的短线。
+      */
+      if (Math.abs(kidCx - spineX) < kid.w / 2) {
+        return { childId: kid.id, x1: spineX, x2: kidCx, y: kid.y, degenerate: true };
+      }
+
+      /* 孩子在脊线右边 → 接它的左边中点；在左边 → 接它的右边中点 */
+      const toRight = kidCx > spineX;
+      return {
+        childId: kid.id,
+        x1: spineX,
+        x2: toRight ? kid.x : kid.x + kid.w,
+        y: kidCy,
+        degenerate: false,
+      };
+    });
+
+    out.push({
+      parentId,
+      spineX,
+      trunk: { x: spineX, y1: top, y2: Math.max(...branches.map((b) => b.y)) },
+      branches,
+    });
+  }
+
+  return out;
 }
 
 /* ============================================================
