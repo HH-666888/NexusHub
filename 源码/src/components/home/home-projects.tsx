@@ -34,7 +34,7 @@ export function HomeProjects({ runs }: HomeProjectsProps) {
   const shown = runs.slice(0, 3);
 
   return (
-    <section className="w-full px-5 pb-16">
+    <section className="w-full px-14 pb-16">
       <div className="mb-4 flex items-end justify-between">
         <h2 className="text-[15px] font-medium text-slate-200">我的项目</h2>
         {runs.length > 0 && (

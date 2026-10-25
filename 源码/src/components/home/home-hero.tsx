@@ -41,7 +41,7 @@ export function HomeHero() {
     setNotice(`${what}还没接上 —— 这一版先把画面搭出来，功能是下一步。`);
 
   return (
-    <section className="w-full px-5">
+    <section className="w-full px-14">
       {/* ---------- 大标题 ---------- */}
       <h1 className="pt-16 pb-7 text-center text-[42px] leading-tight font-semibold tracking-tight text-slate-100">
         说一句，做出来

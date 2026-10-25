@@ -97,7 +97,7 @@ export function CockpitHeader({
         state.error ? (
           <div
             role="alert"
-            className="border-t border-amber-900/50 bg-amber-950/30 px-5 py-2 text-xs text-amber-300"
+            className="border-t border-amber-900/50 bg-amber-950/30 px-14 py-2 text-xs text-amber-300"
           >
             {state.error}
           </div>

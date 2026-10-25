@@ -57,7 +57,7 @@ const CAPS: Capability[] = [
 
 export function HomeShowcase() {
   return (
-    <section className="w-full px-5 pb-24">
+    <section className="w-full px-14 pb-24">
       <h2 className="mb-4 text-[15px] font-medium text-slate-200">它是怎么工作的</h2>
 
       <div className="grid grid-cols-3 gap-5">
