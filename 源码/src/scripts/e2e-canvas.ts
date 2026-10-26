@@ -3060,6 +3060,620 @@ async function main() {
     cleanupVerifyRun(advRun);
     cleanupVerifyRun(bystander);
 
+    /* ---------- 21. 左侧清单：可点击跳转 + 一级行可折叠 ---------- */
+    /*
+      这一步验的是左侧那一列**这一期新长出来的两个交互**：
+
+        一、点一行 → 画布聚焦到那个任务点（状态在 URL 上：?run=…&focus=…）
+        二、点一级行前面的圆点 → 折叠/展开（原生 <details>/<summary>）
+
+      ── 为什么这两条都必须进常驻回归 ──
+        它们的"坏"都不会报错，而且都不表现为红字：
+          · 占位行被做得可点 → 点下去可能跳到父工序上（有反应，但是在说别的意思），
+            也可能什么都不发生（看起来像坏了）——两种都只有人点一下才知道
+          · 链接把已有的 ?run= 丢了 → 跳到"最近一次运行"上，
+            用户看到的是**另一棵树**，而画布看起来一切正常
+          · 折叠的默认状态写反（默认收起）→ 首屏只剩六行标题，
+            "有没有在跑"这个问题当场失去答案
+          · 折叠把状态点/计数一起藏了 → 收起之后没有任何线索说明
+            "这一组下面有没有东西、值不值得展开"
+        四条没有一条会抛异常。所以只能靠断言钉住。
+
+      ── 为什么"点一行之后视口真的动了"要单独断言 ──
+        视口变化同样是"看起来正常"的那一类：URL 对了、行也可点，
+        但视口没动（effect 没接上、或者查错了节点）—— 画面上
+        只是"点了没反应"。而这一类错在 URL 断言里是绿的。
+
+      ── 用哪条夹具 ──
+        seedVerifyRun：一条 done 的运行 + 七项检查。
+        于是清单里三种行同时在场：
+          6 个一级行（六道工序）· 7 个二级实体行（七项检查，画布上真的有卡片）
+          · 5 个占位行（另外五道工序「还没到点」）
+        ——"可点的行"和"不可点的行"在同一屏里对比，正好是这一步要的。
+    */
+    heading("第二十一步 · 清单可点击跳转（?focus=）与一级行折叠（<details>）");
+
+    /**
+     * 一次把清单的**结构 + 可点性 + 折叠状态**读全。
+     *
+     * 每个数都从 DOM 上量：
+     *   · 行是不是可点 → **有没有 href**（不是"有没有 cursor:pointer"，
+     *     那种样式可以写在一个不可点的元素上）
+     *   · 折叠状态     → `<details>` 的 open 属性（原生状态，不是类名）
+     *   · 可见性       → 见下面 kidsHidden 那一段（**实测出来的判据**）
+     *
+     * ── ⚠️ "折叠之后怎么算不可见"这一条是量出来的，不是想出来的 ──
+     *   一开始按"offsetParent === null 或高度为 0"判（那是
+     *   `display:none` 时代的判据），实测**七行全部没通过** ——
+     *   于是先用一个临时探针把这件事问清楚（Chromium 154 / Edge 154）：
+     *
+     *     · 折叠之后 `<details>` 自己的高度确实收掉了（261px → 44px，只剩 summary）
+     *     · 但二级行的 offsetParent **仍然非空**、rect 仍然是 27px 高
+     *       —— 它们保留着"上次布局"的几何，因为新版 Chromium 不再用
+     *       display:none 藏折叠内容，而是给 `::details-content` 挂
+     *       `content-visibility: hidden`（探针实测：该伪元素 visible → hidden）
+     *     · 这个状态下内容**不绘制、不参与命中测试**，而
+     *       `el.checkVisibility()` 如实返回 false（展开时是 true）
+     *
+     *   所以判据写成**三者取或**：checkVisibility 为 false / offsetParent 为 null /
+     *   宽或高为 0。三个分支各对应一种真实实现（content-visibility、
+     *   display:none、尺寸塌陷），任意一个成立都说明"用户看不见它"。
+     *   这不是把断言放松 —— 上面那三个都是**真的不可见**，
+     *   而被排除掉的"还画在屏幕上"那种情况一个都进不来。
+     */
+    const READ_OUTLINE_SHELL = `(() => {
+      const q = (s) => [...document.querySelectorAll(s)];
+      const rows = q('[data-outline-row]').map((el) => {
+        const a = el.querySelector('a[href]');
+        const dot = el.querySelector('[data-outline-dot]');
+        return {
+          level: el.getAttribute('data-outline-level'),
+          status: el.getAttribute('data-outline-status'),
+          placeholder: el.hasAttribute('data-outline-placeholder'),
+          // 行上那个"点下去聚焦到谁"的标记；占位行没有
+          focusAttr: el.getAttribute('data-outline-focus'),
+          href: a ? a.getAttribute('href') : null,
+          text: (el.textContent || '').trim(),
+          dotColor: dot ? getComputedStyle(dot).backgroundColor : null,
+        };
+      });
+      const groups = q('[data-outline-group]').map((g) => {
+        const summary = g.querySelector('summary');
+        const countEl = g.querySelector('[data-outline-count]');
+        const kids = [...g.querySelectorAll('[data-outline-row][data-outline-level="2"]')];
+        const gr = g.getBoundingClientRect();
+        // 折叠内容的可见性由 ::details-content 这一层决定，读出来当证据
+        let pseudoCV = null;
+        try { pseudoCV = getComputedStyle(g, '::details-content').contentVisibility; } catch (e) { pseudoCV = null; }
+        return {
+          id: g.getAttribute('data-outline-group'),
+          tag: g.tagName.toLowerCase(),
+          open: g.open === true,
+          openAttr: g.hasAttribute('open'),
+          hasSummary: !!summary,
+          summaryText: summary ? (summary.textContent || '').trim() : '',
+          countText: countEl ? (countEl.textContent || '').trim() : null,
+          countAttr: countEl ? countEl.getAttribute('data-outline-count') : null,
+          countVisible: countEl ? countEl.checkVisibility() : false,
+          // 这一组自己有多高：折叠必须真的把它收掉，不能只改一个属性
+          height: Math.round(gr.height),
+          pseudoContentVisibility: pseudoCV,
+          kidCount: kids.length,
+          /** 折叠之后二级行是不是真的看不见了（三个判据取或，见上面那段） */
+          kidsHidden: kids.map((el) => {
+            const r = el.getBoundingClientRect();
+            return (
+              el.checkVisibility() === false ||
+              el.offsetParent === null ||
+              r.height === 0 ||
+              r.width === 0
+            );
+          }),
+          /** 同上，但只取 checkVisibility —— 展开时它必须是 true（防"判据永远为真"） */
+          kidsCheckVisible: kids.map((el) => el.checkVisibility()),
+        };
+      });
+      return JSON.stringify({
+        url: location.pathname + location.search,
+        rows,
+        groups,
+        level1: rows.filter((r) => r.level === '1').length,
+        level2: rows.filter((r) => r.level === '2').length,
+        placeholders: rows.filter((r) => r.placeholder).length,
+        hasStage: !!document.querySelector('[data-canvas-stage]'),
+        stages: q('[data-pipeline-stage]').length,
+      });
+    })()`;
+
+    interface OutlineRowSnap {
+      level: string | null;
+      status: string | null;
+      placeholder: boolean;
+      focusAttr: string | null;
+      href: string | null;
+      text: string;
+      dotColor: string | null;
+    }
+    interface OutlineGroupSnap {
+      id: string | null;
+      tag: string;
+      open: boolean;
+      openAttr: boolean;
+      hasSummary: boolean;
+      summaryText: string;
+      countText: string | null;
+      countAttr: string | null;
+      countVisible: boolean;
+      height: number;
+      pseudoContentVisibility: string | null;
+      kidCount: number;
+      kidsHidden: boolean[];
+      kidsCheckVisible: boolean[];
+    }
+    interface OutlineShell {
+      url: string;
+      rows: OutlineRowSnap[];
+      groups: OutlineGroupSnap[];
+      level1: number;
+      level2: number;
+      placeholders: number;
+      hasStage: boolean;
+      stages: number;
+    }
+
+    const readOutlineShell = async (): Promise<OutlineShell> => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: READ_OUTLINE_SHELL,
+        returnByValue: true,
+      });
+      return JSON.parse(r.result!.value!) as OutlineShell;
+    };
+
+    /** href 里到底带了什么。浏览器会把中文编码，所以解一遍再比 */
+    const hrefOf = (row: OutlineRowSnap): string =>
+      row.href ? decodeURIComponent(row.href) : "";
+
+    /** 真点一下某个元素（先滚进可视区 —— 清单是可滚动的，不滚会点到别的东西上） */
+    const clickReal = async (selector: string) => {
+      await cdp.send("Runtime.evaluate", {
+        expression: `(() => {
+          const el = document.querySelector(${JSON.stringify(selector)});
+          if (el) el.scrollIntoView({ block: 'center' });
+          return !!el;
+        })()`,
+        returnByValue: true,
+      });
+      await sleep(250);
+      return clickCenter(selector);
+    };
+
+    /* ---- 21.1 一条带七项检查的运行：三种行同时在清单里 ---- */
+    const outlineRun = seedVerifyRun(username);
+    info(`造了一条运行 ${outlineRun.runId.slice(0, 8)}（status=done，带 ${outlineRun.count} 项检查）`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${outlineRun.runId}` });
+    await sleep(4200);
+
+    const shellDefault = await readOutlineShell();
+    const viewDefault = await readViewport();
+    info(
+      `清单 ${shellDefault.rows.length} 行：一级 ${shellDefault.level1} · 二级 ${shellDefault.level2}` +
+        ` · 占位 ${shellDefault.placeholders} · 折叠组 ${shellDefault.groups.length}`,
+    );
+    info(
+      `三种行的 href：` +
+        `一级「${shellDefault.rows.find((r) => r.level === "1")?.href}」· ` +
+        `二级实体「${shellDefault.rows.find((r) => r.level === "2" && !r.placeholder)?.href}」· ` +
+        `占位「${shellDefault.rows.find((r) => r.placeholder)?.href}」`,
+    );
+
+    expect_(
+      shellDefault.level1 === 6 &&
+        shellDefault.placeholders === 5 &&
+        shellDefault.level2 === outlineRun.count + 5,
+      `清单结构对得上：6 个一级行 + ${outlineRun.count} 个二级实体行 + 5 个占位行`,
+      `清单结构不对：一级 ${shellDefault.level1}（期望 6）· 占位 ${shellDefault.placeholders}（期望 5）· ` +
+        `二级共 ${shellDefault.level2}（期望 ${outlineRun.count + 5}）`,
+    );
+
+    /* ---- 21.2 可点的行才有 href，而且不许丢掉 ?run= ---- */
+    const level1Rows = shellDefault.rows.filter((r) => r.level === "1");
+    const realLevel2 = shellDefault.rows.filter((r) => r.level === "2" && !r.placeholder);
+    const placeholders = shellDefault.rows.filter((r) => r.placeholder);
+
+    /*
+      一级行的 href 必须同时带上 run 和 focus，而且 focus 就是这一行的节点 id。
+      这里用**行自己的 data-outline-focus** 对账 —— 两个值出自同一份数据，
+      但一个是"这一行点下去跳到哪"，一个是"链接真的指向哪"，
+      写成两处就是为了让它们有可能不一致（不一致就是 bug）。
+    */
+    const level1Bad = level1Rows.filter(
+      (r) =>
+        !r.focusAttr ||
+        !hrefOf(r).includes(`run=${outlineRun.runId}`) ||
+        !hrefOf(r).includes(`focus=${r.focusAttr}`),
+    );
+    expect_(
+      level1Rows.length === 6 && level1Bad.length === 0,
+      `六个一级行都有 href，且同时带着 ?run=（${outlineRun.runId.slice(0, 8)}…）和 focus=<自己的节点 id>`,
+      `${level1Bad.length} 个一级行的 href 不对：` +
+        (level1Bad.map((r) => `${r.text}→${r.href}`).join(" ") || "一个一级行都没有"),
+    );
+
+    const level2Bad = realLevel2.filter(
+      (r) =>
+        !r.focusAttr ||
+        !hrefOf(r).includes(`run=${outlineRun.runId}`) ||
+        !hrefOf(r).includes(`focus=${r.focusAttr}`),
+    );
+    expect_(
+      realLevel2.length === outlineRun.count && level2Bad.length === 0,
+      `${realLevel2.length} 个二级实体行（画布上有卡片的执行点）也都有 href 且带着 focus=`,
+      `${level2Bad.length} 个二级行的 href 不对：` +
+        level2Bad.map((r) => `${r.text}→${r.href}`).join(" "),
+    );
+
+    /*
+      ★ 占位行必须**不可点** ★
+      它不是"暂时没接上"，是**没有对应节点**：画布上从来没有一个
+      叫 xxx__pending 的节点。给它 href 的话，点下去要么什么都不发生
+      （看起来像坏了），要么被"顺手指到父工序"（有反应，但在说另一件事）。
+      所以这里查两个东西：没有 href、也没有 data-outline-focus ——
+      少了后者的话，"不可点但看起来能点"（带个 pointer 光标、
+      或者挂一个没有 href 的 <a>）照样能通过。
+    */
+    const clickablePlaceholders = placeholders.filter((r) => r.href !== null || r.focusAttr !== null);
+    expect_(
+      placeholders.length === 5 && clickablePlaceholders.length === 0,
+      `五个占位行都没有 href、也没有 data-outline-focus（不可点，不是"假装可点"）`,
+      `${clickablePlaceholders.length} 个占位行被做成了可点：` +
+        clickablePlaceholders.map((r) => `${r.text}→href=${r.href} focus=${r.focusAttr}`).join(" "),
+    );
+    /*
+      对照：同一份清单里**确实有**可点的行。
+      少了这一条，上面那条在一个"所有行都没有 href"的版本下也会绿 ——
+      而那种版本等于整个功能没了。
+    */
+    const hrefCount = shellDefault.rows.filter((r) => r.href !== null).length;
+    expect_(
+      hrefCount === 6 + outlineRun.count,
+      `同一份清单里有 ${6 + outlineRun.count} 行带 href（可点性不是"全都没有"）`,
+      `带 href 的行只有 ${hrefCount} 个，期望 ${6 + outlineRun.count}`,
+    );
+
+    /* ---- 21.3 点一个二级行 → URL 带 focus= 且视口真的动过去 ---- */
+    /*
+      ⚠️ 顺序要紧：这一步必须在**用户点之前**做，因为点完就算"用户动过视口"。
+      先记下默认视图（打开画布时的自动适应），点完再对比 ——
+      只断言"URL 变了"是不够的：URL 对了而视口没动，就是"点了没反应"。
+    */
+    const defaultScale = scaleOf(viewDefault);
+    info(
+      `点击前：URL ${shellDefault.url} · 倍率 ${viewDefault.zoomLabel} · ` +
+        `平移 ${Math.round(viewDefault.panX)},${Math.round(viewDefault.panY)}`,
+    );
+    expect_(
+      Math.abs(defaultScale - fitFloor("page")) < 0.01,
+      `点击前停在默认视图（倍率 ${viewDefault.zoomLabel} = 下限 ${fitFloor("page")}）`,
+      `点击前倍率是 ${viewDefault.zoomLabel}（期望 ${fitFloor("page")}）—— 打开时该装下整棵树`,
+    );
+
+    /*
+      点第一项检查。id 从**清单里那一行**读：`verify:<检查项名字>`，
+      而这个约定在 from-run.ts 和 forest.ts 里各写了一遍（两条路径共用），
+      所以"清单说点这个能到那儿"和"画布上真有一张卡叫这个"是同一件事 ——
+      下面"目标落在画布里"那一条就是按这个 id 去画布上找卡片。
+    */
+    const targetRow = realLevel2[0];
+    const targetId = targetRow.focusAttr as string;
+    const targetTitle = targetRow.text;
+    expect_(
+      targetId === `verify:${targetTitle}`,
+      `清单里那一行的 id 就是画布上的节点 id（${targetId}）`,
+      `行 id 和检查项名字对不上：focus=${targetId}，行文字=${targetTitle}`,
+    );
+
+    const rowSelector = `[data-outline-row][data-outline-focus="${targetId}"] a[href]`;
+    const rowHit = await clickReal(rowSelector);
+    info(
+      rowHit.ok
+        ? `点了二级行「${targetTitle}」（页面坐标 ${rowHit.x}, ${rowHit.y}）`
+        : "清单里没有那条链接可点 —— 下面这一组会红",
+    );
+    await sleep(1600);
+
+    const shellAfterClick = await readOutlineShell();
+    const viewAfterClick = await readViewport();
+    info(
+      `点击后：URL ${shellAfterClick.url} · 倍率 ${viewAfterClick.zoomLabel} · ` +
+        `平移 ${Math.round(viewAfterClick.panX)},${Math.round(viewAfterClick.panY)}`,
+    );
+
+    expect_(
+      decodeURIComponent(shellAfterClick.url).includes(`focus=${targetId}`) &&
+        shellAfterClick.url.includes(`run=${outlineRun.runId}`),
+      `URL 带上了 focus=${targetId}，而且原来的 ?run= 还在`,
+      `URL 是 ${shellAfterClick.url} —— 期望同时含 focus=${targetId} 和 run=${outlineRun.runId}`,
+    );
+    expect_(
+      viewAfterClick.gridStep !== viewDefault.gridStep ||
+        viewAfterClick.panX !== viewDefault.panX ||
+        viewAfterClick.panY !== viewDefault.panY,
+      `画布视口真的动了：倍率 ${viewDefault.zoomLabel} → ${viewAfterClick.zoomLabel}，` +
+        `平移 ${Math.round(viewDefault.panX)},${Math.round(viewDefault.panY)} → ` +
+        `${Math.round(viewAfterClick.panX)},${Math.round(viewAfterClick.panY)}`,
+      `URL 变了但视口一个像素都没动（还是 ${viewAfterClick.zoomLabel}）—— ` +
+        `这就是"点了没反应"，而它在 URL 断言里是绿的`,
+    );
+
+    /*
+      ★ 聚焦目标真的在画布内 ★
+      这是"跳转"这个词唯一的验收标准：点完那一行，那个任务点得在**看得见的地方**。
+      量的是 getBoundingClientRect（屏幕上真实的位置），和画布矩形逐边比。
+      容差 2px 是给亚像素的，不是给"差一点也算"。
+    */
+    const targetIdx = viewAfterClick.nodeIds.indexOf(targetId);
+    const targetBox = targetIdx >= 0 ? viewAfterClick.nodeBoxes[targetIdx] : null;
+    const st = viewAfterClick.stage;
+    const inside =
+      targetBox !== null &&
+      targetBox.left >= st.left - 2 &&
+      targetBox.top >= st.top - 2 &&
+      targetBox.right <= st.left + st.w + 2 &&
+      targetBox.bottom <= st.top + st.h + 2;
+    info(
+      targetBox
+        ? `目标节点在屏幕 (${Math.round(targetBox.left)}, ${Math.round(targetBox.top)}) ` +
+            `${Math.round(targetBox.w)}×${Math.round(targetBox.h)}，画布 ` +
+            `(${Math.round(st.left)}, ${Math.round(st.top)}) ${Math.round(st.w)}×${Math.round(st.h)}`
+        : `画布上找不到 ${targetId} 这个节点`,
+    );
+    expect_(
+      inside,
+      `★ 聚焦目标落在画布矩形里（${targetId} 四边都在画布内）`,
+      `目标不在画布内：${targetId} → ` +
+        (targetBox
+          ? `节点 (${Math.round(targetBox.left)}, ${Math.round(targetBox.top)}, ` +
+            `${Math.round(targetBox.right)}, ${Math.round(targetBox.bottom)})，` +
+            `画布 (${Math.round(st.left)}, ${Math.round(st.top)}, ` +
+            `${Math.round(st.left + st.w)}, ${Math.round(st.top + st.h)})`
+          : "画布上压根没有这个节点"),
+    );
+
+    /* ---- 21.4 一级行的标题也是一条能跳的链接 ---- */
+    /*
+      一级行是 `<summary>`，它的本职是折叠 —— 所以"点标题"到底会做什么，
+      是这一期唯一需要**实测**的地方（浏览器分不分得开链接和折叠，
+      读代码是读不出来的）。这里断言的是"跳转确实发生了"；
+      折叠状态只作为实测数据打出来，不断言 —— 它取决于浏览器实现，
+      而"跳没跳"才是这个功能承诺的事。
+    */
+    const specGroupBefore = shellAfterClick.groups.find((g) => g.id === "spec");
+    const level1Hit = await clickReal(`[data-outline-group="spec"] summary a[href]`);
+    info(
+      level1Hit.ok
+        ? `点了一级行「规格化」的标题（页面坐标 ${level1Hit.x}, ${level1Hit.y}）`
+        : "一级行的标题不是链接 —— 下面这条会红",
+    );
+    await sleep(1600);
+
+    const shellAfterLevel1 = await readOutlineShell();
+    const specGroupAfter = shellAfterLevel1.groups.find((g) => g.id === "spec");
+    info(
+      `点一级行标题之后：URL ${shellAfterLevel1.url} · ` +
+        `「规格化」那一组 open=${specGroupBefore?.open} → ${specGroupAfter?.open}` +
+        `（点标题是跳转还是折叠，实测数据）`,
+    );
+    expect_(
+      decodeURIComponent(shellAfterLevel1.url).includes("focus=spec") &&
+        shellAfterLevel1.url.includes(`run=${outlineRun.runId}`),
+      `点一级行的标题也能跳（URL 带 focus=spec，原来的 ?run= 还在）`,
+      `URL 是 ${shellAfterLevel1.url} —— 期望含 focus=spec 和 run=${outlineRun.runId}`,
+    );
+
+    /* ---- 21.5 点一个不存在的节点：页面正常渲染，画布停在默认视图 ---- */
+    /*
+      两种输入都会走到这里：
+        · URL 被手写成一个不存在的 id
+        · 清单里有、画布上没画的行（比如规格化产出的验收条目 spec:ac-1）
+      要求是同一条：**什么都不做**。不许崩，也不许"随便聚焦一个"——
+      猜一个位置比不动更坏，因为用户会以为那一下是他点出来的。
+    */
+    const bogus = "根本不存在的东西";
+    await cdp.send("Page.navigate", {
+      url: `${BASE}/canvas?run=${outlineRun.runId}&focus=${encodeURIComponent(bogus)}`,
+    });
+    await sleep(4200);
+
+    const shellBogus = await readOutlineShell();
+    const viewBogus = await readViewport();
+    info(
+      `?focus=${bogus} → URL ${shellBogus.url} · 倍率 ${viewBogus.zoomLabel} · ` +
+        `平移 ${Math.round(viewBogus.panX)},${Math.round(viewBogus.panY)} · ` +
+        `清单 ${shellBogus.rows.length} 行 · 画布上 ${shellBogus.stages} 道工序`,
+    );
+
+    expect_(
+      shellBogus.hasStage &&
+        shellBogus.stages === 6 &&
+        shellBogus.rows.length === shellDefault.rows.length &&
+        shellBogus.level1 === 6,
+      `点不存在的 focus：页面正常渲染（画布在、六道工序在、清单 ${shellBogus.rows.length} 行一行不少）`,
+      `页面渲染不正常：画布=${shellBogus.hasStage} 工序=${shellBogus.stages} ` +
+        `清单行=${shellBogus.rows.length}（正常是 ${shellDefault.rows.length}）`,
+    );
+    /*
+      ★ 视口停在默认视图 ★
+      和"打开这条运行、不带 focus"量到的那个视口**逐值相等** ——
+      比"倍率看着差不多"严：自动适应每一步都是确定值，
+      真的聚焦过就一定会写出不同的数（不存在"动了一点点"）。
+    */
+    expect_(
+      viewBogus.gridStep === viewDefault.gridStep &&
+        viewBogus.panX === viewDefault.panX &&
+        viewBogus.panY === viewDefault.panY,
+      `★ 视口停在默认视图（倍率 ${viewBogus.zoomLabel}、平移 ` +
+        `${Math.round(viewBogus.panX)},${Math.round(viewBogus.panY)}，和不带 focus 时逐值相等）`,
+      `视口被一个不存在的 id 带跑了：` +
+        `${viewBogus.zoomLabel}(${Math.round(viewBogus.panX)},${Math.round(viewBogus.panY)}) ≠ ` +
+        `${viewDefault.zoomLabel}(${Math.round(viewDefault.panX)},${Math.round(viewDefault.panY)})`,
+    );
+
+    /* ---- 21.6 一级行可折叠：原生 <details>，默认全开 ---- */
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${outlineRun.runId}` });
+    await sleep(4200);
+
+    const shellGroups = await readOutlineShell();
+    info(
+      `折叠组 ${shellGroups.groups.length} 个，默认 open：` +
+        shellGroups.groups.map((g) => `${g.id}=${g.open}`).join(" "),
+    );
+
+    /*
+      ★ 六个组都必须是 `<details>` 且默认 open ★
+      默认收起的话，首屏只剩六行标题 —— 而这一列恰恰是
+      "这件事走到哪了"的答案，第一眼看不到全貌就等于没有答案。
+      用**原生元素**（不是 div + onClick）是另一件事，在这里一起验：
+      它是零 JS、键盘可达、屏幕阅读器认得的那个折叠。
+    */
+    const notDetails = shellGroups.groups.filter((g) => g.tag !== "details" || !g.hasSummary);
+    expect_(
+      shellGroups.groups.length === 6 && notDetails.length === 0,
+      `六个一级行各是一个原生 <details> + <summary>（服务端可用、零 JS、键盘可达）`,
+      `${notDetails.length} 个组不是 <details>+<summary>：` +
+        notDetails.map((g) => `${g.id}(${g.tag})`).join(" ") +
+        `（组共 ${shellGroups.groups.length} 个，期望 6）`,
+    );
+    expect_(
+      shellGroups.groups.every((g) => g.open && g.openAttr),
+      `默认全部展开（${shellGroups.groups.length}/6 个组的 open 都是 true）—— 第一眼看到全貌`,
+      `有 ${shellGroups.groups.filter((g) => !g.open).length} 个组默认是收起的：` +
+        shellGroups.groups.filter((g) => !g.open).map((g) => g.id).join(" "),
+    );
+
+    /*
+      summary 里必须看得到：状态点 + 标题 + **下面有几个二级点**。
+      计数在收起之后是唯一还看得见的"这里有多少东西"——
+      所以它不能只在展开时存在。
+    */
+    const verifyGroup = shellGroups.groups.find((g) => g.id === "verify");
+    const specGroup = shellGroups.groups.find((g) => g.id === "spec");
+    expect_(
+      verifyGroup?.countAttr === String(outlineRun.count) &&
+        verifyGroup?.kidCount === outlineRun.count &&
+        specGroup?.countAttr === "1" &&
+        specGroup?.kidCount === 1,
+      `summary 里带着"下面有几个二级点"：验收=${verifyGroup?.countAttr}（${outlineRun.count} 项检查）· ` +
+        `规格化=${specGroup?.countAttr}（1 行「待规划」）`,
+      `计数不对：验收 ${verifyGroup?.countAttr}/${verifyGroup?.kidCount}（期望 ${outlineRun.count}）· ` +
+        `规格化 ${specGroup?.countAttr}/${specGroup?.kidCount}（期望 1）`,
+    );
+
+    /* ---- 21.7 折叠 → 二级行真的不可见；再点 → 又可见 ---- */
+    /*
+      点的是**前面的圆点**，不是标题：
+      标题是链接（点了会跳），圆点才是折叠的开关 —— 这也是界面上
+      那一行两个动作的分工（副标题里写着）。
+      用真鼠标点，不用 el.click() —— 后者绕过命中测试，
+      一个被别的东西盖住的圆点照样"点得动"。
+    */
+    const dotHit = await clickReal(`[data-outline-group="verify"] > summary [data-outline-dot]`);
+    info(
+      dotHit.ok
+        ? `点了「验收与交付」前面的圆点（页面坐标 ${dotHit.x}, ${dotHit.y}）`
+        : "找不到那个圆点 —— 下面这一组会红",
+    );
+    await sleep(500);
+
+    const collapsed = await readOutlineShell();
+    const verifyCollapsed = collapsed.groups.find((g) => g.id === "verify");
+    info(
+      `折叠后：「验收」组 open=${verifyCollapsed?.open} · 组高 ` +
+        `${verifyGroup?.height} → ${verifyCollapsed?.height}px · ::details-content ` +
+        `${verifyGroup?.pseudoContentVisibility} → ${verifyCollapsed?.pseudoContentVisibility} · ` +
+        `二级行 ${verifyCollapsed?.kidCount} 个，不可见的 ` +
+        `${verifyCollapsed?.kidsHidden.filter(Boolean).length} 个 · ` +
+        `计数还看得见=${verifyCollapsed?.countVisible}（${verifyCollapsed?.countText}）`,
+    );
+
+    expect_(
+      verifyCollapsed?.open === false &&
+        verifyCollapsed.kidCount === outlineRun.count &&
+        verifyCollapsed.kidsHidden.every(Boolean),
+      `折叠之后 ${outlineRun.count} 个二级行全部不可见` +
+        `（checkVisibility 为 false / offsetParent 为 null / 高度为 0，三者取或）`,
+      `折叠没生效：open=${verifyCollapsed?.open}，` +
+        `${verifyCollapsed?.kidsHidden.filter((h) => !h).length} 个二级行还看得见 —— ` +
+        `"折叠"不能写成 opacity:0 那种还画在屏幕上的隐藏`,
+    );
+    /*
+      折叠还必须**把地方让出来**：光改一个 open 属性、内容照样占着高度的话，
+      用户看到的是一条折叠了的标题下面跟着一大片空白。
+      ⚠️ 这一条同时是上面那条判据的对照：新版 Chromium 折叠时二级行的
+         **几何是留着的**（content-visibility: hidden 不重排它们），
+         所以"行高"根本不能拿来判可见性 —— 能拿来判的是**这一组自己的高度**。
+    */
+    expect_(
+      verifyCollapsed !== undefined &&
+        verifyGroup !== undefined &&
+        verifyCollapsed.height <= verifyGroup.height - outlineRun.count * 20,
+      `折叠把地方真的让出来了：组高 ${verifyGroup?.height} → ${verifyCollapsed?.height}px` +
+        `（${outlineRun.count} 行二级点，约 ${outlineRun.count * 27}px）`,
+      `组高没变：${verifyGroup?.height} → ${verifyCollapsed?.height}px —— ` +
+        `属性改了但内容还占着地方，用户看到的是折叠标题下面一大片空白`,
+    );
+    /*
+      收起 ≠ 这里什么都没有：计数必须还在。
+      它要是跟着一起藏了，用户没有任何线索知道这一组值不值得展开。
+    */
+    expect_(
+      verifyCollapsed?.countVisible === true &&
+        verifyCollapsed?.countText === String(outlineRun.count),
+      `收起之后计数仍然可见（「${verifyCollapsed?.countText}」）—— 还看得出这一组下面有 ${outlineRun.count} 个点`,
+      `收起之后计数也看不见了（可见=${verifyCollapsed?.countVisible}）—— 那就成了"这一组什么都没有"的样子`,
+    );
+
+    const dotHit2 = await clickReal(`[data-outline-group="verify"] > summary [data-outline-dot]`);
+    info(
+      dotHit2.ok
+        ? `又点了一下同一个圆点（页面坐标 ${dotHit2.x}, ${dotHit2.y}）`
+        : "第二次点的时候圆点不见了 —— 下面这条会红",
+    );
+    await sleep(500);
+
+    const expanded = await readOutlineShell();
+    const verifyExpanded = expanded.groups.find((g) => g.id === "verify");
+    info(
+      `再展开后：「验收」组 open=${verifyExpanded?.open} · 组高 ${verifyExpanded?.height}px · ` +
+        `::details-content ${verifyExpanded?.pseudoContentVisibility} · ` +
+        `checkVisibility 全为 true 的二级行 ${verifyExpanded?.kidsCheckVisible.filter(Boolean).length}/${outlineRun.count}`,
+    );
+    expect_(
+      verifyExpanded?.open === true &&
+        verifyExpanded.kidCount === outlineRun.count &&
+        verifyExpanded.kidsHidden.every((h) => !h),
+      `再点一下又展开：${outlineRun.count} 个二级行重新可见`,
+      `没能展开：open=${verifyExpanded?.open}，` +
+        `${verifyExpanded?.kidsHidden.filter(Boolean).length} 个二级行还是看不见`,
+    );
+    /*
+      ⚠️ 这一条防的是"判据永远为真"：
+      上面两条用的是同一个 kidsHidden，如果它被写成恒 true
+      （比如某个永远返回"不可见"的表达式），三条会一起绿。
+      展开这一档单独要求 checkVisibility **全为 true** —— 于是判据必须真的分得开。
+    */
+    expect_(
+      verifyExpanded?.kidsCheckVisible.length === outlineRun.count &&
+        verifyExpanded.kidsCheckVisible.every(Boolean),
+      `展开时同一个判据给出相反的结果（${outlineRun.count}/${outlineRun.count} 个 checkVisibility 为 true）` +
+        `—— 可见性判据不是恒真的`,
+      `展开时判定为可见的只有 ${verifyExpanded?.kidsCheckVisible.filter(Boolean).length}/${outlineRun.count} 个 —— ` +
+        `判据分不开两种状态，上面"折叠后不可见"那两条就不算数`,
+    );
+
+    cleanupVerifyRun(outlineRun.runId);
+    info("夹具已清理");
+
     cdp.close();
     ok("画布交互、详情、面板、顶栏一致性、缩放让位、退役页面、子树与双击聚焦全部通过");
     ok("窄屏降级（<1280）：两侧收起为 0 宽、覆盖层 272/352 可开可关、画布全宽且滚轮仍能缩放 —— 全部通过");

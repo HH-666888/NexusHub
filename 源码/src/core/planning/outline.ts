@@ -35,6 +35,29 @@ export interface OutlineRow {
   status: TaskPointStatus;
   /** true = 「还没到点」的占位行，界面画成浅色虚线 */
   placeholder: boolean;
+  /**
+   * 画布上这个任务点对应的节点 id —— 占位行没有对应节点。
+   *
+   * ── 为什么这个字段必须由内核给，而不是界面自己拿 row.id 去试 ──
+   *   真实的行里，row.id **就是**任务点的 id，而画布上节点的 id 也是它
+   *   （六道工序用 StageId、七项检查用 `verify:${名字}`，两条路径共用
+   *   from-run.ts 里那一份 id 约定）。所以这里给的就是 row.id 本身 ——
+   *   但它仍然要显式地是一个字段，理由有两条：
+   *
+   *   一、**占位行没有对应节点。** 它的 id 是 `${父id}__pending`，
+   *       画布上从来没有、也不该有这么一个节点。界面如果拿 row.id 去聚焦，
+   *       会得到一个查不到的 id —— 表现是"点了没反应"，看起来像画布的 bug，
+   *       而事实是这一行本来就不可点。**把"没有对应节点"写进类型里**
+   *       （null 而不是"查不到再说"），界面才有可能诚实地不给它加链接。
+   *
+   *   二、**它是"清单 ↔ 画布"这条对账关系的唯一落点。**
+   *       清单和画布是同一棵树的两种视图，两边的 id 必须对得上；
+   *       哪天有人给画布的节点换了 id 规则而没有同步这里，
+   *       对不上的地方就是这一个字段 —— 而不是散在界面里的字符串拼接。
+   *
+   * 取值规则：level 1 / level 2 的实体行 → 自己的 id；占位行 → null。
+   */
+  canvasNodeId: string | null;
 }
 
 /**
@@ -94,6 +117,11 @@ export function toOutline(points: readonly TaskPoint[]): OutlineRow[] {
       // 一级节点自己就是执行「规划」的主体，不用汇总
       status: root.status,
       placeholder: false,
+      /*
+        一级行是实体节点，画布上有它那张卡（六道工序各一张）——
+        点这一行跳过去，画布要聚焦的正是这个 id。
+      */
+      canvasNodeId: root.id,
     });
 
     const children = childrenOf(points, root.id).filter(
@@ -128,6 +156,19 @@ export function toOutline(points: readonly TaskPoint[]): OutlineRow[] {
             ? rollUpStatus(grandchildren) // 还有下级：归纳到子树
             : child.status, // 叶子：如实报它自己的状态
         placeholder: false,
+        /*
+          二级行也是实体节点。⚠️ 它**不一定**画在画布上：
+          画布这一期只给「验收」长了子节点（七项检查，见 forest.ts 的
+          checksToChildren），而清单里的二级行来自投影，还包括规格化
+          产出的验收条目（`spec:ac-1` 这种）—— 那些点在画布上没有卡片。
+
+          这里**不为此做特判**：清单行说"我在树上对应哪个 id"是事实，
+          "画布上有没有画它"是画布那一刻的事实，两者不该在这里互相迁就。
+          界面把查不到的情况交给画布去处理（查不到就什么都不做），
+          而不是在这里猜"这一行大概点不动"——猜错的方向是**把能点的行
+          做成不可点**，那正是这一期最不该出现的事。
+        */
+        canvasNodeId: child.id,
       });
     }
 
@@ -144,6 +185,18 @@ export function toOutline(points: readonly TaskPoint[]): OutlineRow[] {
         */
         status: "pending",
         placeholder: true,
+        /*
+          ★ 占位行**没有对应节点** —— 这是这个字段里最要紧的一个取值 ★
+
+          它的 id 是编出来的（`${root.id}__pending`），画布上从来没有、
+          将来也不会有一个叫这个名字的节点：它代表的是**还没出生的东西**。
+          所以这里给 null，而不是顺手给 root.id：
+          给 root.id 的话，"待规划"这一行点下去会跳到它的一级工序上 ——
+          看起来功能正常，实际上是在说「待规划的就是那道工序」，
+          而事实是「那道工序下面还没有东西」。这两句话不一样，
+          而界面上的差别是：一行虚线被做得可点了。
+        */
+        canvasNodeId: null,
       });
     }
   }

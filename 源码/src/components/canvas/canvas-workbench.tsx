@@ -16,7 +16,9 @@ import {
   freshFocusFollow,
   markUserMoved,
   planFocusFollow,
+  planUserFocus,
   type FocusFollowMemory,
+  type FocusRequestMemory,
 } from "@/core/canvas/focus-follow";
 import { boundsFor } from "@/core/planning/viewport-policy";
 import { STAGES } from "@/core/pipeline/stages";
@@ -101,6 +103,52 @@ export interface CanvasWorkbenchProps {
    *   而且**第一个拿到的工序不算推进**（和挂载同一条规矩，见 focus-follow.ts）。
    */
   runKey?: string;
+  /**
+   * 用户在左侧清单里**点名**要看的那一个任务点（`?focus=<节点 id>`）。
+   *
+   * ============================================================
+   * ⚠️ 「自动跟随」和「用户点名」是两个概念 —— 这是这一版最要紧的一段
+   * ============================================================
+   *
+   *   focusStageId（上面那个）     —— **自动跟随**
+   *     它来自"这次运行自己推进到哪了"（服务端从事件投影里算出来的当前工序）。
+   *     没有任何人要求视角变化，是系统自己想跟上去。
+   *     正因为"没人要求"，它必须**让着用户**：用户一动过视口，
+   *     它这一趟就再也不许跟（那条禁令在 core/canvas/focus-follow.ts）。
+   *     禁令防的是"抢镜头"——用户刚把画面拖到位，镜头嗖地飞走，
+   *     而他没法拒绝（那不是他按的）。
+   *
+   *   focusRequestId（这个）       —— **用户点名**
+   *     它来自用户**点了清单里的一行**，是"我要看这个"这句话本身，
+   *     只是借用 URL（?focus=）把它说给画布听。
+   *     问一句就清楚了：那条禁令到底在禁什么？禁的是"**没人点名时**
+   *     不许自作主张地移动视口"。而这里恰恰**有人点了名** ——
+   *     点名就是对"镜头归谁"这个问题给出的答案。
+   *
+   *   ── 为什么后者必须无视前者那条禁令 ──
+   *     如果也去问 focus-follow 的记忆，会得到一个荒谬的结果：
+   *     用户先拖了一下画布（userMoved = true），回来点清单里的一行 ——
+   *     **点了没反应**。而"点了没反应"是这一列最不能出的毛病：
+   *     用户会以为清单坏了，然后再也不点它。
+   *     禁令是为了保护用户的镜头，用户自己开口要的时候，
+   *     再拿禁令去挡他，就是用保护他的规矩去违抗他。
+   *
+   *   ── 但它自己要记一笔"用户动过视口" ──
+   *     点名算一次**用户主动的视角选择**（和双击聚焦同一类，
+   *     见下面 focusOn 里那段）。不记的话：他刚钻进某个执行点看细节，
+   *     下一步一推进就被自动跟随拽走 —— 而那正是禁令想防的那件事。
+   *     所以正确的做法不是"绕过禁令"，而是**先执行点名、再把自动跟随关掉**：
+   *     用户说了算之后，这一趟就由他说了算。
+   *
+   * ── 找不到对应节点时：什么都不做 ──
+   *   清单里有些行在画布上没有卡片。最实在的一类是规格化产出的验收条目
+   *   （`spec:ac-1` 这种）：它们在投影里是真的任务点，所以清单里有；
+   *   而画布这一期只给「验收」长了子节点（见 forest.ts 的 checksToChildren）。
+   *   URL 也可以被手写成一个根本不存在的 id。
+   *   这两种情况一律**不动视口**：不崩、不报错、不"随便聚焦一个"——
+   *   猜一个位置比不动更坏，因为用户会以为那一下是他点出来的。
+   */
+  focusRequestId?: string | null;
 }
 
 export function CanvasWorkbench({
@@ -111,6 +159,7 @@ export function CanvasWorkbench({
   childrenByStage,
   rootCard,
   focusStageId = null,
+  focusRequestId = null,
   runKey,
 }: CanvasWorkbenchProps) {
   const [activeId, setActiveId] = useState<StageId | null>(null);
@@ -336,6 +385,54 @@ export function CanvasWorkbench({
     */
     requestFocus(boundsFor("focus", target.subtree, bounds));
   }, [focusStageId, tree, bounds, requestFocus]);
+
+  /*
+    ---------- 用户点名：点清单里的一行 → 视口聚焦到那个任务点 ----------
+
+    规矩的完整理由写在 focusRequestId 那个 prop 的注释里（自动跟随 vs 用户点名），
+    "哪一次点名算一次"的判据在 core/canvas/focus-follow.ts 的 planUserFocus 里
+    （纯函数、有单测）。这里只做四件事：喂进去、接住答案、记一笔、发请求 ——
+    和上面那条自动跟随同一个形状，**故意的**：
+    两条规矩的差别在判据里，不在代码形状里；形状不同的话，
+    下一个人会以为它们俩本来就不一样，然后照着一个改另一个。
+  */
+  const userFocusRef = useRef<FocusRequestMemory>(null);
+
+  useEffect(() => {
+    const step = planUserFocus(userFocusRef.current, focusRequestId);
+    userFocusRef.current = step.next;
+    if (!step.go) return;
+
+    /*
+      查不到就什么都不做：不崩、不乱聚焦。
+      "查不到"有两种，都不是故障（见 prop 注释）：清单里有、画布上没画的行
+      （规格化的验收条目），和 URL 被手写成一个不存在的 id。
+      ⚠️ 这时候**连"用户动过视口"都不记**：什么都没发生时不该留下任何痕迹，
+         否则它在自动跟随那边会变成一次看不见的"用户动过"。
+    */
+    const target = tree?.byId.get(step.go);
+    if (!target) return;
+
+    /*
+      先记一笔"用户动过视口"，再发请求。
+
+      ⚠️ 这不是绕过那条禁令，而是"用户说了算之后，这一趟就由他说了算"：
+         他刚点进某个执行点看细节，下一步一推进就被自动跟随拽走的话，
+         点名这个功能就等于白点。
+      ⚠️ 这一笔只能记在**用户点名**这条路上。
+         记在 requestFocus 里就错了 —— 自动跟随也走那儿，那样记一下
+         等于"跟一次就再也不跟"（同一个坑，focusOn 的注释里踩过一次）。
+    */
+    followRef.current = markUserMoved(followRef.current);
+
+    /*
+      只走 boundsFor("focus", …) 这一条策略，区域是 target.subtree
+      （含自己整棵子树，见 LaidNode.subtree）——
+      和双击、自动跟随是同一块。三处要是各算各的，
+      同一次点名和一次双击会落在两个不同的取景上。
+    */
+    requestFocus(boundsFor("focus", target.subtree, bounds));
+  }, [focusRequestId, tree, bounds, requestFocus]);
 
   return (
     <div className="relative h-full w-full">

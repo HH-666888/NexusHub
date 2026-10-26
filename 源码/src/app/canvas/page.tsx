@@ -63,10 +63,25 @@ import type { StageId } from "@/core/pipeline/stages";
 export default async function CanvasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ run?: string }>;
+  searchParams: Promise<{ run?: string; focus?: string }>;
 }) {
   const user = await requireUser();
-  const { run: runId } = await searchParams;
+  const { run: runId, focus: focusParam } = await searchParams;
+
+  /*
+    ---------- 左侧清单点一行 → 画布聚焦到那个任务点 ----------
+    `?focus=<节点 id>`，和 `?run=<id>` 是同一个模式：状态在 URL 上，
+    于是刷新、分享、后退都成立（理由写在 planning-outline.tsx 的 focusHref 上）。
+
+    ⚠️ 三种输入都要当成"没有点名"，不能直接拿去查节点：
+      · 没传           → undefined
+      · 传了空串        → `?focus=` 这种手写 URL
+      · 传了数组        → `?focus=a&focus=b`，Next 会给出 string[]
+    这三种都不是一个节点 id。**一个都不许落到"随便聚焦一个"上** ——
+    查不到就什么都不做，视口停在默认视图（见 CanvasWorkbench 里那段）。
+  */
+  const focusRequestId =
+    typeof focusParam === "string" && focusParam.length > 0 ? focusParam : null;
 
   const now = serverNow();
   const rawRuns = await listRuns(sqliteRunStore, user.id);
@@ -309,7 +324,12 @@ export default async function CanvasPage({
             作为 children 传进去，所以它们自己没有变成客户端组件。
           */}
           <PanelDock side="left" label="清单">
-            <PlanningOutline rows={outlineRows} />
+            {/*
+              runId 只用来拼「点一行跳哪儿」那个链接（?run=…&focus=…）。
+              ⚠️ 不传就等于丢掉已有的 ?run= —— 点一行会跳到"最近一次运行"上，
+                 而那多半是另一次运行：用户看到的是别的树，还会以为清单点错了。
+            */}
+            <PlanningOutline rows={outlineRows} runId={selectedRun?.id ?? null} />
           </PanelDock>
 
           <div className="min-h-0 min-w-0 flex-1">
@@ -333,6 +353,16 @@ export default async function CanvasPage({
                 ⚠️ 用户自己动过视口之后就不跟了，那条规矩在 core/canvas/focus-follow.ts。
               */
               focusStageId={focusStageId}
+              /*
+                用户在清单里**点名**要看的那一个任务点（?focus=<节点 id>）。
+
+                ⚠️ 它和上面 focusStageId 是两件事，别混：
+                  focusStageId 是"这次运行自己推进到哪了" → 自动跟随，有禁令；
+                  focusRequestId 是"用户点了这一行"           → 用户点名，必须执行。
+                差别写在 CanvasWorkbench 那个 prop 的注释里（写得比较长，
+                因为这两个概念在这一版之前一直是同一个词）。
+              */
+              focusRequestId={focusRequestId}
               /*
                 运行的身份。画布拿它判断"换了一次运行"→ 重置自动跟随的记忆。
                 ⚠️ 必须是 id：上面那个 run prop 是每次渲染都新建的字面量，

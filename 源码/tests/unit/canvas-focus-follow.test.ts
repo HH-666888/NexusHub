@@ -3,7 +3,9 @@ import {
   freshFocusFollow,
   markUserMoved,
   planFocusFollow,
+  planUserFocus,
   type FocusFollowMemory,
+  type FocusRequestMemory,
 } from "@/core/canvas/focus-follow";
 import type { StageId } from "@/core/pipeline/stages";
 
@@ -213,5 +215,138 @@ describe("作为值的性质（组件那边靠它当 ref）", () => {
         expect([null, id]).toContain(s.focus);
       }
     }
+  });
+});
+
+/* ============================================================
+   用户点名：点清单里的一行 → 聚焦到那个任务点
+   ------------------------------------------------------------
+   和上面那一大组的关系，一句话：
+     上面管的是「**没人要求**时系统能不能自己动镜头」（答案是：用户一动过就不能）；
+     这一组管的是「**有人点名**时要怎么办」（答案是：照办，而且不受上面那条禁令管）。
+
+   所以这两组里各有一条"另一半"：
+     · 上面有一组「尊重用户：他动过视口之后，这一趟不再跟」
+     · 下面有一条「用户动过之后点一次名，照样要执行」
+   两条放在一起才说明白"点名 ≠ 跟随"——只有前一条的话，
+   一个把点名也交给 planFocusFollow 去裁决的实现会让整组测试全绿。
+   ============================================================ */
+
+/** 点一次名 */
+function nominate(mem: FocusRequestMemory, requestedId: string | null) {
+  return planUserFocus(mem, requestedId);
+}
+
+describe("★ 用户点名：新的一次点名必须执行，不受「用户动过」那条禁令管", () => {
+  it("第一次点名 → 执行（go 就是被点的那个 id）", () => {
+    const s = nominate(null, "verify:完整 HTML 结构");
+    expect(s.go).toBe("verify:完整 HTML 结构");
+    expect(s.next).toBe("verify:完整 HTML 结构");
+  });
+
+  it("★ 换一个节点点 → 执行；而且**无视**上一条规矩里的 userMoved", () => {
+    /*
+      ★ 这一条是这个概念的落点 ★
+
+      「用户动过视口之后不再自动聚焦」管的是**自动跟随**（没人要求的那种）。
+      点名是用户自己开口要的 —— 那时候再拿那条禁令去挡他，
+      结果就是"用户先拖了一下画布，回来点清单里的一行，点了没反应"。
+
+      ⚠️ 注意这里连 userMoved 都传不进来：planUserFocus 的记忆里**没有**这个字段。
+         这不是漏了，是故意的 —— 判据里根本没有"用户动过"这一项，
+         将来谁想照着 planFocusFollow 给它加一条禁令，得先改这里的类型和测试。
+    */
+    const first = nominate(null, "spec");
+    const second = nominate(first.next, "verify:中文界面");
+    expect(second.go).toBe("verify:中文界面");
+  });
+
+  it("同一行点两次（URL 没变）→ 第二次不执行（重渲染不是事件）", () => {
+    /*
+      点名来自 URL，而 URL 是一段状态。运行还在跑时页面会一直重渲染，
+      每次重渲染都重新执行一次点名的话，用户刚拖到别处就被拽回去 ——
+      那是抢镜头，只不过换成了点名的名义。
+    */
+    const first = nominate(null, "build");
+    const again = nominate(first.next, "build");
+    expect(again.go).toBeNull();
+    expect(again.next).toBe("build");
+  });
+
+  it("URL 上没有点名（null / 空串）→ 不执行，并且把记忆清空", () => {
+    expect(nominate("build", null).go).toBeNull();
+    expect(nominate("build", null).next).toBeNull();
+    // 空串：`?focus=` 这种手写 URL。它不是一个节点 id，不能当成一次点名
+    expect(nominate("build", "").go).toBeNull();
+    expect(nominate("build", "").next).toBeNull();
+  });
+
+  it("★ 点 A → 走开（不带 focus 的 URL）→ 再点 A，要重新生效", () => {
+    /*
+      少了"清空记忆"那一步的话，这条会红，而症状是**回家再点同一行没反应** ——
+      用户只会觉得这一列时灵时不灵。
+    */
+    const a = nominate(null, "spec");
+    const away = nominate(a.next, null);
+    const back = nominate(away.next, "spec");
+    expect(back.go).toBe("spec");
+  });
+
+  it("A → B → A：第三次（回到 A）要执行 —— 判据是「和上一次比」，不是「点过没有」", () => {
+    /*
+      ⚠️ 判据写成"这个 id 点过没有"（比如用一个 Set 记住所有点过的）就会红：
+         用户在两行之间来回看的时候，第一行永远点不动了。
+    */
+    const a = nominate(null, "spec");
+    const b = nominate(a.next, "build");
+    expect(b.go).toBe("build");
+    const backToA = nominate(b.next, "spec");
+    expect(backToA.go).toBe("spec");
+  });
+
+  it("查不到的 id 也照样算一次点名 —— 存不存在是画布的事，不是这个函数的", () => {
+    /*
+      这个函数只看 URL 说了什么。它要是顺手判断"这个 id 像不像存在的"，
+      就会在查不到时把记忆留成旧值 —— 下一次重渲染又执行一遍，
+      而那正是上面那条"重渲染不是事件"要防的。
+    */
+    const s = nominate(null, "根本不存在的东西");
+    expect(s.go).toBe("根本不存在的东西");
+    expect(s.next).toBe("根本不存在的东西");
+    expect(nominate(s.next, "根本不存在的东西").go).toBeNull();
+  });
+});
+
+describe("用户点名的纯函数性质", () => {
+  it("不改入参（记忆是个字符串，改不了 —— 但返回值必须是新的一次判定的结果）", () => {
+    const mem: FocusRequestMemory = "spec";
+    nominate(mem, "build");
+    expect(mem).toBe("spec");
+  });
+
+  it("同输入同输出：连调两次结果一样", () => {
+    expect(nominate("spec", "build")).toEqual(nominate("spec", "build"));
+  });
+
+  it("go 只可能是 null 或者喂进去的那个 id —— 不会凭空造一个 id", () => {
+    for (const prev of [null, "spec", "build"] as const) {
+      for (const id of [null, "spec", "build"] as const) {
+        const s = nominate(prev, id);
+        expect([null, id]).toContain(s.go);
+      }
+    }
+  });
+
+  it("两条规矩互不干扰：点名不看自动跟随的记忆，自动跟随也不看点名", () => {
+    /*
+      两条规矩的输入是两个不同的值（FocusFollowMemory 是对象、FocusRequestMemory 是字符串），
+      所以"点名被自动跟随的禁令挡住"这件事在类型上就写不出来。
+      这一条把这个事实钉住：自动跟随那边 userMoved=true 之后，
+      点名照旧执行；反过来，点名执行完不影响自动跟随那边的判据本身。
+    */
+    const followMem = markUserMoved({ lastStageId: BUILD, userMoved: false });
+    expect(step(followMem, "verify").focus).toBeNull(); // 跟随：不许动
+    expect(nominate(null, "verify").go).toBe("verify"); // 点名：照办
+    expect(followMem.userMoved).toBe(true); // 点名没有偷偷改跟随的记忆
   });
 });

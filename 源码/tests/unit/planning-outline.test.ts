@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { summarizeChecks, type CheckResult } from "@/core/domain/check";
 import { fallbackSpec, reviewSpec } from "@/core/domain/spec";
 import { inspectArtifact } from "@/core/generate/prompt";
+import { checksToChildren } from "@/core/pipeline/forest";
 import { STAGES } from "@/core/pipeline/stages";
 import { planningFromRun } from "@/core/planning/from-run";
 import {
@@ -138,6 +139,8 @@ describe("占位行：让用户看出「这里将来会有东西」", () => {
       title: "待规划",
       status: "pending",
       placeholder: true,
+      // ★ 占位行没有对应节点 —— 界面据此不给它加链接（见下面那一组用例）
+      canvasNodeId: null,
     });
   });
 
@@ -492,5 +495,105 @@ describe("纯函数", () => {
     const before = structuredClone(points);
     toOutline(points);
     expect(points).toEqual(before);
+  });
+});
+
+/* ============================================================
+   ★ canvasNodeId：清单里的一行对应画布上的哪个节点（点击跳转的地基）
+   ------------------------------------------------------------
+   左侧清单这一期变成可点的：点一行 → 画布聚焦到那个任务点。
+   跳转靠 URL（?focus=<id>），而那个 id 就是这个字段。
+
+   这一组守的不是"有没有这个字段"，是**三件会安静地错掉的事**：
+     ① 实体行给不出 id → 行不可点（功能整个没了，而画面看不出来）
+     ② 占位行给了一个 id → 一行虚线被做得可点，点下去跳到父工序上，
+        等于说"待规划的就是那道工序"（"点了没反应"和"点了骗人"两种坏）
+     ③ 两边 id 规则漂开 → 清单点一下跳到别的节点上（最坏的一种：
+        有反应、但是错的，而它看起来完全正常）
+   ============================================================ */
+
+describe("★ canvasNodeId：实体行给自己的 id，占位行给 null", () => {
+  it("一级行 / 二级实体行的 canvasNodeId 就是它自己的 id", () => {
+    const rows = toOutline(projectAt(richLog(), 100));
+    for (const row of rows) {
+      expect(row.canvasNodeId, `${row.id} 的 canvasNodeId 不对`).toBe(row.id);
+    }
+  });
+
+  it("占位行的 canvasNodeId 必须是 null（它没有对应节点）", () => {
+    const rows = toOutline([AGENT]);
+    const placeholder = rows.find((r) => r.placeholder);
+    expect(placeholder).toBeDefined();
+    expect(placeholder?.canvasNodeId).toBeNull();
+    /*
+      ⚠️ 特意**不给**它父节点的 id。
+      顺手指到父节点是这一行最容易写出的样子：点下去也确实有反应
+      （跳到那道工序上），于是没人会发现它在说另一件事 ——
+      「待规划的就是这道工序」，而事实是「那道工序下面还没有东西」。
+    */
+    expect(placeholder?.canvasNodeId).not.toBe(AGENT.id);
+  });
+
+  it("全量扫描：canvasNodeId 为 null 的行，必须恰好是占位行", () => {
+    /*
+      这条守的是"两种坏"里更安静的那个方向：
+      占位行拿到 id（假装可点）。逐行对账，而不是抽查一行 ——
+      将来多出一种"没有节点的行"时，它会当场变红，逼着那次改动明确地
+      决定"这种行能不能点"，而不是悄悄继承一个 id。
+    */
+    const log = planningFromRun({
+      stages: STAGE_INPUT,
+      events: [specEvent(10), checkEvent(20)],
+    });
+    const rows = toOutline(projectAt(log, maxSeq(log)));
+    expect(rows.length).toBeGreaterThan(10); // 前提：这份数据里既有实体行也有占位行
+
+    for (const row of rows) {
+      if (row.placeholder) {
+        expect(row.canvasNodeId, `占位行 ${row.id} 居然有 canvasNodeId`).toBeNull();
+      } else {
+        expect(row.canvasNodeId, `实体行 ${row.id} 没有 canvasNodeId`).not.toBeNull();
+        expect(row.canvasNodeId).toBe(row.id);
+      }
+    }
+    // 两个方向都非空，否则上面那个循环可能一行都没验到
+    expect(rows.filter((r) => r.placeholder).length).toBeGreaterThan(0);
+    expect(rows.filter((r) => !r.placeholder).length).toBeGreaterThan(0);
+  });
+
+  it("★ 与画布对账：七个检查项在清单里的 canvasNodeId，就是画布上那七个方块的 id", () => {
+    /*
+      ★ 这一条是"点击跳转"能成立的地基 ★
+
+      清单和画布是同一棵树的两种视图 —— 两边的 id 必须逐字对得上。
+      而它们**来自两条不同的代码路径**：
+        · 清单：from-run.ts 的 checkPoints 造任务点 → toOutline 出行
+        · 画布：forest.ts 的 checksToChildren 造子卡片 → 布局按 id 摆
+      两边各自都写了一遍 `verify:${name}` 这个约定（from-run.ts 的注释里
+      正是这么说的）。这个用例把那条约定**真的对一次账** ——
+      哪天有人只改了一边，这里会红；不红的话，症状是
+      "点了清单里的检查项，画布跳到别的地方或者没反应"，而那种错很难查。
+
+      用法也是产品代码里真实的那一步：checksToChildren(check 事件的 results)。
+    */
+    const results: CheckResult[] = REAL_CHECK_NAMES.map((name) => ({
+      name,
+      pass: true,
+      detail: "通过了",
+    }));
+    const log = planningFromRun({
+      stages: STAGE_INPUT,
+      events: [
+        { seq: 20, kind: "check", payload: { kind: "check", results, summary: summarizeChecks(results) } },
+      ],
+    });
+
+    const canvasIds = checksToChildren(results).map((c) => c.id);
+    const rowIds = toOutline(projectAt(log, maxSeq(log)))
+      .filter((r) => r.id.startsWith("verify:"))
+      .map((r) => r.canvasNodeId);
+
+    expect(rowIds).toEqual(canvasIds);
+    expect(canvasIds).toHaveLength(REAL_CHECK_NAMES.length);
   });
 });
