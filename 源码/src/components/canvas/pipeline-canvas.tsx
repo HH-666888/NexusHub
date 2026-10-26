@@ -23,6 +23,7 @@ import {
 } from "@/core/canvas/forest-layout";
 import {
   childIndex,
+  summarizeChildren,
   toLayoutNodes,
   type ChildrenByStage,
   type StageChild,
@@ -133,14 +134,24 @@ function StageCard({
   tint,
   active,
   dimmed,
+  failedKids,
   onPick,
   onFocus,
 }: {
   node: PipelineNode;
-  rect: NodeRect;
+  /**
+   * 这一帧画在哪。
+   *
+   * 类型写的是 NodeRect，但**实际传进来的是 LaidNode** ——
+   * 布局多给了一句 childCount（这棵树有几个孩子），角标要用它。
+   * 这里顺手把它标进类型里，免得渲染层去 as 一把。
+   */
+  rect: NodeRect & { childCount?: number };
   tint: string;
   active: boolean;
   dimmed: boolean;
+  /** 子树里没通过几项。由 summarizeChildren 算好，见下面角标那段 */
+  failedKids: number;
   onPick?: (id: StageId) => void;
   /** 双击 —— 聚焦到这棵树。区域由外面给（只有布局知道子树多大） */
   onFocus?: () => void;
@@ -148,6 +159,11 @@ function StageCard({
   const empty = node.implementation === "planned";
   const tone = toneOf(node);
   const running = node.status === "running" && !empty;
+
+  /** 子树有几个孩子（没有子树就是 0）。角标只在大于 0 时才画 */
+  const childCount = rect.childCount ?? 0;
+  /** 全过是绿的，有一项没过就是红的 —— 和子方块、状态胶囊同一套颜色 */
+  const kidsTone = failedKids === 0 ? "74 222 128" : "248 113 113";
 
   return (
     <div
@@ -238,18 +254,52 @@ function StageCard({
             {String(node.order).padStart(2, "0")}
           </span>
         </div>
-        <span
-          data-stage-tone
-          data-canvas-label="minor"
-          className="rounded border px-1.5 py-px text-[10px] whitespace-nowrap"
-          style={{
-            borderColor: `rgb(${tint} / 0.5)`,
-            color: `rgb(${tint})`,
-            background: empty ? "none" : `rgb(${tint} / 0.12)`,
-          }}
-        >
-          {tone.label}
-        </span>
+        {/* 右边这一组：子树角标 + 状态胶囊（角标在胶囊左边，紧挨着） */}
+        <div className="flex items-center gap-1">
+          {/*
+            ---------- 子树角标 ----------
+            挂在「验收」下面的七项检查，不展开子树就看不见结论。
+            这个角标把结论直接写在卡上：7/7 全过，6/7 有一项没过。
+
+            ⚠️ 这两个数**早就有人算好了**。
+               core/pipeline/forest.ts 的 summarizeChildren 从写下那天起
+               就在算"过了几项、错了几项"，注释里也写明
+               「画布上要用它给「验收」那张卡加一个角标（"7/7"）」——
+               但**从来没有人调用过它**。布局那边的 childCount 一样，
+               注释写着「界面上要显示「8 条」这种角标」，也没人渲染。
+               所以这里补的不是新功能，是把一根早就铺好的线接上。
+
+            没有子树（childCount 为 0）就整个不画 ——
+            画一个「0/0」等于给六张卡都添一句废话。
+          */}
+          {childCount > 0 && (
+            <span
+              data-stage-kids
+              data-canvas-label="minor"
+              className="rounded border px-1.5 py-px text-[10px] whitespace-nowrap tabular-nums"
+              style={{
+                borderColor: `rgb(${kidsTone} / 0.5)`,
+                color: `rgb(${kidsTone})`,
+                background: `rgb(${kidsTone} / 0.12)`,
+              }}
+              title={`子树 ${childCount} 项，${failedKids} 项未过`}
+            >
+              {`${childCount - failedKids}/${childCount}`}
+            </span>
+          )}
+          <span
+            data-stage-tone
+            data-canvas-label="minor"
+            className="rounded border px-1.5 py-px text-[10px] whitespace-nowrap"
+            style={{
+              borderColor: `rgb(${tint} / 0.5)`,
+              color: `rgb(${tint})`,
+              background: empty ? "none" : `rgb(${tint} / 0.12)`,
+            }}
+          >
+            {tone.label}
+          </span>
+        </div>
       </div>
 
       <div
@@ -751,6 +801,12 @@ export function PipelineCanvas({
           tint={tintVarAt(i)}
           active={activeId === node.id}
           dimmed={dimmedExcept(node.id)}
+          /*
+            子树里有几项没过 —— 右上角那个角标的分子分母。
+            只算给卡片的数字，`rects` 照旧整个交给 rect（角标要的
+            childCount 本来就在里面，它是 LaidNode）。
+          */
+          failedKids={summarizeChildren(childrenByStage?.[node.id] ?? []).failed}
           onPick={onPick}
           /*
             聚焦区域用 **forest.byId 的 subtree**，不是 animatedNodes 的。
