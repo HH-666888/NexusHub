@@ -61,13 +61,18 @@ const PENDING_TITLE = "待规划";
  *      「还没开始」也可能表示「已经跑完了没东西」，用户分不出来。
  *   ④ depth >= 3 不进清单。
  *
- * ── 一级行的状态用自己，二级行的状态靠汇总 ──
+ * ── 一级行的状态用自己，二级行分两种：有下级才汇总，没下级用自己 ──
  *   一级 Agent 是真的在执行「规划」这件事的节点，它有自己的状态
  *   （planning / running / done），如实显示即可。
- *   二级的六道工序自己不产出任何东西，状态必须由它下面已长出来的
- *   执行点汇总 —— 见 rollUpStatus。这也顺带解释了到点语义在清单上的样子：
- *   一道工序的执行点还没出生时，汇总结果是 pending（白），
+ *   二级行里**还有下级**的那些，自己不产出任何东西，状态必须由它下面
+ *   已长出来的执行点汇总 —— 见 rollUpStatus。这也顺带解释了到点语义在
+ *   清单上的样子：一道工序的执行点还没出生时，汇总结果是 pending（白），
  *   和它「还没到点」的事实是一致的，不需要额外判断。
+ *   但二级行里**没有下级**的那些（叶子）必须用它自己的 status：
+ *   叶子就是执行单元，它没有下级可汇总。
+ *   对叶子调用 rollUpStatus([]) 会一律得到 pending ——
+ *   那会让一个已经 done 的叶子在清单上显示成「还没做」，
+ *   也就是界面在假装一个不存在的事实。详见下面循环里那段注释。
  *
  * ── 孤儿怎么办 ──
  *   二级点的父节点不在列表里时，它**进不了清单** ——
@@ -96,12 +101,32 @@ export function toOutline(points: readonly TaskPoint[]): OutlineRow[] {
     );
 
     for (const child of children) {
+      /*
+        二级行的状态：有下级就汇总，没有下级（叶子）就用它自己的 status。
+
+        为什么叶子必须用自身状态 ——
+          叶子就是**执行单元**：它自己干活、自己产出，它下面没有任何东西
+          可以拿来汇总。而 rollUpStatus([]) 按设计返回 pending
+          （空 → 「还没动静」，见 task-point.ts 的规则①，那条本身是对的）。
+          错的是**对叶子也去汇总**这个调用方式：一个 status=done 的检查项
+          会因为「没有子节点」而被算成 pending，于是清单上写「还没做」，
+          画布上、事件日志里却明明白白写着「做完了」。
+
+          这不是配色不好看，是**界面在假装一个不存在的事实** ——
+          用户看到的是「这件事没做」，而事实是「已经做完了」。
+          这一类谎是这个项目最不能接受的，所以这里按语义分开处理。
+          汇总只对**真的还有下级**的二级点有意义：
+          它们的进度确实由子树决定，自己没有独立的执行状态可报。
+      */
+      const grandchildren = childrenOf(points, child.id);
       rows.push({
         id: child.id,
         level: 2,
         title: child.title,
-        // 二级节点的状态是算出来的：它下面已经出生的执行点说了算
-        status: rollUpStatus(childrenOf(points, child.id)),
+        status:
+          grandchildren.length > 0
+            ? rollUpStatus(grandchildren) // 还有下级：归纳到子树
+            : child.status, // 叶子：如实报它自己的状态
         placeholder: false,
       });
     }
