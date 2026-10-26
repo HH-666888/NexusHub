@@ -19,11 +19,12 @@ import { PLANNING_ROOT_ID, planningFromRun } from "@/core/planning/from-run";
 import { toOutline, type OutlineRow } from "@/core/planning/outline";
 import { maxSeq, projectAt } from "@/core/planning/planning-log";
 import { checksToChildren, type ChildrenByStage } from "@/core/pipeline/forest";
-import { STAGES } from "@/core/pipeline/stages";
+import { STAGES, isStageId } from "@/core/pipeline/stages";
 import { getOwnedRun, listRuns } from "@/core/run/service";
 import { requireUser } from "@/server/auth-context";
 import { serverNow } from "@/server/clock";
 import type { CanvasRootCard } from "@/components/canvas/pipeline-canvas";
+import type { StageId } from "@/core/pipeline/stages";
 
 /**
  * 主界面 /canvas
@@ -149,6 +150,33 @@ export default async function CanvasPage({
   */
   let outlineRows: OutlineRow[] = [];
   /*
+    ---------- 当前正在执行的那道工序 ----------
+    画布要靠它做「推进到下一步时视口跟过去」。
+
+    ⚠️ 它只能从下面那份**真实投影**（planPoints）里取，所以声明在这儿、
+       赋值在里面 —— 和 outlineRows 同一个道理：没有运行就是 null，
+       不凭 run 记录猜一道"应该正在跑"的工序出来。
+
+    ── 判定只有这一条 ──
+      depth === 1 是六道工序那一层（一级 Agent 是 0，执行点是 2 ——
+      见 from-run.ts 建骨架时写下的 depth）。status === "running" 是
+      from-run.ts 从真实事件里投出来的：**没有留下过真实痕迹的工序永远是
+      pending**，绝不会因为"运行到这一步了"就被推成 running。
+      所以这条判定不会把视口引到一道其实没在跑的工序上。
+
+      取第一个命中的：投影里的顺序就是出生顺序（一级 → 六道按 stages 顺序），
+      所以"第一个 running 的工序"是**从前往后最先动的那一道**，
+      和流水线的推进方向一致。同时有两道 running（回退重跑）时，
+      选靠前的那一道 —— 那正是用户此刻该看的地方。
+
+    ── 为什么传 null 而不是不传这个 prop ──
+      "现在没有工序在跑"是一个事实。传 null 让画布知道这一点，
+      于是下一道工序开跑时算一次**新的**推进（见 focus-follow.ts 的规则③）。
+      整个 prop 不传表达的是另一件事："这一版不要自动聚焦"。
+  */
+  let focusStageId: StageId | null = null;
+
+  /*
     一级 Agent 那张卡的数据。
     ⚠️ 它**只有从真实投影里取**这一条路 —— 没有 fallback、没有默认值：
        投影里没有根节点（比如根本没有运行）时它就是 undefined，
@@ -203,6 +231,18 @@ export default async function CanvasPage({
     */
     const planPoints = projectAt(planLog, maxSeq(planLog));
     outlineRows = toOutline(planPoints);
+
+    /*
+      当前正在执行的工序 —— 和清单、画布取自**同一份投影**（同一个 planPoints）。
+      从别处再算一遍的话，会出现"清单说第 3 道在跑、画布却飞到第 4 道上"，
+      而这种不一致用户一眼就能看见，且没法解释。
+
+      TaskPoint.id 是 string，而画布要的是 StageId 这个联合类型 ——
+      中间要真的判一次，不能 `as`（见 core/pipeline/stages.ts 的 isStageId）。
+      判不过就保持 null：宁可不动视口，也不把镜头交给一个来路不明的 id。
+    */
+    const runningStage = planPoints.find((p) => p.status === "running" && p.depth === 1) ?? null;
+    if (runningStage && isStageId(runningStage.id)) focusStageId = runningStage.id;
 
     const rootPoint = planPoints.find((p) => p.id === PLANNING_ROOT_ID) ?? null;
     if (rootPoint) {
@@ -288,6 +328,17 @@ export default async function CanvasPage({
                 画一个不存在的总规划出来，比少画一层更糟。
               */
               rootCard={rootCard}
+              /*
+                当前工序 —— 它变了，画布把视口聚焦过去（「推进到下一步时跟过去」）。
+                ⚠️ 用户自己动过视口之后就不跟了，那条规矩在 core/canvas/focus-follow.ts。
+              */
+              focusStageId={focusStageId}
+              /*
+                运行的身份。画布拿它判断"换了一次运行"→ 重置自动跟随的记忆。
+                ⚠️ 必须是 id：上面那个 run prop 是每次渲染都新建的字面量，
+                   拿它当依赖会让记忆每次重渲染都被清掉，自动聚焦于是永远不触发。
+              */
+              runKey={selectedRun?.id}
             />
           </div>
 

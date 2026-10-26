@@ -134,3 +134,63 @@ describe("fitFloor", () => {
     expect(bounds.w * vp.scale).toBeLessThanOrEqual(canvasW);
   });
 });
+
+/* ============================================================
+   「看全」这个出口：同一个区域，只差一个下限
+   ============================================================
+   画布右下角那个「看全」按钮做的就是下面第一行 —— 把 minScale 传 0。
+   它和默认路径**用的区域完全相同**（都是整棵树的包围盒），
+   差别只有这一条下限。所以这一组断言测的不是按钮，是那条下限：
+
+     传下限  → 停在 45%（工序名还看得见），代价是最外侧被切掉一点
+     传 0    → 缩到 20% 上下（字读不清了），但整棵树真的全在视口里
+
+   两条都要钉住，因为它们是一对**取舍**：
+   只有第一条，「看全」就不叫看全（点了还是看不全）；
+   只有第二条，默认视图就会变成一张看不清的全景图。
+   ⚠️ 这一组不碰 fitFloor 的取值 —— 它守的是"两个出口都还在"。
+   ============================================================ */
+describe("看全 vs 默认：同一条下限的两个出口", () => {
+  /** 三层树量出来的真实包围盒（e2e 里量到的 1832×1064） */
+  const tree = { x: 400, y: 162, w: 1832, h: 1064 };
+  /** 四分布局之后画布实测 770×330 */
+  const canvasW = 770;
+  const canvasH = 330;
+
+  it("同一个包围盒：默认停在下限上，看全缩到下限以下", () => {
+    const byDefault = fitViewport(tree, canvasW, canvasH, 56, fitFloor("page"));
+    const fitAll = fitViewport(tree, canvasW, canvasH, 56, 0);
+
+    expect(byDefault.scale).toBe(fitFloor("page"));
+    expect(fitAll.scale).toBeLessThan(fitFloor("page"));
+    // 而且小得**看得出来**：不是 44% 这种"差一点点"
+    expect(fitAll.scale).toBeLessThan(0.4);
+  });
+
+  it("看全之后，整棵树在**两个方向**上都装得下（这正是它存在的理由）", () => {
+    /*
+      这是这个按钮的**唯一**验收标准。
+      只算一个方向的话，"缩到很小"这个行为本身就能让下式成立，
+      而内容可能还横着溢出去 —— 那按钮就白叫「看全」了。
+    */
+    const fitAll = fitViewport(tree, canvasW, canvasH, 56, 0);
+    expect(tree.w * fitAll.scale).toBeLessThanOrEqual(canvasW - 56 * 2 + 1e-6);
+    expect(tree.h * fitAll.scale).toBeLessThanOrEqual(canvasH - 56 * 2 + 1e-6);
+  });
+
+  it("默认视图确实装不下 —— 这就是它被下限挡住的那个代价", () => {
+    // 反过来证明上面那条不是白给的：默认视口下整棵树是装不下的
+    const byDefault = fitViewport(tree, canvasW, canvasH, 56, fitFloor("page"));
+    expect(tree.w * byDefault.scale).toBeGreaterThan(canvasW);
+  });
+
+  it("看全不会缩到「看不见」那一档以下 —— MIN_SCALE 仍然兜着底", () => {
+    /*
+      下限传 0 不等于"无限制"：clampScale 那道 0.2 的全局夹紧还在。
+      它防的是"点了看全之后画布上一片空白"——
+      那是比"读不清字"更糟的结果：用户会以为内容没了。
+    */
+    const tiny = fitViewport({ x: 0, y: 0, w: 20000, h: 20000 }, canvasW, canvasH, 56, 0);
+    expect(tiny.scale).toBeGreaterThanOrEqual(MIN_SCALE);
+  });
+});

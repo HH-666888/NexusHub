@@ -27,6 +27,26 @@ export type StageId =
   | "assemble" // ⑤ 集成装配
   | "verify"; // ⑥ 验收与交付
 
+/**
+ * 一个字符串是不是六道工序的 id。
+ *
+ * ── 为什么需要它，而不是到处 `as StageId` ──
+ *   工序 id 从库里/从投影里出来的时候类型是 `string`（TaskPoint.id 就是 string）。
+ *   而画布那边要的是 `StageId` 这个联合类型。中间的这段路只有两种走法：
+ *     ① `as StageId` —— 一句谎话。写错的那天编译器一声不吭，
+ *        表现是"聚焦到一个不存在的工序"，而视口只是没动，不报错；
+ *     ② 真的判一次 —— 判定依据就是 STAGES 本身，
+ *        于是以后加/改工序时这里自动跟着走，不会漂。
+ *   选②。这也是 core 层该干的事：它拥有 StageId 的定义，就该负责回答
+ *   "这个字符串算不算数"。
+ *
+ * ⚠️ 用 hasOwnProperty 而不是 `in`：`in` 会顺着原型链把 "constructor"
+ *    这类键也认成合法工序 id（from-run.ts 里判 phase 时踩过同一个坑）。
+ */
+export function isStageId(value: string): value is StageId {
+  return Object.prototype.hasOwnProperty.call(STAGE_MAP, value);
+}
+
 export type StageStatus =
   | "pending" // 未开始
   | "running" // 执行中

@@ -20,6 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { PLANNING_ROOT_ID } from "@/core/planning/from-run";
+import { fitFloor } from "@/core/canvas/viewport";
 import { expect_, finish, heading, info, ok, signUp } from "./e2e-kit";
 
 /**
@@ -94,6 +95,138 @@ function cleanupVerifyRun(runId: string): void {
   try {
     db.prepare("DELETE FROM run_events WHERE run_id = ?").run(runId);
     db.prepare("DELETE FROM runs WHERE id = ?").run(runId);
+  } finally {
+    db.close();
+  }
+}
+
+/* ============================================================
+   视口策略（第二十步）用的夹具
+   ------------------------------------------------------------
+   这一步要验的是「推进到下一步时视口跟过去」，所以要能**制造一次推进**。
+   真跑一次运行要调模型、花钱、几十秒 —— e2e 不该为了验一个视口去生成应用。
+   所以这里造一条"正在跑"的运行，然后在测试过程中**改库 + 让页面重新渲染**，
+   推进就是这样被造出来的（改库见 advanceFixture，重新渲染见第二十步）。
+
+   ⚠️ 造出来的必须是"真的可能出现"的形状：
+      runs 那一行的 stage/status 是并行构建开工时的真实取值，
+      三条事件分别是规格化的 phase、验收的 check、并行构建的 phase ——
+      都是真实代码里会发出的那几种，payload 形状逐字段一致。
+      （七项检查的 results 与 seedVerifyRun 用的是同一份。
+        那条运行是 done、这条是 running，所以这里让 spec 和 build 同时在跑 ——
+        回退重跑的运行真的会同时有两道工序活着。）
+   ============================================================ */
+
+/** 一条「正在跑、而且带子树」的运行。返回运行 id */
+function seedAdvancingRun(username: string): string {
+  const db = new Database("./data/nexus.db");
+  try {
+    const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
+      | { id: number }
+      | undefined;
+    if (!user) throw new Error(`找不到测试账号 ${username}`);
+
+    const runId = `e2e-vp-${Date.now().toString(36)}`;
+    const now = Date.now();
+
+    db.prepare(
+      `INSERT INTO runs (id, user_id, prompt, stage, status, workflow_version, created_at, updated_at)
+       VALUES (?, ?, ?, 'build', 'running', 'e2e-fixture', ?, ?)`,
+    ).run(runId, user.id, "端到端夹具：正在跑的运行（验视口跟随）", now, now);
+
+    const results = [
+      { name: "完整 HTML 结构", pass: true, detail: "产物含 html/head/body 三段完整结构" },
+      { name: "内联样式", pass: true, detail: "样式全部内联，没有外部样式表引用" },
+      { name: "内联脚本", pass: true, detail: "脚本全部内联，没有外部 js 引用" },
+      { name: "完全自包含（无外部引用）", pass: true, detail: "没有任何指向外部域名的引用" },
+      { name: "有事件处理", pass: false, detail: "没有找到 addEventListener 或 on* 属性" },
+      { name: "数据能持久化", pass: true, detail: "用到了 localStorage 存取" },
+      { name: "中文界面", pass: true, detail: "界面文案是中文" },
+    ];
+
+    /*
+      三条事件按 seq 排开，而"当前工序"就是投影里**第一个 running 的工序**
+      （见 /canvas 上那段判定）。刚造好时它落在**第一道（规格化）**上 ——
+      这很重要：后面删掉 spec 那条 phase，"当前工序"就会自己走到 build，
+      于是一次推进是真的由数据推出来的，不是脚本写死的。
+    */
+    const rows: [number, string, unknown][] = [
+      [0, "phase", { kind: "phase", phase: "spec", label: "正在把你的需求整理成规格" }],
+      [
+        1,
+        "check",
+        {
+          kind: "check",
+          results,
+          summary: {
+            total: results.length,
+            passed: results.filter((r) => r.pass).length,
+            failed: results.filter((r) => !r.pass).length,
+            failures: results.filter((r) => !r.pass),
+          },
+        },
+      ],
+      [2, "phase", { kind: "phase", phase: "generating", label: "正在生成" }],
+    ];
+    const ins = db.prepare(
+      `INSERT INTO run_events (run_id, seq, at, kind, payload) VALUES (?, ?, ?, ?, ?)`,
+    );
+    for (const [seq, kind, payload] of rows) {
+      ins.run(runId, seq, now + seq, kind, JSON.stringify(payload));
+    }
+
+    return runId;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * 改库：删掉某一条事件 —— 于是投影出来的"当前工序"会往前走。
+ *
+ * ── 为什么推进要这样做，而不是等真运行 ──
+ *   验的是**视口跟着当前工序走**，而"当前工序"是从事件投影出来的。
+ *   删掉规格化唯一的那条痕迹，规格化就回到 pending（没有痕迹就是没跑过，
+ *   见 from-run.ts 的诚实底线），于是当前工序自然变成仍在跑的并行构建。
+ *   这是**数据驱动的一次推进**，不是脚本假装推进了一下。
+ */
+function dropRunEvent(runId: string, seq: number): void {
+  const db = new Database("./data/nexus.db");
+  try {
+    db.prepare("DELETE FROM run_events WHERE run_id = ? AND seq = ?").run(runId, seq);
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * 一条"陪跑"的运行：唯一用途是被删掉，从而触发一次服务端重新渲染。
+ *
+ * ── 为什么要这么绕 ──
+ *   改库之后页面还不知道 —— 得让它重新渲染。而**整页刷新不算**：
+ *   刷新会重新挂载组件，而挂载按规矩是不自动聚焦的（那正是另一条规矩），
+ *   于是"推进后是否聚焦"这件事永远测不出来。
+ *   删一条别的运行会走服务端动作（deleteRunAction → revalidate + redirect），
+ *   那是一次**客户端导航**：服务端重新渲染、组件不重新挂载 —— 正好。
+ *
+ * created_at 故意比主夹具早一分钟：删完之后页面会跳回 /canvas（不带 run），
+ * 那时选中的是"最近一条"，得让主夹具仍然是最新的那一条。
+ */
+function seedBystanderRun(username: string, tag: string): string {
+  const db = new Database("./data/nexus.db");
+  try {
+    const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
+      | { id: number }
+      | undefined;
+    if (!user) throw new Error(`找不到测试账号 ${username}`);
+
+    const runId = `e2e-vp-bystander-${tag}-${Date.now().toString(36)}`;
+    const then = Date.now() - 60_000;
+    db.prepare(
+      `INSERT INTO runs (id, user_id, prompt, stage, status, workflow_version, created_at, updated_at)
+       VALUES (?, ?, ?, 'spec', 'done', 'e2e-fixture', ?, ?)`,
+    ).run(runId, user.id, `端到端夹具：陪跑（${tag}）`, then, then);
+    return runId;
   } finally {
     db.close();
   }
@@ -2492,6 +2625,440 @@ async function main() {
       "没有选中运行时仍然是六道工序并列（rootCard 不传 = 旧样子）",
       `工序卡有 ${noRun.stageCount} 个 —— 不传 rootCard 时画布该和以前一模一样`,
     );
+
+    /* ---------- 20. 视口策略：「看全」出口 + 步骤推进自动聚焦 ---------- */
+    /*
+      这一期交付的是**视口策略**，两件事：
+
+        一、「看全」 —— 整棵树装进视口。它**必须忽略 0.45 那条下限**，
+            因为用户明确表达了"我要看全局"；代价是字读不清，
+            所以按钮的提示语说的是实话（会很小、读不清字）。
+
+        二、步骤推进 → 视口跟过去。它**必须尊重用户**：
+            用户自己动过视口之后就不许再跟，否则就是抢镜头。
+
+      ── 为什么这两条都必须进常驻回归 ──
+        它们的结果都表现为**一个数字**（画布的倍率 / 平移量），
+        而数字错了在画面上往往"看着也挺正常"：
+          · 「看全」忘了忽略下限 → 还是 45%，边缘两张卡依旧被切 ——
+            和"看全"生效的样子差别很小，肉眼要数边缘像素才看得出来
+          · 自动聚焦不尊重用户 → 镜头在用户拖到一半时飞走，
+            而那一下永远发生在"你正要看别处"的时候，没人能盯着复现
+          · 反过来的错更安静：自动聚焦**从来没生效过**，
+            画面一切正常，只是用户永远看到的是旧位置
+        所以两条都要有断言，而且断言对象要是**可测的量**：
+        画布倍率（从网格间距反算，见第四步）、每张卡的屏幕矩形、平移量。
+
+      ── 怎么制造"一次推进" ──
+        改库（删掉当前工序唯一的那条真实痕迹）+ 让页面**重新渲染**
+        （点同一条运行的 chip 走客户端导航，或删一条陪跑运行走服务端动作）。
+        整页刷新不行 —— 那会重新挂载，而挂载按规矩本来就不聚焦。
+        每一步都用**左侧清单的变化**证明"推进真的到了页面上"，
+        不让断言有机会在"其实什么都没发生"的情况下变绿。
+    */
+    heading("第二十步 · 视口策略：「看全」出口与步骤推进自动聚焦");
+
+    /** 一次读全：画布矩形、倍率、平移、每张卡的屏幕矩形与世界矩形、清单、看全按钮 */
+    const READ_VIEWPORT = `(() => {
+      const stage = document.querySelector('[data-canvas-stage]');
+      if (!stage) return JSON.stringify({ missing: true });
+      const cs = getComputedStyle(stage);
+      const sr = stage.getBoundingClientRect();
+      const box = (el) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, w: r.width, h: r.height };
+      };
+      /*
+        世界坐标从自己的 translate(x,y) 读（世界层那层 scale 不算进来）——
+        于是"树到底多大"是可测的，不靠注释里的数字。
+      */
+      const world = (el) => {
+        const m = getComputedStyle(el).transform.match(/matrix\\(([^)]+)\\)/);
+        const p = m ? m[1].split(',').map(Number) : [1, 0, 0, 1, NaN, NaN];
+        return {
+          x: p[4], y: p[5],
+          w: parseFloat(el.style.width) || el.offsetWidth,
+          h: parseFloat(el.style.height) || el.offsetHeight,
+        };
+      };
+      const nodes = [
+        ...document.querySelectorAll('[data-pipeline-root]'),
+        ...document.querySelectorAll('[data-pipeline-stage]'),
+        ...document.querySelectorAll('[data-canvas-child]'),
+      ];
+      const idOf = (el) =>
+        el.getAttribute('data-pipeline-stage') ??
+        el.getAttribute('data-pipeline-root') ??
+        el.getAttribute('data-canvas-child');
+      const worlds = nodes.map(world);
+      const fitAll = document.querySelector('[data-canvas-fit-all]');
+      const parts = cs.backgroundPosition.split(' ');
+      return JSON.stringify({
+        stage: { left: sr.left, top: sr.top, w: sr.width, h: sr.height },
+        gridStep: parseFloat(cs.backgroundSize) || 0,
+        panX: parseFloat(parts[0]) || 0,
+        panY: parseFloat(parts[1]) || 0,
+        zoomLabel: document.querySelector('[data-canvas-zoom]')?.textContent.trim() ?? null,
+        fitAll: fitAll
+          ? { text: fitAll.textContent.trim(), title: fitAll.getAttribute('title') || '' }
+          : null,
+        nodeIds: nodes.map(idOf),
+        nodeBoxes: nodes.map(box),
+        worldBounds: worlds.length
+          ? {
+              x: Math.min(...worlds.map((w) => w.x)),
+              y: Math.min(...worlds.map((w) => w.y)),
+              right: Math.max(...worlds.map((w) => w.x + w.w)),
+              bottom: Math.max(...worlds.map((w) => w.y + w.h)),
+            }
+          : null,
+        /*
+          左侧清单：六道工序是 level=1 那几行，**顺序就是 STAGES 顺序**。
+          它的状态只由服务端投影决定 —— 所以它一变，就证明页面真的重新渲染过。
+        */
+        outline: [...document.querySelectorAll('[data-outline-row]')].map((el) => ({
+          level: el.getAttribute('data-outline-level'),
+          status: el.getAttribute('data-outline-status'),
+          text: (el.textContent || '').trim().slice(0, 6),
+        })),
+      });
+    })()`;
+
+    interface ViewportSnap {
+      missing?: boolean;
+      stage: { left: number; top: number; w: number; h: number };
+      gridStep: number;
+      panX: number;
+      panY: number;
+      zoomLabel: string | null;
+      fitAll: { text: string; title: string } | null;
+      nodeIds: (string | null)[];
+      nodeBoxes: {
+        left: number;
+        top: number;
+        right: number;
+        bottom: number;
+        w: number;
+        h: number;
+      }[];
+      worldBounds: { x: number; y: number; right: number; bottom: number } | null;
+      outline: { level: string | null; status: string | null; text: string }[];
+    }
+
+    const readViewport = async (): Promise<ViewportSnap> => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: READ_VIEWPORT,
+        returnByValue: true,
+      });
+      return JSON.parse(r.result!.value!) as ViewportSnap;
+    };
+
+    /** 倍率。和第四步同一个算法：网格间距 = 格宽(160) × 倍率 */
+    const scaleOf = (s: ViewportSnap) => s.gridStep / 160;
+
+    /**
+     * 「每一个节点都落在画布矩形内」—— 容差 2 像素。
+     *
+     * 这是「看全」**唯一**的验收标准：它叫看全，就得真的看全。
+     * 容差是给亚像素用的（getBoundingClientRect 会带小数、
+     * 而画布矩形的宽度也不是整数），不是给"差一点也算"用的。
+     */
+    const outsideCanvas = (s: ViewportSnap, tol = 2) =>
+      s.nodeBoxes
+        .map((b, i) => ({ id: s.nodeIds[i], b }))
+        .filter(
+          ({ b }) =>
+            b.left < s.stage.left - tol ||
+            b.top < s.stage.top - tol ||
+            b.right > s.stage.left + s.stage.w + tol ||
+            b.bottom > s.stage.top + s.stage.h + tol,
+        );
+
+    /** 六道工序在清单里那一行行的状态（level=1，顺序 = STAGES 顺序） */
+    const outlineStages = (s: ViewportSnap) =>
+      s.outline.filter((r) => r.level === "1").map((r) => r.status);
+
+    /** 某张工序卡在画布内的位置（相对画布左上角） */
+    const cardInCanvas = (s: ViewportSnap, id: string) => {
+      const i = s.nodeIds.indexOf(id);
+      if (i < 0) return null;
+      const b = s.nodeBoxes[i];
+      return {
+        w: Math.round(b.w),
+        h: Math.round(b.h),
+        x: Math.round(b.left - s.stage.left),
+        y: Math.round(b.top - s.stage.top),
+        cx: Math.round((b.left + b.right) / 2 - s.stage.left),
+      };
+    };
+
+    /*
+      夹具：一条"正在跑、带子树"的运行（1 根 + 6 工序 + 7 执行点），
+      外加一条只用来被删掉的陪跑运行。
+    */
+    const advRun = seedAdvancingRun(username);
+    const bystander = seedBystanderRun(username, "vp");
+    info(`造了一条正在跑的运行 ${advRun.slice(0, 8)}（阶段=构建，带 7 项检查的子节点）`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${advRun}` });
+    await sleep(4200);
+
+    const mounted = await readViewport();
+    const vpW = mounted.stage.w;
+    const vpH = mounted.stage.h;
+    const treeW = mounted.worldBounds ? Math.round(mounted.worldBounds.right - mounted.worldBounds.x) : 0;
+    const treeH = mounted.worldBounds ? Math.round(mounted.worldBounds.bottom - mounted.worldBounds.y) : 0;
+    info(
+      `画布 ${Math.round(vpW)}×${Math.round(vpH)} · 树 ${treeW}×${treeH}（世界坐标，实测）· ` +
+        `打开时倍率 ${mounted.zoomLabel}`,
+    );
+
+    /* ---- 20.1 「看全」这个按钮本身 ---- */
+    /*
+      data-canvas-fit-all 这个属性由按钮自己带着，而上面那条查询用的就是它 ——
+      所以"按钮在"和"属性在"是同一件事，读到的元素存在即两者都成立。
+    */
+    expect_(
+      mounted.fitAll !== null && mounted.fitAll.text === "看全",
+      "右下角缩放控件里有「看全」按钮（[data-canvas-fit-all]），文案就是「看全」",
+      `找不到带 data-canvas-fit-all、文案为「看全」的按钮（读到 ${JSON.stringify(mounted.fitAll)}）`,
+    );
+    /*
+      ★ 提示语必须说实话 ★
+      它点下去就是会缩到很小、字读不清。写一句「查看全部」听着体面，
+      点下去用户会以为界面坏了 —— 所以断言里要出现"很小"这类实话。
+    */
+    expect_(
+      mounted.fitAll !== null &&
+        mounted.fitAll.title.includes("很小") &&
+        mounted.fitAll.title.includes("读不清"),
+      `「看全」的提示语说了实话：「${mounted.fitAll?.title}」`,
+      `提示语没说清代价：「${mounted.fitAll?.title}」—— 应当写明会很小、读不清字`,
+    );
+
+    /* ---- 20.2 打开时是默认视图，而且**没有**自动聚焦 ---- */
+    /*
+      ★ 挂载不许自动聚焦 ★
+      这条运行此刻的"当前工序"是第一道（规格化）—— 打开画布如果直接聚焦过去，
+      用户一进来就被拽到某张卡上，而他连这棵树有几层都还没看清。
+      默认视图该是"装下整棵树"，倍率正好停在下限 0.45 上。
+    */
+    const mountScale = scaleOf(mounted);
+    expect_(
+      Math.abs(mountScale - fitFloor("page")) < 0.01,
+      `打开时停在默认视口（倍率 ${mounted.zoomLabel} = 下限 ${fitFloor("page")}），没有被自动聚焦拽走`,
+      `打开时倍率是 ${mounted.zoomLabel}（期望 ${fitFloor("page")}）—— 挂载时不该自动聚焦`,
+    );
+
+    /*
+      默认视图**装不下**整棵树 —— 这是那条下限的代价，也是「看全」存在的理由。
+      把它写成断言，是为了让下一条（看全装得下）不是白给的：
+      如果默认视图本来就装得下，那个按钮就只是个装饰。
+    */
+    const outsideAtDefault = outsideCanvas(mounted);
+    expect_(
+      outsideAtDefault.length > 0,
+      `默认视图确实装不下：${outsideAtDefault.length} 个节点在画布外` +
+        `（树 ${treeW}×${treeH} × ${mountScale.toFixed(3)} = ` +
+        `${Math.round(treeW * mountScale)}×${Math.round(treeH * mountScale)}，画布 ${Math.round(vpW)}×${Math.round(vpH)}）` +
+        ` —— 这正是「看全」要解决的事`,
+      `默认视图下居然一个节点都没出画布 —— 那「看全」就没有存在的理由了（请检查是不是下限被改掉了）`,
+    );
+
+    /* ---- 20.3 步骤推进：视口跟着当前工序走 ---- */
+    /*
+      ⚠️ 顺序要紧：这一条必须在**用户动视口之前**做。
+
+      因为规矩就是"用户一动过，之后就不许再自动聚焦"（见 core/canvas/focus-follow.ts）——
+      而「看全」「回到原点」都算用户动过视口。
+      先点它们再来测自动聚焦的话，测到的是那条禁令，不是跟随本身。
+      （第一版就是这么写的，红了两条：倍率停在 45%，卡片还在老位置上。）
+
+      推进是这样造出来的：删掉规格化唯一的那条真实痕迹 →
+      投影里第一个 running 的工序就从"规格化"变成"并行构建"。
+      然后让页面重新渲染（点同一条运行的 chip 是一次客户端导航）。
+    */
+    const beforeAdvance = outlineStages(mounted);
+    info(`推进前：清单里六道工序的状态 ${beforeAdvance.join(",")}`);
+    dropRunEvent(advRun, 0);
+    await cdp.send("Runtime.evaluate", {
+      expression: `document.querySelector('[data-run-chip="${advRun}"] a').click()`,
+    });
+    await sleep(3500);
+    const afterAdvance = await readViewport();
+    const afterAdvanceOutline = outlineStages(afterAdvance);
+    info(`推进后：清单里六道工序的状态 ${afterAdvanceOutline.join(",")}`);
+
+    /*
+      先证明"这一次推进真的到了页面上"。
+      没有这一条，下面"视口跟过去了"可能是被别的原因造成的；
+      而反过来（在没推进的情况下断言视口不动）也会变成一条永远绿的假断言。
+    */
+    expect_(
+      beforeAdvance[0] === "running" &&
+        afterAdvanceOutline[0] === "pending" &&
+        afterAdvanceOutline[3] === "running",
+      "改库 + 重新渲染之后，当前工序从①规格化推进到了④并行构建（清单是投影算的，它变了就证明确实重渲染过）",
+      `清单没按预期变化：推进前 ${beforeAdvance.join(",")} / 推进后 ${afterAdvanceOutline.join(",")}` +
+        ` —— 这一条不过，后面关于视口的断言都不算数`,
+    );
+
+    const buildCard = cardInCanvas(afterAdvance, "build");
+    const advScale = scaleOf(afterAdvance);
+    /*
+      ★ 视口跟过去了 ★
+      两个证据一起看：
+        倍率从 0.45 涨到 1 以上（收进了一张卡，而不是还看着整棵树）
+        并行构建那张卡落在画布**水平中线**上（聚焦到它的子树，所以它居中）
+      只看倍率的话，"放大了别的地方"也会通过。
+    */
+    expect_(
+      buildCard !== null && advScale > 1 && Math.abs(buildCard.cx - vpW / 2) < 6,
+      `推进到④并行构建：视口聚焦过去（倍率 ${afterAdvance.zoomLabel}，那张卡在画布内 x=${buildCard?.cx}，中线 ${Math.round(vpW / 2)}）`,
+      `视口没跟过去：倍率 ${afterAdvance.zoomLabel}（期望 > 1），` +
+        `并行构建那张卡在画布内 x=${buildCard?.cx}（期望落在中线 ${Math.round(vpW / 2)}）`,
+    );
+    /*
+      而且聚焦的是**那一道工序的子树**，不是整棵树：
+      别的工序卡这时应该已经在画布外了 —— 这正是"聚焦"和"看全"的区别。
+    */
+    const specCard = cardInCanvas(afterAdvance, "spec");
+    expect_(
+      specCard !== null && (specCard.x + specCard.w < 0 || specCard.x > vpW),
+      `聚焦是收进④那一道，不是整棵树：①规格化的卡已经在画布外（画布内 x=${specCard?.x}）`,
+      `①规格化的卡还在画布里（x=${specCard?.x}，宽 ${specCard?.w}）—— 这说明视口没有真正收进去`,
+    );
+
+    /* ---- 20.4 点「看全」：整棵树都要在画布里 ---- */
+    await cdp.send("Runtime.evaluate", {
+      expression: `document.querySelector('[data-canvas-fit-all]').click()`,
+    });
+    await sleep(600);
+    const fitAllSnap = await readViewport();
+    const fitAllScale = scaleOf(fitAllSnap);
+    const outsideAtFitAll = outsideCanvas(fitAllSnap);
+    info(
+      `看全之后：倍率 ${fitAllSnap.zoomLabel}（${fitAllScale.toFixed(4)}）· ` +
+        `树在屏幕上 ${Math.round(treeW * fitAllScale)}×${Math.round(treeH * fitAllScale)}`,
+    );
+
+    /*
+      ★★★ 本期最重要的一条 ★★★
+      每一个节点都落在画布矩形里（容差 2px）。
+      少了它，"看全"这个名字就是一句没有依据的话 ——
+      而它看起来完全正常：缩是缩了，就是边缘那几张卡还在屏幕外，
+      这种事不数像素是发现不了的。
+    */
+    expect_(
+      outsideAtFitAll.length === 0,
+      `★ 看全之后整棵树都在视口内：${fitAllSnap.nodeBoxes.length} 个节点全部落在画布矩形里（容差 2px）`,
+      `看全之后还有 ${outsideAtFitAll.length} 个节点在画布外：` +
+        outsideAtFitAll
+          .map(
+            ({ id, b }) =>
+              `${id}(左${Math.round(b.left - fitAllSnap.stage.left)} 上${Math.round(b.top - fitAllSnap.stage.top)} ` +
+              `右${Math.round(b.right - (fitAllSnap.stage.left + fitAllSnap.stage.w))} ` +
+              `下${Math.round(b.bottom - (fitAllSnap.stage.top + fitAllSnap.stage.h))})`,
+          )
+          .join(" "),
+    );
+    /*
+      节点数要对得上，否则上面那条会在"画布上什么都没有"时也变绿。
+      这条运行该有 1 根 + 6 工序 + 7 执行点 = 14 个。
+    */
+    expect_(
+      fitAllSnap.nodeIds.filter((id) => id && !id.startsWith("verify:")).length === 7 &&
+        fitAllSnap.nodeBoxes.length === 14,
+      `看全时画的是一整棵树：1 根 + 6 工序 + 7 执行点 = ${fitAllSnap.nodeBoxes.length} 个节点`,
+      `节点数不对：共 ${fitAllSnap.nodeBoxes.length} 个 —— 上面那条"全在视口里"就不算数了`,
+    );
+    /*
+      ★ 忽略下限的硬证据 ★
+      默认路径停在下限 0.45 上；看全要能装下整棵树就必须缩到它下面。
+      只断言"比之前小"是不够的 —— 0.449 也比之前小，而那样根本装不下。
+    */
+    expect_(
+      fitAllScale < 0.4,
+      `看全的倍率 ${fitAllSnap.zoomLabel} 明显小于下限 ${fitFloor("page")} —— 确实忽略了下限`,
+      `看全只缩到 ${fitAllSnap.zoomLabel}，没有低过 ${fitFloor("page")} —— 下限没被忽略，装不下是必然的`,
+    );
+
+    /* ---- 20.5 回到默认：「回到原点」仍然守着下限 ---- */
+    await cdp.send("Runtime.evaluate", {
+      expression: `document.querySelector('[data-canvas-zoom]').click()`,
+    });
+    await sleep(500);
+    const backHome = await readViewport();
+    expect_(
+      scaleOf(backHome) >= 0.45 - 1e-6,
+      `「回到原点」回到 ${backHome.zoomLabel}（≥ 下限 0.45 = fitFloor("page")）—— 默认路径仍然守着下限`,
+      `回到原点后倍率是 ${backHome.zoomLabel}，低于下限 0.45 —— 下限被「看全」带坏了`,
+    );
+
+    /* ---- 20.6 不跟用户抢镜头 ---- */
+    /*
+      先点一次「看全」—— 这就是"用户自己动过视口"。
+      然后**再推进一次**（删掉并行构建那条 phase，当前工序走到⑥验收）。
+      这一次视口必须一个像素都不动：镜头是用户的。
+
+      ⚠️ 这一条和 20.3 一样，必须先用清单证明"推进真的发生了"。
+         否则"视口没动"的成因可能只是"页面根本没重新渲染"——
+         那就是一条永远绿的假断言。
+         这里的重新渲染由**服务端动作**触发：删掉那条陪跑运行
+         （deleteRunAction → revalidatePath + redirect），那是一次客户端导航。
+    */
+    await cdp.send("Runtime.evaluate", {
+      expression: `document.querySelector('[data-canvas-fit-all]').click()`,
+    });
+    await sleep(600);
+    const beforeSteal = await readViewport();
+    const userMovedScale = scaleOf(beforeSteal);
+    info(
+      `用户动过视口（点了看全）：倍率 ${beforeSteal.zoomLabel}，平移 ${Math.round(beforeSteal.panX)},${Math.round(beforeSteal.panY)}`,
+    );
+
+    dropRunEvent(advRun, 2);
+    await cdp.send("Runtime.evaluate", {
+      expression: `document.querySelector('[data-run-chip="${bystander}"] button[aria-label="删除这次构建"]').click()`,
+    });
+    await sleep(4200);
+    const afterSteal = await readViewport();
+    const stealOutline = outlineStages(afterSteal);
+    info(`再推进一次之后：清单里六道工序的状态 ${stealOutline.join(",")}`);
+
+    expect_(
+      stealOutline[3] === "pending" && stealOutline[5] === "running",
+      "又推进了一次：当前工序从④并行构建走到⑥验收与交付（清单变了 → 页面确实重新渲染过）",
+      `清单没按预期变化：${stealOutline.join(",")} —— 这一条不过，下面"视口没被抢"就不算数`,
+    );
+    /*
+      ★ 镜头没被抢 ★
+      倍率和平移**一个都不许变**（比浮点相等，不是"差不多"）：
+      视口每一步都是 setViewport 写进去的确定值，
+      自动聚焦一旦发生就会写出完全不同的数 —— 不存在"变了一点点"。
+    */
+    expect_(
+      afterSteal.gridStep === beforeSteal.gridStep &&
+        afterSteal.panX === beforeSteal.panX &&
+        afterSteal.panY === beforeSteal.panY,
+      `★ 用户动过视口之后不再自动聚焦：推进到⑥时视口纹丝不动` +
+        `（倍率 ${afterSteal.zoomLabel}、平移 ${Math.round(afterSteal.panX)},${Math.round(afterSteal.panY)}）`,
+      `视口被抢了：${beforeSteal.zoomLabel}(${Math.round(beforeSteal.panX)},${Math.round(beforeSteal.panY)}) → ` +
+        `${afterSteal.zoomLabel}(${Math.round(afterSteal.panX)},${Math.round(afterSteal.panY)})` +
+        ` —— 用户自己动过视口之后就不该再自动聚焦`,
+    );
+    /*
+      顺带把它和"看全"的倍率对上：用户动过之后停在看全那个倍率上，
+      说明这一次推进没有偷偷把画面拉回 0.45 或拉到 1.x。
+    */
+    expect_(
+      Math.abs(userMovedScale - fitAllScale) < 1e-9 && userMovedScale < 0.4,
+      `推进前后都停在「看全」的倍率上（${beforeSteal.zoomLabel}）`,
+      `倍率不是看全那个值：推进前 ${beforeSteal.zoomLabel}，看全时是 ${fitAllSnap.zoomLabel}`,
+    );
+
+    cleanupVerifyRun(advRun);
+    cleanupVerifyRun(bystander);
 
     cdp.close();
     ok("画布交互、详情、面板、顶栏一致性、缩放让位、退役页面、子树与双击聚焦全部通过");

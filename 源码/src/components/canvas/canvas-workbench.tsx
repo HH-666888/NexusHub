@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CanvasStage } from "./canvas-stage";
 import { PipelineCanvas, type CanvasRootCard } from "./pipeline-canvas";
 import { StageDetail } from "./stage-detail";
@@ -12,6 +12,13 @@ import type { RunProgressInput } from "@/core/pipeline/progress";
 import { PANEL_GEOMETRY, WIDE_GEOMETRY, pipelineBounds } from "@/core/canvas/pipeline-layout";
 import { fitFloor } from "@/core/canvas/viewport";
 import { FOREST_GEOMETRY, TREE_LEVELS, layoutForest } from "@/core/canvas/forest-layout";
+import {
+  freshFocusFollow,
+  markUserMoved,
+  planFocusFollow,
+  type FocusFollowMemory,
+} from "@/core/canvas/focus-follow";
+import { boundsFor } from "@/core/planning/viewport-policy";
 import { STAGES } from "@/core/pipeline/stages";
 import type { StageId } from "@/core/pipeline/stages";
 
@@ -63,6 +70,37 @@ export interface CanvasWorkbenchProps {
    * 整棵三层树才是该被装进视口的东西（见下面 bounds 那段）。
    */
   rootCard?: CanvasRootCard;
+  /**
+   * 这一步**正在执行**的工序。它变了，视口就跟着聚焦过去。
+   * 不传（或传 null）= 不自动聚焦。
+   *
+   * ── 为什么是"工序"而不是"节点 id" ──
+   *   聚焦的目标是**那道工序整棵子树**（工序卡 + 它下面长出来的执行点）。
+   *   子树的区域只有布局知道（LaidNode.subtree），所以这里给一个业务 id，
+   *   由这一层去布局里查 —— 和双击聚焦走的是同一条路、同一块区域。
+   *
+   * ── 为什么"变了才聚焦"，而不是"每次渲染都对准它" ──
+   *   每一次重渲染（服务端刷新、子树长大、窗口尺寸变化）都对准的话，
+   *   用户永远没法把视口挪到别处 —— 手一松就被拽回去。
+   *   这条规矩的判据、以及"用户动过之后就不跟了"那条，
+   *   都在 core/canvas/focus-follow.ts 里（纯函数，有单测钉着）。
+   */
+  focusStageId?: StageId | null;
+  /**
+   * 这一次运行的**身份**。变了 = 换了另一次运行 → 自动跟随的记忆重置。
+   *
+   * ── 为什么不直接看 run 这个 prop ──
+   *   调用方传的是一个**字面量对象**（`{ stage, status }`），每次渲染都是新的
+   *   引用。拿它当 effect 的依赖，效果就是"每次重渲染都重置一次记忆"——
+   *   而重置意味着"还没开始过"，于是自动聚焦永远等不到第二次变化，
+   *   功能静默失效（画面不报错，只是永远不动）。
+   *   所以身份要由调用方显式给：run 的 id 才是身份，stage/status 是它的内容。
+   *
+   * ── 重置的语义 ──
+   *   换了运行 = 从头开始：用户之前在新运行上没动过视口，
+   *   而且**第一个拿到的工序不算推进**（和挂载同一条规矩，见 focus-follow.ts）。
+   */
+  runKey?: string;
 }
 
 export function CanvasWorkbench({
@@ -72,6 +110,8 @@ export function CanvasWorkbench({
   variant = "page",
   childrenByStage,
   rootCard,
+  focusStageId = null,
+  runKey,
 }: CanvasWorkbenchProps) {
   const [activeId, setActiveId] = useState<StageId | null>(null);
   const geometry = variant === "panel" ? PANEL_GEOMETRY : WIDE_GEOMETRY;
@@ -144,7 +184,7 @@ export function CanvasWorkbench({
       两者都没有（面板那一档，或者这次运行还没跑到验收）
         → 用旧算法。它逐像素等于改之前的布局（有单测钉着）
   */
-  const bounds = useMemo(() => {
+  const tree = useMemo(() => {
     /*
       ⚠️ 有根节点时**必须先算这一条**，不能落到下面那两条上去。
 
@@ -166,20 +206,37 @@ export function CanvasWorkbench({
           kids ?? {},
         ),
         { ...FOREST_GEOMETRY, levels: TREE_LEVELS },
-      ).bounds;
+      );
     }
 
-    if (!kids || Object.keys(kids).length === 0) {
-      return pipelineBounds(STAGES.length, geometry);
-    }
+    /* 面板那一档，或者这次运行还没跑到验收 → 没有三层树可算，见下面 bounds 那条 */
+    if (!kids || Object.keys(kids).length === 0) return null;
+
     return layoutForest(
       toLayoutNodes(
         STAGES.map((s) => s.id),
         kids,
       ),
       FOREST_GEOMETRY,
-    ).bounds;
-  }, [kids, geometry, rootCard]);
+    );
+  }, [kids, rootCard]);
+
+  /**
+   * 整棵树的世界包围盒。三个用途，都是"整棵树"这一个意思：
+   *   fitBounds   打开时对准它（默认视图）
+   *   homeBounds  「回到原点」回到它
+   *   fitAllBounds「看全」装下它（**忽略下限**，见 CanvasStage 的说明）
+   *
+   * ── 为什么在这里才落到 pipelineBounds ──
+   *   它是"没有根、也没有子树"时的旧算法：那时这棵树就是六个根排成一行，
+   *   pipelineBounds 逐像素等于改之前的布局（有单测钉着）。
+   *   注意它用的是**当前档位的几何**（面板三列两行 / 整页一行六个）——
+   *   面板上换成森林布局算会把它排成一行六个，那是另一个视图，不是这一档。
+   */
+  const bounds = useMemo(
+    () => tree?.bounds ?? pipelineBounds(STAGES.length, geometry),
+    [tree, geometry],
+  );
 
   const pick = useCallback(
     (id: StageId) => setActiveId((cur) => (cur === id ? null : id)),
@@ -207,17 +264,94 @@ export function CanvasWorkbench({
     nonce: number;
   } | null>(null);
 
-  const focusOn = useCallback((b: { x: number; y: number; w: number; h: number }) => {
+  /*
+    ---------- 自动跟随：推进到下一步时跟过去 ----------
+    规矩本身（什么时候跟、什么时候不跟）全在 core/canvas/focus-follow.ts，
+    这里只做三件事：喂进去、接住答案、把答案变成一次 focusRequest。
+  */
+  const followRef = useRef<FocusFollowMemory>(freshFocusFollow());
+
+  /** 用户自己动了视口 —— 由 CanvasStage 上报（拖、滚、按钮、看全） */
+  const onUserMoved = useCallback(() => {
+    followRef.current = markUserMoved(followRef.current);
+  }, []);
+
+  /**
+   * 发一次聚焦请求（值 + nonce）。**只发请求，不判断是谁要的** ——
+   * 判断留给下面两个调用方，因为"谁要的"决定了要不要关掉自动跟随。
+   */
+  const requestFocus = useCallback((b: { x: number; y: number; w: number; h: number }) => {
     setFocusRequest((cur) => ({ bounds: b, nonce: (cur?.nonce ?? 0) + 1 }));
   }, []);
+
+  const focusOn = useCallback(
+    (b: { x: number; y: number; w: number; h: number }) => {
+      requestFocus(b);
+      /*
+        双击聚焦**也是用户动过视口**（他挑了一个要看的视角）。
+        不记这一笔的话，他刚双击钻进某道工序，下一步一推进就被拽走 ——
+        而"拽走"在这里格外难解释：进去容易出来难的视角切换没人敢用。
+
+        ⚠️ 这一笔只能记在"用户双击"这条路上。
+          自动跟随也走 requestFocus，但它**不是**用户动的手 ——
+          记在这里的话，第一次自动聚焦就会把自己关掉（跟一次就再也不跟了），
+          而症状是"功能只生效一次"，看起来像别的问题。
+      */
+      followRef.current = markUserMoved(followRef.current);
+    },
+    [requestFocus],
+  );
+
+  /*
+    换了运行 = 从头开始。
+    ⚠️ 依赖是 runKey（调用方给的运行 id），**不是 run 那个对象** ——
+       run 是每次渲染都新建的字面量，拿它当依赖会把记忆每次重渲染都清一遍，
+       于是"从 undefined 走到第一个值"永远成立、自动聚焦永远不触发。详见 runKey 的说明。
+  */
+  useEffect(() => {
+    followRef.current = freshFocusFollow();
+  }, [runKey]);
+
+  useEffect(() => {
+    const step = planFocusFollow(followRef.current, focusStageId);
+    followRef.current = step.next;
+    if (!step.focus) return;
+
+    /*
+      聚焦的区域是**布局里的 subtree**（含自己整棵子树），和双击聚焦同一块 ——
+      两处要是各算各的，同一次推进和一次双击会落在两个不同的取景上。
+
+      查不到就什么都不做（换运行的一瞬间、或者面板那一档没有森林）：
+      这时候"该聚焦到哪儿"没有事实依据，宁可不动，也不猜一个位置。
+    */
+    const target = tree?.byId.get(step.focus);
+    if (!target) return;
+
+    /*
+      走一下唯一的策略函数再设置视口。
+      focus 模式下它是恒等的（返回 focusOn 本身）—— 这一行不是为了算出新值，
+      而是让「自动聚焦属于 focus 模式」这件事挂在那个**唯一**的地方：
+      将来加 batch 模式时，改的是 boundsFor 一个函数，
+      而这里的自动聚焦会跟着它一起变成"退到看全整棵树"。
+    */
+    requestFocus(boundsFor("focus", target.subtree, bounds));
+  }, [focusStageId, tree, bounds, requestFocus]);
 
   return (
     <div className="relative h-full w-full">
       <CanvasStage
         fitBounds={bounds}
         homeBounds={bounds}
+        /*
+          「看全」装下的是**整棵树**：有根时含根，没根时就是那片森林。
+          它和 fitBounds 是同一个值 —— 区别不在区域，在**下限**：
+          默认路径传 minFitScale（宁可切掉边角也要读得清），
+          看全把它传成 0（用户明确要看全局）。取舍写在 canvas-stage 的 fitAll 上。
+        */
+        fitAllBounds={bounds}
         minFitScale={minFitScale}
         focusRequest={focusRequest}
+        onUserMoved={onUserMoved}
       >
         <PipelineCanvas
           nodes={graph.nodes}

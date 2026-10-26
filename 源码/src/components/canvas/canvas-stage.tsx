@@ -98,6 +98,30 @@ export interface CanvasStageProps {
    *   这和 homeBounds 那种"去的地方"不一样：那是状态，这是**事件**。
    */
   focusRequest?: { bounds: { x: number; y: number; w: number; h: number }; nonce: number } | null;
+  /**
+   * 「看全」按钮要装下的那块世界区域 —— **整棵树**。
+   *
+   * ── 它和 fitBounds / homeBounds 的区别在哪 ──
+   *   那两块区域默认走 minFitScale（0.45），因为它们要负责"第一眼"：
+   *   宁可让用户平移，也不把字缩到读不出来（见 fitViewport 的 minScale 那段）。
+   *   而「看全」是**用户明确说要看全局**，那时"读不清字"是他自己选的代价，
+   *   不是系统替他做的取舍。所以点它时传 0，把选择权交回去。
+   *
+   * ⚠️ 不传就**不显示这个按钮**。
+   *    面板（/studio 的任务图）那种用法没有这块区域，
+   *    硬塞一个"看全"进去等于给它加了一个它说不出看的是什么全的按钮。
+   */
+  fitAllBounds?: { x: number; y: number; w: number; h: number };
+  /**
+   * 用户**自己**动过视口了（拖、滚、点缩放/回到原点/看全）。
+   *
+   * ── 为什么要有这个出口 ──
+   *   画布是视口的唯一主人，只有它知道"这一次变化是谁引起的"：
+   *   自动聚焦走的是 focusRequest，用户动手走的是这里的回调。
+   *   父组件靠它决定"还要不要继续自动聚焦"（见 focus-follow.ts）——
+   *   画布自己不判断，它只管如实上报。
+   */
+  onUserMoved?: () => void;
 }
 
 /**
@@ -194,6 +218,8 @@ export function CanvasStage({
   homeBounds,
   minFitScale = 0,
   focusRequest = null,
+  fitAllBounds,
+  onUserMoved,
 }: CanvasStageProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   /*
@@ -257,11 +283,13 @@ export function CanvasStage({
       setViewport((vp) =>
         zoomAt(vp, e.clientX - rect.left, e.clientY - rect.top, factor),
       );
+      /* 滚轮 = 用户自己在缩放。上报一次，父组件据此不再自动聚焦 */
+      onUserMoved?.();
     };
 
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [onUserMoved]);
 
   /* ---------- 拖拽平移 ---------- */
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -293,19 +321,34 @@ export function CanvasStage({
     draggingRef.current = { x: e.clientX, y: e.clientY };
   }, []);
 
-  const endDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    draggingRef.current = null;
-    e.currentTarget.style.cursor = "grab";
-  }, []);
+  const endDrag = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      /*
+        真的拖过才算"用户动过视口"。
+        指针抬起时 draggingRef 还是 null 的话，这一次只是一次普通的点击
+        （点在卡片、按钮或空白处），画布没动 —— 不能算。
+        把点击也算进去的话，用户随手点一下界面就永久关掉了自动跟随。
+      */
+      if (draggingRef.current) onUserMoved?.();
+      draggingRef.current = null;
+      e.currentTarget.style.cursor = "grab";
+    },
+    [onUserMoved],
+  );
 
   /* ---------- 按钮 ---------- */
-  const zoomButton = useCallback((factor: number) => {
-    const el = shellRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    // 按钮缩放锚在视口中心 —— 光标不在画布上时，中心是唯一不别扭的锚点
-    setViewport((vp) => zoomAt(vp, rect.width / 2, rect.height / 2, factor));
-  }, []);
+  const zoomButton = useCallback(
+    (factor: number) => {
+      const el = shellRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      // 按钮缩放锚在视口中心 —— 光标不在画布上时，中心是唯一不别扭的锚点
+      setViewport((vp) => zoomAt(vp, rect.width / 2, rect.height / 2, factor));
+      // 用户自己按的缩放，和滚轮一样算"他接手了视口"
+      onUserMoved?.();
+    },
+    [onUserMoved],
+  );
 
   const goHome = useCallback(() => {
     const el = shellRef.current;
@@ -317,7 +360,33 @@ export function CanvasStage({
         ? fitViewport(homeBounds, rect.width, rect.height, 56, minFitScale)
         : homeViewport(rect.width, rect.height),
     );
-  }, [homeBounds, minFitScale]);
+    onUserMoved?.();
+  }, [homeBounds, minFitScale, onUserMoved]);
+
+  /*
+    ---------- 看全 ----------
+    把**整棵树**装进视口，**忽略 minFitScale**（传 0）。
+
+    ── 为什么这里必须传 0 ──
+      默认那条下限（整页 0.45）是替用户做的取舍：宁可平移，也别把字缩没了。
+      它管的是"第一眼"—— 打开画布时用户还没表达过任何意图。
+      而按这个按钮**就是一个明确的意图**：「我要看全局」。
+      这时再拿 0.45 卡住，结果就是"点了看全，还是看不全"——
+      按钮的名字和它的行为对不上，比不做这个按钮更糟。
+
+    ── 代价，以及为什么提示语要说实话 ──
+      1832×1064 的树装进 770×330 的画布要缩到 20% 左右，
+      工序名 15px 只剩 3px —— 那是"看不清"，不是"小一号"。
+      所以我们不假装它是正常视图：按钮的 title 直接写「会很小，读不清字」。
+      用户知道代价再点，和点完发现被骗，是两件事。
+  */
+  const fitAll = useCallback(() => {
+    const el = shellRef.current;
+    if (!el || !fitAllBounds) return;
+    const rect = el.getBoundingClientRect();
+    setViewport(fitViewport(fitAllBounds, rect.width, rect.height, 56, 0));
+    onUserMoved?.();
+  }, [fitAllBounds, onUserMoved]);
 
   const step = gridStepScreen(viewport.scale);
 
@@ -436,6 +505,33 @@ export function CanvasStage({
         >
           {formatScale(viewport.scale)}
         </button>
+
+        {/*
+          ---------- 看全 ----------
+          挨着倍率按钮放。它和「回到原点」是**一对相反的出口**：
+            回到原点 —— 回到那个"看得清但看不全"的默认视图
+            看全     —— 装下整棵树，代价是读不清字
+
+          ── 提示语为什么必须说实话 ──
+            它的行为就是"缩到很小"，而缩小之后工序名会掉到 3 像素。
+            写一句「查看全部」听着体面，点下去用户会以为界面坏了。
+            把代价写在 title 里 —— **知道了再点**和**被骗着点**是两件事。
+
+          ── 为什么是 title 而不是 aria-label ──
+            按钮上的字「看全」本身就是它的可访问名字，够了；
+            title 是给"悬停想看仔细的人"的补充说明，不该混进名字里。
+        */}
+        {fitAllBounds && (
+          <button
+            type="button"
+            onClick={fitAll}
+            data-canvas-fit-all
+            title="装下整棵树（会很小，读不清字）"
+            className="rounded-full px-2 py-1 text-[11.5px] text-slate-400 transition-colors duration-150 hover:bg-slate-700/50 hover:text-slate-100"
+          >
+            看全
+          </button>
+        )}
 
         <button
           type="button"

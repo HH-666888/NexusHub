@@ -5,6 +5,7 @@ import {
   STAGES,
   STAGE_MAP,
   STAGE_ORDER,
+  isStageId,
   type FaultClass,
   type StageId,
 } from "@/core/pipeline/stages";
@@ -266,5 +267,61 @@ describe("失败归因四分类", () => {
 
   it("规格错的处置动作明确要求转人工 —— 正确的失败是停下来问用户，不是烧钱重试", () => {
     expect(FAULT_ACTION.spec).toContain("人工");
+  });
+});
+
+/* ============================================================
+   isStageId：把 string 收窄成 StageId 的那道关卡
+   ============================================================
+   它存在的原因是一个**具体**的接缝：任务点的 id 是 string
+   （core/planning/task-point.ts），而画布要的是 StageId 这个联合类型。
+   中间只有两种走法：`as StageId`（一句谎话，编译器不再管）
+   或者真的判一次（这里）。/canvas 上"当前工序 → 自动聚焦"那条路走的是后者。
+
+   为什么值得钉住：判错的后果不是崩溃，而是**聚焦到一个不存在的工序** ——
+   视口只是没动。那和"这一步还没推进"在画面上完全一样。
+   ============================================================ */
+describe("isStageId", () => {
+  it("六道工序的 id 全部认", () => {
+    for (const stage of STAGES) {
+      expect(isStageId(stage.id)).toBe(true);
+    }
+  });
+
+  it("别的字符串一个都不认", () => {
+    for (const junk of [
+      "",
+      "SPEC",
+      "spec ",
+      " spec",
+      "builds",
+      "agent-root",
+      "verify:完整 HTML 结构",
+      "0",
+    ]) {
+      expect(isStageId(junk)).toBe(false);
+    }
+  });
+
+  it("原型链上的键不算工序 —— 用 in 写会在这里红", () => {
+    /*
+      `"constructor" in STAGE_MAP` 是 true（它从 Object.prototype 上来的），
+      于是脏数据会被当成一道真的工序。from-run.ts 判 phase 时踩过同一个坑，
+      那边的注释写着这件事；这里用 hasOwnProperty 是同一个理由。
+    */
+    for (const proto of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+      expect(isStageId(proto)).toBe(false);
+    }
+  });
+
+  it("认出来的 id 确实能查到工序定义 —— 收窄之后可以放心用", () => {
+    // 这条是"收窄"这件事的实质：过了这关就一定有对应的工序，
+    // 于是下游（聚焦、STAGE_MAP[id].name）不会拿到 undefined
+    for (const stage of STAGES) {
+      if (isStageId(stage.id)) {
+        expect(STAGE_MAP[stage.id]).toBeDefined();
+        expect(STAGE_MAP[stage.id].name.length).toBeGreaterThan(0);
+      }
+    }
   });
 });
