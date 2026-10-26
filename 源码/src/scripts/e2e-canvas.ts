@@ -1661,8 +1661,447 @@ async function main() {
     cleanupVerifyRun(planRun);
     info("夹具已清理");
 
+    /* ---------- 18. 窄屏降级：两侧收起成覆盖层 ---------- */
+    /*
+      这一步补的是一个**端到端覆盖缺口**：窄屏（<1280）那条路径此前
+      只在一次临时探针里验过（1100×800，15/15 通过），没有进常驻回归 ——
+      因为 e2e-canvas 是以固定 1440 窗口启动 Edge 的（--window-size=1440,900）。
+
+      ── 为什么"验过一次"不算数 ──
+        一次性验证不是回归：探针跑完就没了，而这条路径连着三件
+        会坏、坏了又不报错的事 ——
+          1. 断点判反（本该 <1280 收起、却写成 ≥1280 收起）：
+             宽屏上画布白白少掉 624px；
+          2. 面板没有真的让开（display:none 退化成 opacity:0 之类）：
+             画布看着"展开了"，其实仍然被挤掉一半；
+          3. 覆盖层进得去出不来：关闭按钮没接上，用户只能刷新页面。
+        三条的症状都是"界面不对劲"，不是异常 —— 没有常驻断言，
+        就只能靠人偶然撞见。
+
+      ── 怎么补：CDP 视口覆盖，不动浏览器生命周期 ──
+        改窗口大小的做法，每个尺寸都要重启一次浏览器，还得把
+        会话、Cookie、导航重来一遍 —— "改视口"这件事就渗进脚本结构里，
+        现有步骤全得跟着动。
+        Emulation.setDeviceMetricsOverride 是**同一会话内**临时改视口：
+        浏览器不重启、Cookie 不重来，所以这一步能干干净净地追加在最后，
+        上面十七条步骤一条都不用改（也不该改 —— 它们验的是别的事）。
+
+      ── 为什么最后一定要 clearDeviceMetricsOverride ──
+        覆盖是会话级的，留着的话"当下 1100 宽"会跟着后面的流程走。
+        清掉之后再断言一次视口**精确回到覆盖之前的那个值**：既留个干净状态，
+        也顺带证明中间那些变化**确实是这次覆盖造成的**（不是窗口真变了）。
+    */
+    heading("第十八步 · 窄屏降级（<1280：两侧收起成覆盖层）");
+
+    /** 窄屏下量版面：每个数都从 getBoundingClientRect / getComputedStyle / matchMedia 上读 */
+    const READ_NARROW = `(() => {
+      const box = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        return {
+          left: Math.round(r.left), top: Math.round(r.top),
+          right: Math.round(r.right), w: Math.round(r.width), h: Math.round(r.height),
+          position: cs.position, display: cs.display,
+        };
+      };
+      const one = (sel) => box(document.querySelector(sel));
+      const toggle = (side) => {
+        const el = document.querySelector('[data-panel-toggle="' + side + '"]');
+        return { exists: !!el, text: el ? el.textContent.trim() : '', box: box(el) };
+      };
+      const close = (side) => {
+        const el = document.querySelector('[data-panel-close="' + side + '"]');
+        return { exists: !!el, box: box(el) };
+      };
+      return JSON.stringify({
+        innerW: window.innerWidth,
+        innerH: window.innerHeight,
+        wideMedia: window.matchMedia('(min-width: 1280px)').matches,
+        outline: one('[data-planning-outline]'),
+        content: one('[data-step-content]'),
+        dockLeft: one('[data-panel-dock="left"]'),
+        dockRight: one('[data-panel-dock="right"]'),
+        shell: one('[data-canvas-shell]'),
+        stage: one('[data-canvas-stage]'),
+        toggleLeft: toggle('left'),
+        toggleRight: toggle('right'),
+        closeLeft: close('left'),
+        closeRight: close('right'),
+        docScrollW: document.documentElement.scrollWidth,
+      });
+    })()`;
+
+    interface NarrowBox {
+      left: number;
+      top: number;
+      right: number;
+      w: number;
+      h: number;
+      position: string;
+      display: string;
+    }
+    interface NarrowSide {
+      exists: boolean;
+      text?: string;
+      box: NarrowBox | null;
+    }
+    interface NarrowState {
+      innerW: number;
+      innerH: number;
+      wideMedia: boolean;
+      outline: NarrowBox | null;
+      content: NarrowBox | null;
+      dockLeft: NarrowBox | null;
+      dockRight: NarrowBox | null;
+      shell: NarrowBox | null;
+      stage: NarrowBox | null;
+      toggleLeft: NarrowSide;
+      toggleRight: NarrowSide;
+      closeLeft: NarrowSide;
+      closeRight: NarrowSide;
+      docScrollW: number;
+    }
+
+    const readNarrow = async (): Promise<NarrowState> => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: READ_NARROW,
+        returnByValue: true,
+      });
+      return JSON.parse(r.result!.value!) as NarrowState;
+    };
+
+    const readInnerW = async (): Promise<number> => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: "window.innerWidth",
+        returnByValue: true,
+      });
+      return Number(r.result!.value);
+    };
+
+    /**
+     * 真点一下某个元素的中心。
+     * 和上面各步一样走 Input.dispatchMouseEvent，不用 el.click() ——
+     * el.click() 绕过命中测试，一个被覆盖层压住的按钮照样"点得动"，
+     * 而这里要验的恰恰是"用户真能点到它"。
+     *
+     * ⚠️ 元素找不到时**不抛异常**，返回 ok:false 让下面那几条断言去红。
+     *    抛异常会一路冒到 main().catch，这一步剩下的检查就全不跑了 ——
+     *    而"按钮没了/被断点藏了"正是最需要看到完整红名单的时候：
+     *    只看一条错误信息，分不清是左边坏了还是右边也坏了。
+     */
+    const clickCenter = async (
+      selector: string,
+    ): Promise<{ ok: boolean; x: number; y: number; w: number; h: number }> => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: `(() => {
+          const el = document.querySelector(${JSON.stringify(selector)});
+          if (!el) return JSON.stringify({ missing: true });
+          const b = el.getBoundingClientRect();
+          return JSON.stringify({
+            x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2),
+            w: Math.round(b.width), h: Math.round(b.height),
+          });
+        })()`,
+        returnByValue: true,
+      });
+      const at = JSON.parse(r.result!.value!) as {
+        missing?: true;
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+      };
+      if (at.missing) return { ok: false, x: 0, y: 0, w: 0, h: 0 };
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: at.x,
+        y: at.y,
+        button: "left",
+        clickCount: 1,
+      });
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: at.x,
+        y: at.y,
+        button: "left",
+        clickCount: 1,
+      });
+      return { ok: true, x: at.x, y: at.y, w: at.w, h: at.h };
+    };
+
+    /* ---- 0. 覆盖之前先确认还停在宽屏那个视口 ---- */
+    /*
+      ⚠️ 对照**不能写死 1440**：e2e-canvas 是 `--window-size=1440,900` 起的，
+         但窗口外框尺寸不等于视口尺寸 —— 实测 innerWidth 是 1410
+         （第十七步那行 info 一直就是这么打的：窗口 1410px）。
+         写死 1440 的话这条断言永远红，而它红的原因和窄屏降级毫无关系。
+
+      所以对照取**第十七步在同一浏览器里量到的那个值**：
+      它顺带证明了"从第十七步到这里，视口没有被别的东西动过" ——
+      这正是下面"清掉覆盖后回到原样"能成立的前提。
+    */
+    const wideBefore = await readInnerW();
+    info(
+      `覆盖之前视口 ${wideBefore}px（第十七步量到的是 ${quadPlan.innerW}px；` +
+        `--window-size=1440,900 给的是窗口外框，视口比它窄 ${1440 - quadPlan.innerW}px）`,
+    );
+    expect_(
+      wideBefore === quadPlan.innerW && wideBefore >= 1280,
+      `覆盖之前仍停在宽屏视口 ${wideBefore}px（和第十七步量到的是同一个，≥1280）`,
+      `覆盖之前视口是 ${wideBefore}px，第十七步量到的是 ${quadPlan.innerW}px —— 中间有东西动过视口，下面的对照就不成立了`,
+    );
+
+    /* ---- 1. 同一会话内把视口改成 1100×800 ---- */
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: 1100,
+      height: 800,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    info("Emulation.setDeviceMetricsOverride：1100×800（浏览器没重启，会话和 Cookie 没重来）");
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas` });
+    await sleep(3500);
+
+    const narrow = await readNarrow();
+    info(
+      `视口 ${narrow.innerW}×${narrow.innerH} · 清单 ${narrow.outline?.w}px · 画布 ${narrow.stage?.w}px · ` +
+        `内容 ${narrow.content?.w}px · 两个窄屏按钮 ${narrow.toggleLeft.box?.w}/${narrow.toggleRight.box?.w}px`,
+    );
+
+    expect_(
+      narrow.innerW === 1100 && !narrow.wideMedia,
+      `视口覆盖生效：innerWidth ${narrow.innerW}，matchMedia('(min-width:1280px)') = false`,
+      `视口覆盖没生效：innerWidth ${narrow.innerW}，matchMedia 宽屏匹配 = ${narrow.wideMedia}`,
+    );
+
+    /* ---- 2. 两个窄屏按钮可见 ---- */
+    expect_(
+      narrow.toggleLeft.exists &&
+        (narrow.toggleLeft.box?.w ?? 0) > 0 &&
+        narrow.toggleLeft.text === "清单",
+      `窄屏出现「清单」按钮（${narrow.toggleLeft.box?.w}×${narrow.toggleLeft.box?.h}，文字「${narrow.toggleLeft.text}」）`,
+      `「清单」按钮不可见：存在=${narrow.toggleLeft.exists} 宽=${narrow.toggleLeft.box?.w} 文字=${narrow.toggleLeft.text}`,
+    );
+    expect_(
+      narrow.toggleRight.exists &&
+        (narrow.toggleRight.box?.w ?? 0) > 0 &&
+        narrow.toggleRight.text === "内容",
+      `窄屏出现「内容」按钮（${narrow.toggleRight.box?.w}×${narrow.toggleRight.box?.h}，文字「${narrow.toggleRight.text}」）`,
+      `「内容」按钮不可见：存在=${narrow.toggleRight.exists} 宽=${narrow.toggleRight.box?.w} 文字=${narrow.toggleRight.text}`,
+    );
+
+    /* ---- 3. 两侧默认收起：宽度必须是**真 0** ---- */
+    /*
+      "收起"最容易被写成"看不见"（opacity:0 / 移出屏幕 / visibility:hidden）——
+      那三种都还在占版面，画布仍然只有 1100-624=476px。
+      所以这里量的是 getBoundingClientRect().width，必须是 0。
+    */
+    expect_(
+      narrow.outline !== null && narrow.outline.w === 0,
+      "窄屏默认收起：左侧清单宽度为 0（不占版面）",
+      `左侧清单宽 ${narrow.outline?.w}px —— 窄屏下它没有让开（收起写成了"看不见"？）`,
+    );
+    expect_(
+      narrow.content !== null && narrow.content.w === 0,
+      "窄屏默认收起：右侧内容宽度为 0（不占版面）",
+      `右侧内容宽 ${narrow.content?.w}px —— 窄屏下它没有让开（收起写成了"看不见"？）`,
+    );
+
+    /* ---- 4. 画布铺满整个视口宽 ---- */
+    expect_(
+      narrow.stage !== null && Math.abs(narrow.stage.w - narrow.innerW) <= 2,
+      `画布铺满窄屏全宽（${narrow.stage?.w} ≈ 视口 ${narrow.innerW}）—— 两侧是真让开，不是浮层压着`,
+      `画布宽 ${narrow.stage?.w}px，视口 ${narrow.innerW}px（差 ${narrow.innerW - (narrow.stage?.w ?? 0)}px）—— 两侧没有让开`,
+    );
+
+    /* ---- 5. 没有横向滚动条 ---- */
+    expect_(
+      narrow.docScrollW <= narrow.innerW + 1,
+      `窄屏没有横向滚动条（内容宽 ${narrow.docScrollW} ≤ 视口 ${narrow.innerW}）`,
+      `窄屏出现横向滚动条：内容宽 ${narrow.docScrollW} > 视口 ${narrow.innerW}`,
+    );
+
+    /* ---- 6. 点「清单」→ 左侧覆盖层 ---- */
+    const leftHit = await clickCenter('[data-panel-toggle="left"]');
+    info(
+      leftHit.ok
+        ? `点了「清单」按钮（页面坐标 ${leftHit.x}, ${leftHit.y}）`
+        : "页面上没有「清单」按钮可点 —— 下面这一组会红",
+    );
+    await sleep(400);
+
+    const leftOpen = await readNarrow();
+    info(
+      `展开后：dock position ${leftOpen.dockLeft?.position} display ${leftOpen.dockLeft?.display} ` +
+        `left ${leftOpen.dockLeft?.left} 宽 ${leftOpen.dockLeft?.w} · 面板宽 ${leftOpen.outline?.w}`,
+    );
+    expect_(
+      leftOpen.dockLeft !== null &&
+        leftOpen.dockLeft.position === "fixed" &&
+        Math.abs(leftOpen.dockLeft.left) <= 1 &&
+        Math.abs(leftOpen.dockLeft.w - 272) <= 8 &&
+        Math.abs((leftOpen.outline?.w ?? 0) - 272) <= 8,
+      `点「清单」展开成覆盖层：position fixed · left ${leftOpen.dockLeft?.left} · 宽 ${leftOpen.outline?.w}px（17rem = 272，只盖左一条）`,
+      `清单覆盖层不对：position=${leftOpen.dockLeft?.position} left=${leftOpen.dockLeft?.left} ` +
+        `dock 宽=${leftOpen.dockLeft?.w} 面板宽=${leftOpen.outline?.w}（期望 fixed / 0 / 272）`,
+    );
+    expect_(
+      leftOpen.closeLeft.exists && (leftOpen.closeLeft.box?.w ?? 0) > 0,
+      `覆盖层里有关闭按钮（[data-panel-close="left"] ${leftOpen.closeLeft.box?.w}×${leftOpen.closeLeft.box?.h}）`,
+      `覆盖层里没有可点的关闭按钮：存在=${leftOpen.closeLeft.exists} 宽=${leftOpen.closeLeft.box?.w}`,
+    );
+    /*
+      覆盖层**不是抽屉**：展开面板不该把画布挤窄。
+      抽屉推挤的话画布会从 1100 掉到 828 —— 用户正在看的东西被推走一半，
+      而他展开面板往往正是为了对照着画布看。
+
+      ⚠️ 同时要求"它确实展开成了 fixed 覆盖层"：
+      不加这一句的话，"压根没展开、画布当然还是全宽"也会让这条变绿 ——
+      而那正是上面几条红掉时最容易出现的状态，就是一条假绿。
+    */
+    expect_(
+      leftOpen.dockLeft !== null &&
+        leftOpen.dockLeft.position === "fixed" &&
+        Math.abs((leftOpen.stage?.w ?? 0) - leftOpen.innerW) <= 2,
+      `展开覆盖层时画布仍是全宽 ${leftOpen.stage?.w}px（覆盖层只盖一条，不推挤画布）`,
+      `展开清单后画布变成 ${leftOpen.stage?.w}px（视口 ${leftOpen.innerW}）—— 这是抽屉推挤，不是覆盖层` +
+        `（面板 position=${leftOpen.dockLeft?.position}：根本没展开成覆盖层时这条也算红）`,
+    );
+
+    /* ---- 7. 点关闭 → 收回 ---- */
+    const leftCloseHit = await clickCenter('[data-panel-close="left"]');
+    info(
+      leftCloseHit.ok
+        ? `点了关闭（页面坐标 ${leftCloseHit.x}, ${leftCloseHit.y}）`
+        : "页面上没有关闭按钮可点 —— 下面这条会红",
+    );
+    await sleep(400);
+
+    const leftClosed = await readNarrow();
+    /*
+      ⚠️ 这条同样要求"点之前它**真的**是展开的"。
+      只看"关闭之后宽度是 0"的话，一个从来没展开过的面板也能让这条变绿。
+    */
+    expect_(
+      leftOpen.dockLeft !== null &&
+        leftOpen.dockLeft.position === "fixed" &&
+        leftClosed.outline !== null &&
+        leftClosed.outline.w === 0 &&
+        leftClosed.closeLeft.exists === false,
+      "点关闭后左侧清单收回：宽度回到 0，关闭按钮也随之消失",
+      `关闭后清单宽 ${leftClosed.outline?.w}px，关闭按钮还在=${leftClosed.closeLeft.exists}` +
+        `（点之前展开成覆盖层了吗：position=${leftOpen.dockLeft?.position}）`,
+    );
+
+    /* ---- 8. 右侧「内容」同样走一轮（22rem = 352） ---- */
+    const rightHit = await clickCenter('[data-panel-toggle="right"]');
+    info(
+      rightHit.ok
+        ? `点了「内容」按钮（页面坐标 ${rightHit.x}, ${rightHit.y}）`
+        : "页面上没有「内容」按钮可点 —— 下面这一组会红",
+    );
+    await sleep(400);
+
+    const rightOpen = await readNarrow();
+    info(
+      `展开后：dock position ${rightOpen.dockRight?.position} right ${rightOpen.dockRight?.right} ` +
+        `宽 ${rightOpen.dockRight?.w} · 面板宽 ${rightOpen.content?.w}`,
+    );
+    expect_(
+      rightOpen.dockRight !== null &&
+        rightOpen.dockRight.position === "fixed" &&
+        Math.abs(rightOpen.dockRight.right - rightOpen.innerW) <= 1 &&
+        Math.abs(rightOpen.dockRight.w - 352) <= 8 &&
+        Math.abs((rightOpen.content?.w ?? 0) - 352) <= 8,
+      `点「内容」展开成覆盖层：position fixed · right ${rightOpen.dockRight?.right} ≈ 视口 ${rightOpen.innerW} · ` +
+        `宽 ${rightOpen.content?.w}px（22rem = 352，贴右边缘）`,
+      `内容覆盖层不对：position=${rightOpen.dockRight?.position} right=${rightOpen.dockRight?.right}` +
+        `（视口 ${rightOpen.innerW}）dock 宽=${rightOpen.dockRight?.w} 面板宽=${rightOpen.content?.w}（期望 fixed / 1100 / 352）`,
+    );
+    expect_(
+      rightOpen.closeRight.exists && (rightOpen.closeRight.box?.w ?? 0) > 0,
+      `内容覆盖层里有关闭按钮（[data-panel-close="right"] ${rightOpen.closeRight.box?.w}×${rightOpen.closeRight.box?.h}）`,
+      `内容覆盖层里没有可点的关闭按钮：存在=${rightOpen.closeRight.exists} 宽=${rightOpen.closeRight.box?.w}`,
+    );
+
+    const rightCloseHit = await clickCenter('[data-panel-close="right"]');
+    info(
+      rightCloseHit.ok
+        ? `点了关闭（页面坐标 ${rightCloseHit.x}, ${rightCloseHit.y}）`
+        : "页面上没有关闭按钮可点 —— 下面这条会红",
+    );
+    await sleep(400);
+
+    const rightClosed = await readNarrow();
+    expect_(
+      rightOpen.dockRight !== null &&
+        rightOpen.dockRight.position === "fixed" &&
+        rightClosed.content !== null &&
+        rightClosed.content.w === 0,
+      "点关闭后右侧内容收回：宽度回到 0",
+      `关闭后内容面板宽 ${rightClosed.content?.w}px（点之前展开成覆盖层了吗：position=${rightOpen.dockRight?.position}）`,
+    );
+
+    /* ---- 9. 窄屏下画布仍然可用（不是"让开了但用不了"） ---- */
+    expect_(
+      narrow.shell !== null && (narrow.shell.w ?? 0) > 0 && (narrow.shell.h ?? 0) > 0,
+      `窄屏下画布容器还在且有真实尺寸（[data-canvas-shell] ${narrow.shell?.w}×${narrow.shell?.h}）`,
+      `窄屏下画布容器没了或尺寸为 0：${JSON.stringify(narrow.shell)}`,
+    );
+
+    /*
+      滚一次滚轮，看**缩放数字**有没有真的变。
+      只断言"画布还在"是不够的：容器在、但事件挂错了层的画布，
+      尺寸一切正常，滚轮却什么也不做 —— 那条只有真发一次事件才验得出来。
+    */
+    const zoomBefore = await read(cdp);
+    const wheelX = Math.round((narrow.shell?.left ?? 0) + (narrow.shell?.w ?? 0) / 2);
+    const wheelY = Math.round((narrow.shell?.top ?? 0) + (narrow.shell?.h ?? 0) / 2);
+    await cdp.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x: wheelX,
+      y: wheelY,
+      deltaX: 0,
+      deltaY: -300,
+    });
+    await sleep(400);
+    const zoomAfter = await read(cdp);
+    info(
+      `窄屏下在画布中心 (${wheelX}, ${wheelY}) 滚一次：缩放 ${zoomBefore.zoomLabel} → ${zoomAfter.zoomLabel}，` +
+        `网格 ${zoomBefore.gridStep} → ${zoomAfter.gridStep}px`,
+    );
+    expect_(
+      zoomAfter.zoomLabel !== zoomBefore.zoomLabel && zoomAfter.gridStep > zoomBefore.gridStep,
+      `窄屏下滚轮仍然缩放：${zoomBefore.zoomLabel} → ${zoomAfter.zoomLabel}`,
+      `窄屏下滚轮没反应：缩放还是 ${zoomAfter.zoomLabel}（网格 ${zoomBefore.gridStep} → ${zoomAfter.gridStep}px）`,
+    );
+
+    /* ---- 10. 收尾：清掉视口覆盖 ---- */
+    await cdp.send("Emulation.clearDeviceMetricsOverride");
+    await sleep(600);
+
+    const wideAfter = await readInnerW();
+    const restored = await readNarrow();
+    expect_(
+      wideAfter === wideBefore && wideAfter === quadPlan.innerW,
+      `清掉覆盖后视口精确回到覆盖之前的 ${wideAfter}px（= 第十七步那个宽屏视口）`,
+      `清掉覆盖后视口是 ${wideAfter}px，覆盖之前是 ${wideBefore}px（第十七步是 ${quadPlan.innerW}px）—— 没回到干净状态`,
+    );
+    expect_(
+      restored.wideMedia === true &&
+        restored.toggleLeft.exists &&
+        (restored.toggleLeft.box?.w ?? 0) === 0 &&
+        restored.outline !== null &&
+        restored.outline.w >= 264,
+      `恢复宽屏（${restored.innerW}px）后窄屏降级整体退场：matchMedia 宽屏 = true、两个按钮重新隐藏、清单回到常驻 ${restored.outline?.w}px`,
+      `恢复宽屏后版面没回来：视口 ${restored.innerW} matchMedia 宽屏=${restored.wideMedia} 按钮宽=${restored.toggleLeft.box?.w} 清单宽=${restored.outline?.w}`,
+    );
+
     cdp.close();
     ok("画布交互、详情、面板、顶栏一致性、缩放让位、退役页面、子树与双击聚焦全部通过");
+    ok("窄屏降级（<1280）：两侧收起为 0 宽、覆盖层 272/352 可开可关、画布全宽且滚轮仍能缩放 —— 全部通过");
   } finally {
     browser.kill();
     setTimeout(() => {

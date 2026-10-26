@@ -78,6 +78,13 @@ export function PanelDock({
         {open && (
           <button
             type="button"
+            /*
+              data-panel-close 是给端到端用的把手，和上面的 data-panel-dock /
+              data-panel-toggle 同一套：断言要能**直接点到那个开关**，
+              而不是靠"面板里唯一那个 xl:hidden 的按钮"这种会随样式漂移的找法。
+              只加属性，行为一个字没动。
+            */
+            data-panel-close={side}
             onClick={() => setOpen(false)}
             className="absolute top-2 right-2 z-10 rounded border border-[var(--color-border-soft)] bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[10.5px] text-[var(--ink-4)] hover:text-[var(--ink-1)] xl:hidden"
           >
