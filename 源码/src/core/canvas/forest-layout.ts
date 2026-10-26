@@ -76,6 +76,10 @@ export interface ForestGeometry {
   root: { w: number; h: number; gapX: number; perRow: number };
   /** 子树节点。所有深度共用一套 —— 见文件末尾的说明 */
   child: { w: number; h: number; gapX: number; gapY: number; perRow: number };
+  /** ★ 新增（可选）：按深度覆盖。不传 = 现有行为一模一样 */
+  levels?: Partial<
+    Record<number, { w?: number; h?: number; perRow?: number; gapX?: number; gapY?: number }>
+  >;
   /** 父节点底边到第一行子节点顶边的距离 */
   parentGapY: number;
   /** 根节点的行距画布核心格的垂直偏移 */
@@ -124,6 +128,39 @@ export const FOREST_GEOMETRY: ForestGeometry = {
   rootRowGap: 136,
 };
 
+/**
+ * 取某一层的实际几何：levels 覆盖优先，没写就退回 root/child 默认。
+ *
+ * ── 基准按**深度**选，覆盖按**字段**走 ──
+ *   depth === 0 → 基准 g.root；depth >= 1 → 基准 g.child。
+ *   然后 levels[depth] **逐字段**覆盖 —— 只写了 w 的那一层，
+ *   h / gapX / perRow 仍然是基准里的值，不会变成 undefined。
+ *
+ * gapY 是唯一一个「两档基准里不全有」的字段（g.root 上没有 gapY），
+ * 所以它统一退回 g.child.gapY，除非 levels[depth].gapY 明写。
+ *
+ * ── 为什么必须「不传 levels 时与旧行为逐字段相同 ──
+ *   三层树里第 1 层（六道工序）要用主卡尺寸 240×156，
+ *   而第 2 层往下是 232×112 —— 只有按深度区分尺寸才摆得对。
+ *   但「没有子树时与旧布局逐像素一致」那条回归锚不能破：
+ *   它靠的就是 levels 缺省时这里算出来的每个字段
+ *   都等于原来的 `depth === 0 ? g.root : g.child`。
+ */
+export function levelAt(
+  g: ForestGeometry,
+  depth: number,
+): { w: number; h: number; gapX: number; perRow: number; gapY: number } {
+  const base = depth === 0 ? g.root : g.child;
+  const over = g.levels?.[depth];
+  return {
+    w: over?.w ?? base.w,
+    h: over?.h ?? base.h,
+    gapX: over?.gapX ?? base.gapX,
+    perRow: over?.perRow ?? base.perRow,
+    gapY: over?.gapY ?? g.child.gapY,
+  };
+}
+
 /* ============================================================
    内部：折行 + measure
    ============================================================ */
@@ -153,7 +190,7 @@ interface Measured {
 }
 
 function measure(node: LayoutNode, depth: number, g: ForestGeometry): Measured {
-  const self = depth === 0 ? g.root : g.child;
+  const self = levelAt(g, depth);
   const kids = (node.children ?? []).map((c) => measure(c, depth + 1, g));
 
   if (kids.length === 0) {
@@ -161,18 +198,21 @@ function measure(node: LayoutNode, depth: number, g: ForestGeometry): Measured {
   }
 
   /*
-    子节点按 child.perRow 折行 —— 注意用的是**子节点那一档**的 perRow，
+    子节点按**它们自己那一层**的 perRow 折行 —— 注意用的是**子节点那一档**的 perRow，
     不是当前节点自己的。perRow 是「这一行放几个」，
     而「这一行」是子节点所在的那一行。
+    三层树里六道工序要排成一行（第 1 层 perRow = 6）、
+    执行任务点每行 2 个（第 2 层 perRow = 2），靠的就是这一句。
   */
-  const rows = chunk(kids, g.child.perRow).map((items) => ({
+  const kidLevel = levelAt(g, depth + 1);
+  const rows = chunk(kids, kidLevel.perRow).map((items) => ({
     items,
-    w: items.reduce((s, k) => s + k.w, 0) + Math.max(0, items.length - 1) * g.child.gapX,
+    w: items.reduce((s, k) => s + k.w, 0) + Math.max(0, items.length - 1) * kidLevel.gapX,
     h: Math.max(...items.map((k) => k.h)),
   }));
 
   const widest = Math.max(...rows.map((r) => r.w));
-  const rowsH = rows.reduce((s, r) => s + r.h, 0) + Math.max(0, rows.length - 1) * g.child.gapY;
+  const rowsH = rows.reduce((s, r) => s + r.h, 0) + Math.max(0, rows.length - 1) * kidLevel.gapY;
 
   return {
     node,
@@ -225,17 +265,23 @@ function place(
 
   if (m.rows.length === 0) return laid;
 
+  /*
+    间距也必须取**子节点那一层**的：measure 里折行宽高用的是 kidLevel，
+    这里若还用默认的 g.child，两者会在 levels 覆盖了 gapX/gapY 时对不上 ——
+    量出来的宽度和摆出来的位置不一致，方块就会叠上。
+  */
+  const kidLevel = levelAt(g, m.depth + 1);
   let rowTop = top + m.selfH + g.parentGapY;
   for (const row of m.rows) {
     // 整行在父节点的中线上居中 —— 这就是「父节点居中于子节点」
     let cursor = centerX - row.w / 2;
     for (const kid of row.items) {
       const kidLaid = place(kid, cursor + kid.w / 2, rowTop, m.node.id, g, out);
-      cursor += kid.w + g.child.gapX;
+      cursor += kid.w + kidLevel.gapX;
       // 父节点的 subtree 要含住每一个子节点的 subtree
       laid.subtree = union(laid.subtree, kidLaid.subtree);
     }
-    rowTop += row.h + g.child.gapY;
+    rowTop += row.h + kidLevel.gapY;
   }
   /*
     再把「自己这一行」也算进 subtree —— 子节点比父节点窄的时候，

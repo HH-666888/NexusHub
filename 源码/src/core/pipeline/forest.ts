@@ -178,6 +178,50 @@ export function toLayoutNodes(
 }
 
 /**
+ * 把「一个一级 Agent + 六道工序 + 各自的子节点」拼成三层树。
+ *
+ * ── 和 toLayoutNodes 的区别 ──
+ *   toLayoutNodes 返回的是**一片森林**（六道工序平铺，都是根）。
+ *   这个函数返回的是**一棵树**：外面再套一个一级 Agent 当根，
+ *   六道工序挂在它下面，六道工序各自的子节点再往下一层。
+ *
+ *     一级 Agent            第 0 层  ← 只有它一个根
+ *       ├─ ① 规格化         第 1 层
+ *       │    └─ …           第 2 层
+ *       ├─ ② 架构定型       第 1 层  ← 没有子节点就不带 children 键
+ *       └─ …
+ *
+ * ── 为什么要有它 ──
+ *   几何层已经能按深度给不同尺寸（见 forest-layout 的 levelAt）：
+ *   第 1 层用主卡尺寸 240×156、第 2 层用 232×112。
+ *   但「谁在哪一层」这件事只有拼树的人知道 ——
+ *   布局拿到的必须是一棵真的三层树，而不是六棵各自长着子树的根。
+ *
+ * 布局只关心 id 和 children，别的字段原样带回去。
+ * 没有子节点的工序**不带 children 键**（和 toLayoutNodes 的行为一致）——
+ * 空数组会被渲染层当成"有子树"，给一道空工序画出一个指向虚无的箭头。
+ *
+ * @param rootId          一级 Agent 的 id
+ * @param stageIds        六道工序，按顺序
+ * @param childrenByStage 每道工序下面的子节点
+ */
+export function toForestNodes(
+  rootId: string,
+  stageIds: readonly StageId[],
+  childrenByStage: ChildrenByStage,
+): LayoutNode[] {
+  const stages: LayoutNode[] = stageIds.map((id) => {
+    const kids = childrenByStage[id];
+    return kids && kids.length > 0
+      ? { id, children: kids.map((c) => ({ id: c.id })) }
+      : { id };
+  });
+
+  /* 只有一个根 —— 这是这棵树和「六道工序平铺」那套的唯一区别 */
+  return [{ id: rootId, children: stages }];
+}
+
+/**
  * 把所有子节点摊平成一张 id → 数据 的表，渲染层按 id 查。
  *
  * 为什么要摊平：布局算完之后我们手上只有一堆 id，
