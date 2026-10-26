@@ -1211,8 +1211,128 @@ async function main() {
     cleanupVerifyRun(seeded.runId);
     info("夹具已清理");
 
+    /* ---------- 16. 双击聚焦 ---------- */
+    /*
+      这一条守的是**视角的进出**。
+
+      子树长出来之后，六道工序被撑得很开，一屏看不清细节 ——
+      所以双击一个工序应该能把视角收进它那棵树里。
+      但它和别的功能不同：**它改的是视口，不改 DOM** ——
+      不去断言的话，那个 onDoubleClick 挂错了地方也看不出来。
+
+      断言的是**缩放数字**，不是"某个元素的坐标"：
+      视口变了最直接的证据就是缩放值变了
+      （装下一棵子树需要的倍率和装下整片森林不一样）。
+    */
+    heading("第十六步 · 双击聚焦（视角的进出）");
+
+    /** 读当前缩放百分比 */
+    const readZoom = async (): Promise<number> => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: `document.querySelector('[data-canvas-zoom]')?.textContent?.trim() ?? ''`,
+        returnByValue: true,
+      });
+      return Number(String(r.result!.value).replace("%", ""));
+    };
+
+    /*
+      ⚠️ 回到没有子树的那次运行再测。
+        刚才那次运行（带夹具的）已经被删了，页面还停在上面 ——
+        先用一次导航把状态清干净，否则测的是"上一次的视口"。
+    */
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas` });
+    await sleep(3500);
+
+    const zoomFar = await readZoom();
+    info(`聚焦前：缩放 ${zoomFar}%`);
+
+    /* 双击有子树的那张卡（验收与交付，第六道） */
+    const dbl = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const card = document.querySelector('[data-pipeline-stage="verify"]');
+        if (!card) return 'no-card';
+        const r = card.getBoundingClientRect();
+        return JSON.stringify({ x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) });
+      })()`,
+      returnByValue: true,
+    });
+    const at = JSON.parse(dbl.result!.value!) as { x: number; y: number };
+    expect_(
+      Number.isFinite(at.x) && Number.isFinite(at.y),
+      "找得到「验收与交付」那张卡",
+      "页面上没有 [data-pipeline-stage=verify]",
+    );
+
+    /* 用手打的两下 dblclick —— CDP 的 Input 事件里没有"双击"这个手势 */
+    for (const n of [1, 2]) {
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: at.x,
+        y: at.y,
+        button: "left",
+        clickCount: n,
+      });
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: at.x,
+        y: at.y,
+        button: "left",
+        clickCount: n,
+      });
+    }
+    await sleep(900);
+
+    const zoomNear = await readZoom();
+    info(`双击「验收与交付」之后：缩放 ${zoomNear}%`);
+    expect_(
+      zoomNear > zoomFar,
+      `双击一个工序会聚焦到它那棵树（${zoomFar}% → ${zoomNear}%）`,
+      `缩放没变（还是 ${zoomNear}%）—— 双击没接上，或者聚焦区域算错了`,
+    );
+
+    /* 双击空白处回全局 */
+    await cdp.send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: 40,
+      y: 620,
+      button: "left",
+      clickCount: 1,
+    });
+    await cdp.send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: 40,
+      y: 620,
+      button: "left",
+      clickCount: 1,
+    });
+    for (const n of [1, 2]) {
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: 40,
+        y: 620,
+        button: "left",
+        clickCount: n,
+      });
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: 40,
+        y: 620,
+        button: "left",
+        clickCount: n,
+      });
+    }
+    await sleep(900);
+
+    const zoomBack = await readZoom();
+    info(`双击空白之后：缩放 ${zoomBack}%`);
+    expect_(
+      Math.abs(zoomBack - zoomFar) < 1,
+      `双击空白处回到全局视口（${zoomNear}% → ${zoomBack}%，原来是 ${zoomFar}%）`,
+      `回到 ${zoomBack}%，和进来之前的 ${zoomFar}% 不一样 —— 出不去，或者回错了地方`,
+    );
+
     cdp.close();
-    ok("画布交互、详情、面板、顶栏一致性、缩放让位、退役页面与子树全部通过");
+    ok("画布交互、详情、面板、顶栏一致性、缩放让位、退役页面、子树与双击聚焦全部通过");
   } finally {
     browser.kill();
     setTimeout(() => {
