@@ -10,6 +10,7 @@ import { buildPipelineGraph, tracePath } from "@/core/pipeline/graph";
 import { toLayoutNodes, type ChildrenByStage } from "@/core/pipeline/forest";
 import type { RunProgressInput } from "@/core/pipeline/progress";
 import { PANEL_GEOMETRY, WIDE_GEOMETRY, pipelineBounds } from "@/core/canvas/pipeline-layout";
+import { fitFloor } from "@/core/canvas/viewport";
 import { FOREST_GEOMETRY, layoutForest } from "@/core/canvas/forest-layout";
 import { STAGES } from "@/core/pipeline/stages";
 import type { StageId } from "@/core/pipeline/stages";
@@ -69,17 +70,21 @@ export function CanvasWorkbench({
   /**
    * 自动适应的缩放下限。
    *
-   * 面板实测是 808×371。摆成三列两行之后内容高 544，
-   * 自动适应算出 48% —— 六个节点全看见了，可卡片只有 114×74，
-   * **字 7 像素**。一份看不清的全景图等于没看。
+   *   面板实测是 808×371。摆成三列两行之后内容高 544，
+   *   自动适应算出 48% —— 六个节点全看见了，可卡片只有 114×74，
+   *   **字 7 像素**。一份看不清的全景图等于没看。
    *
    * 0.62 是量出来的：卡片 240×0.62 ≈ 149 宽，15px 的标题还剩 9px，
    * 正文 11px 还剩 7px —— 刚好读得出来。再小就不行了。
    *
-   * 面板之外不给下限（0）：整页画布要让整片森林装得下，
-   * 该缩就缩 —— 那是「看位置」那一档该有的样子。
+   * ⚠️ 四分布局之后**整页画布也有了下限**（0.45），
+   *    理由是同一个：左清单 17rem + 右内容 22rem 吃掉 624px，
+   *    1440 屏上画布只剩 786px，按"装下整条 1860"算出 36%，
+   *    档位掉到 none —— 六张卡一个字都看不见，那不是"全景"，是色块。
+   *    两条线的取值和理由都在 core/canvas/viewport.ts 的 fitFloor 里
+   *    （纯函数、有单测），这里只取用，不再写一遍数字。
    */
-  const minFitScale = variant === "panel" ? 0.62 : 0;
+  const minFitScale = fitFloor(variant);
 
   const graph = useMemo(
     () => buildPipelineGraph({ run, costByStage, gateOverride }),

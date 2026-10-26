@@ -98,6 +98,54 @@ function cleanupVerifyRun(runId: string): void {
   }
 }
 
+/**
+ * 给测试账号造一条「刚跑到第一道工序、**一条 check 事件都还没有**」的运行。
+ *
+ * ── 为什么非要这一条夹具 ──
+ *   左侧清单最要紧的一句话是「还没到点的那几道工序，界面上说什么」。
+ *   而"没有 check 事件"正是"还没到点"最干净的样子：
+ *   六道工序一个执行点都还没出生，清单上就该是六个「待规划」。
+ *
+ *   上面那条带 7 项检查的夹具验不了这件事：它的七个子节点全在「验收」下面，
+ *   另外五道确实是占位，但"六道**全部**是占位"这种最容易画错的情况碰不到 ——
+ *   比如有人把占位行写成"只给第一道补"，那条夹具照样是绿的。
+ *
+ * ── 造出来的必须真的可能出现 ──
+ *   这一条 phase:"spec" 就是规格化开工时真正发出的那条
+ *   （spec-stage.ts 里 `yield { kind: "phase", phase: "spec", label: "正在把你的需求整理成规格" }`），
+ *   runs 那一行的 stage/status 也是那个时候库里的真实取值。
+ *   造一个现实里不可能出现的形状，底下那些断言就失去意义了。
+ */
+function seedRunningRun(username: string): string {
+  const db = new Database("./data/nexus.db");
+  try {
+    const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
+      | { id: number }
+      | undefined;
+    if (!user) throw new Error(`找不到测试账号 ${username}`);
+
+    const runId = `e2e-plan-${Date.now().toString(36)}`;
+    const now = Date.now();
+
+    db.prepare(
+      `INSERT INTO runs (id, user_id, prompt, stage, status, workflow_version, created_at, updated_at)
+       VALUES (?, ?, ?, 'spec', 'running', 'e2e-fixture', ?, ?)`,
+    ).run(runId, user.id, "端到端夹具：还没跑到验收的运行", now, now);
+
+    db.prepare(
+      `INSERT INTO run_events (run_id, seq, at, kind, payload) VALUES (?, 0, ?, 'phase', ?)`,
+    ).run(
+      runId,
+      now,
+      JSON.stringify({ kind: "phase", phase: "spec", label: "正在把你的需求整理成规格" }),
+    );
+
+    return runId;
+  } finally {
+    db.close();
+  }
+}
+
 const BASE = process.env.NEXUS_BASE ?? "http://localhost:3000";
 const EDGE = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const PORT = 9337;
@@ -346,6 +394,31 @@ async function main() {
     const anchorX = 400;
     const anchorY = 300;
 
+    /*
+      ⚠️ 四分布局之后画布**不再从窗口左上角开始** —— 左边多了一块清单面板。
+      滚轮事件的 x/y 是**页面坐标**，而画布的缩放锚点用的是**画布内坐标**
+      （canvas-stage.tsx 那一行是 `e.clientX - rect.left`）。
+      以前画布占满整行，两种坐标恰好相等，所以可以混着用；
+      现在它们差着清单面板的宽度 —— 拿页面坐标去和画布内的平移量比，
+      算出来的期望值会偏 "面板宽度 × (1 - 缩放变化比)"，几百像素的偏差。
+      所以锚点按画布量一次，下面的期望平移用**画布内**的那个 x。
+
+      （纵向不用换算：四分布局只动了左右，画布的上边界没变。）
+    */
+    const stageLeftRaw = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const r = document.querySelector('[data-canvas-stage]').getBoundingClientRect();
+        return JSON.stringify({ left: r.left, top: r.top });
+      })()`,
+      returnByValue: true,
+    });
+    const stageAt = JSON.parse(stageLeftRaw.result!.value!) as { left: number; top: number };
+    const anchorLocalX = anchorX - stageAt.left;
+    info(
+      `画布左上角在页面 (${Math.round(stageAt.left)}, ${Math.round(stageAt.top)})，` +
+        `光标 ${anchorX} 换算成画布内 x = ${Math.round(anchorLocalX)}`,
+    );
+
     // 向上滚 = 放大
     await cdp.send("Input.dispatchMouseEvent", {
       type: "mouseWheel",
@@ -375,8 +448,8 @@ async function main() {
       缩放后该点的新平移 = 光标 - 世界坐标 × 新倍率。
       这里反过来验：算出的新平移应当等于实际的新平移。
     */
-    const worldX = (anchorX - initial.panX) / (initial.gridStep / 160);
-    const expectPanX = anchorX - worldX * (zoomedIn.gridStep / 160);
+    const worldX = (anchorLocalX - initial.panX) / (initial.gridStep / 160);
+    const expectPanX = anchorLocalX - worldX * (zoomedIn.gridStep / 160);
     expect_(
       Math.abs(zoomedIn.panX - expectPanX) < 2,
       `缩放的锚点在光标处（期望平移 ${Math.round(expectPanX)}，实际 ${Math.round(zoomedIn.panX)}）`,
@@ -977,12 +1050,36 @@ async function main() {
       return { ...(await readTier()), clicks: max };
     };
 
-    const start = await readTier();
-    info(`打开时：缩放 ${start.zoom}，档位 ${start.tier}`);
+    /**
+     * 一直放大，直到档位回到「全都显示」。
+     *
+     * ⚠️ 这一步以前是「打开时的档位就该是 all」，四分布局之后不成立了：
+     *    左清单 17rem + 右内容 22rem 吃掉 624px，1440 屏上画布只剩 786px，
+     *    自动适应算出来 36%，按"字还能读到哪一档"的下限停在 45% ——
+     *    档位 major（工序名和序号看得见，次要文字让位）。
+     *    这不是坏掉，是版面变小之后的正确结果，理由写在
+     *    core/canvas/viewport.ts 的 fitFloor 里（有单测钉着这个算式）。
+     *
+     * 而这一步要验的**不是**打开时的倍率（那是第三步和第八步的事），
+     * 是档位阶梯本身：all → major → none → 放大回来还是 all。
+     * 所以先放大到 all 再开始 —— 阶梯的起点不再依赖屏宽，
+     * 和下面 shrinkUntilTierChanges 那段注释是同一条理由的延伸。
+     */
+    const growToAll = async (max = 6) => {
+      for (let i = 0; i < max; i++) {
+        const t = await readTier();
+        if (t.tier === "all") return { ...t, clicks: i };
+        await clickZoom("放大", 1);
+      }
+      return { ...(await readTier()), clicks: max };
+    };
+
+    const start = await growToAll();
+    info(`放大 ${start.clicks} 次后开始测阶梯：缩放 ${start.zoom}，档位 ${start.tier}`);
     expect_(
       start.tier === "all",
-      `打开时字全都在（缩放 ${start.zoom}）`,
-      `打开时档位就是 ${start.tier} —— 自动适应的倍率不该低到藏字`,
+      `放大到字全都在（缩放 ${start.zoom}）`,
+      `放大 ${start.clicks} 次后档位还是 ${start.tier} —— 字没能全回来`,
     );
     expect_(
       (start.minor ?? "").startsWith("rgb") || (start.minor ?? "").startsWith("#"),
@@ -1291,32 +1388,54 @@ async function main() {
     );
 
     /* 双击空白处回全局 */
+    /*
+      ⚠️ 空白点必须落在**画布里**，不能是窗口里的某个坐标。
+
+      四分布局之前画布占满整行，(40, 620) 就是"画布左边的空白处"。
+      现在窗口左边 272px 是清单面板 —— 同一个坐标点下去，
+      事件落在面板上，画布**根本收不到那次双击**，
+      于是视口回不到全局，而症状看起来像"双击空白没接上"。
+
+      所以这里按画布的实际位置取：画布内 (40, 500)。
+      纵向取 500 是因为六张工序卡在画布内只占到 220 上下，
+      再往下就是空白 —— 双击它才是"回全局"。
+    */
+    const blankRaw = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const r = document.querySelector('[data-canvas-stage]').getBoundingClientRect();
+        return JSON.stringify({ x: Math.round(r.left + 40), y: Math.round(r.top + 500) });
+      })()`,
+      returnByValue: true,
+    });
+    const blank = JSON.parse(blankRaw.result!.value!) as { x: number; y: number };
+    info(`双击的"空白处"取画布内 (40, 500)，即页面 (${blank.x}, ${blank.y})`);
+
     await cdp.send("Input.dispatchMouseEvent", {
       type: "mousePressed",
-      x: 40,
-      y: 620,
+      x: blank.x,
+      y: blank.y,
       button: "left",
       clickCount: 1,
     });
     await cdp.send("Input.dispatchMouseEvent", {
       type: "mouseReleased",
-      x: 40,
-      y: 620,
+      x: blank.x,
+      y: blank.y,
       button: "left",
       clickCount: 1,
     });
     for (const n of [1, 2]) {
       await cdp.send("Input.dispatchMouseEvent", {
         type: "mousePressed",
-        x: 40,
-        y: 620,
+        x: blank.x,
+        y: blank.y,
         button: "left",
         clickCount: n,
       });
       await cdp.send("Input.dispatchMouseEvent", {
         type: "mouseReleased",
-        x: 40,
-        y: 620,
+        x: blank.x,
+        y: blank.y,
         button: "left",
         clickCount: n,
       });
@@ -1330,6 +1449,217 @@ async function main() {
       `双击空白处回到全局视口（${zoomNear}% → ${zoomBack}%，原来是 ${zoomFar}%）`,
       `回到 ${zoomBack}%，和进来之前的 ${zoomFar}% 不一样 —— 出不去，或者回错了地方`,
     );
+
+    /* ---------- 17. 四分布局：左清单 / 中画布 / 右内容 ---------- */
+    /*
+      这一步验的是**版面**：两侧面板真的占住了宽度、真的在画布两侧、
+      右侧那块真的是"明说了尚未接入"的占位，清单在没有 check 事件时
+      真的说「待规划」，以及整页不出现横向滚动条。
+
+      ── 为什么"没有横向滚动条"值得一条断言 ──
+        它是四分布局最容易踩的坑：两个固定宽度面板 + 一个 min-width:auto
+        的 flex 子项，只要少写一个 min-w-0，画布就会被内容撑到 1860 宽，
+        整页横向滚动。而画布自己的"自动适应"是按**容器宽度**算的 ——
+        容器被撑大之后它还算得"对"，只是对错了地方。
+        这条断言用一行 CSS 就能满足，写错一行就会红，性价比很高。
+    */
+    heading("第十七步 · 四分布局：左清单 / 中画布 / 右内容");
+
+    /** 读版面 + 清单。每个数都从 DOM 和计算样式上量，不看类名 */
+    const READ_QUAD = `(() => {
+      const q = (s) => [...document.querySelectorAll(s)];
+      const rect = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {
+          left: Math.round(r.left), right: Math.round(r.right),
+          w: Math.round(r.width), h: Math.round(r.height),
+        };
+      };
+      const stage = document.querySelector('[data-canvas-stage]');
+      const outline = document.querySelector('[data-planning-outline]');
+      const content = document.querySelector('[data-step-content]');
+      const runningRow = q('[data-outline-row]').find(
+        (el) => el.getAttribute('data-outline-status') === 'running',
+      );
+      const dot = runningRow ? runningRow.querySelector('[data-outline-dot]') : null;
+      return JSON.stringify({
+        stage: rect(stage),
+        outline: rect(outline),
+        content: rect(content),
+        rows: q('[data-outline-row]').length,
+        level1: q('[data-outline-level="1"]').length,
+        placeholders: q('[data-outline-placeholder]').length,
+        placeholderTexts: [...new Set(q('[data-outline-placeholder]').map((el) => el.textContent.trim()))],
+        runningDot: dot ? getComputedStyle(dot).backgroundColor : null,
+        hasEmptyState: !!document.querySelector('[data-outline-empty]'),
+        contentPlaceholder: !!document.querySelector('[data-step-content-placeholder]'),
+        contentText: content ? content.textContent : '',
+        // 窄屏按钮：宽屏上必须**不可见**（面板已经常驻）
+        visibleToggles: q('[data-panel-toggle]').filter(
+          (el) => el.getBoundingClientRect().width > 0,
+        ).length,
+        docScrollW: document.documentElement.scrollWidth,
+        innerW: window.innerWidth,
+      });
+    })()`;
+
+    const readQuad = async () => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: READ_QUAD,
+        returnByValue: true,
+      });
+      return JSON.parse(r.result!.value!) as {
+        stage: { left: number; right: number; w: number; h: number } | null;
+        outline: { left: number; right: number; w: number; h: number } | null;
+        content: { left: number; right: number; w: number; h: number } | null;
+        rows: number;
+        level1: number;
+        placeholders: number;
+        placeholderTexts: string[];
+        runningDot: string | null;
+        hasEmptyState: boolean;
+        contentPlaceholder: boolean;
+        contentText: string;
+        visibleToggles: number;
+        docScrollW: number;
+        innerW: number;
+      };
+    };
+
+    /*
+      先看"没有选中运行"这一档（上一步结束后页面就停在 /canvas，
+      而这个测试账号一条运行都没有）。
+
+      这一档要验的是：清单不编造内容、右侧如实写着"尚未接入"、
+      版面本身是四分布局。
+    */
+    const quadEmpty = await readQuad();
+    info(
+      `版面：清单 ${quadEmpty.outline?.w}px · 画布 ${quadEmpty.stage?.w}px · ` +
+        `内容 ${quadEmpty.content?.w}px（窗口 ${quadEmpty.innerW}px）`,
+    );
+
+    expect_(
+      quadEmpty.outline !== null,
+      "左侧有任务点清单（[data-planning-outline]）",
+      "页面上找不到 [data-planning-outline] —— 左侧面板没有渲染",
+    );
+    expect_(
+      quadEmpty.outline !== null &&
+        quadEmpty.stage !== null &&
+        quadEmpty.outline.right <= quadEmpty.stage.left + 1 &&
+        quadEmpty.outline.w >= 264,
+      `清单在画布左边，宽 ${quadEmpty.outline?.w}px（17rem）`,
+      `清单位置/宽度不对：清单 right=${quadEmpty.outline?.right}，画布 left=${quadEmpty.stage?.left}，宽 ${quadEmpty.outline?.w}`,
+    );
+    expect_(
+      quadEmpty.content !== null &&
+        quadEmpty.stage !== null &&
+        quadEmpty.content.left >= quadEmpty.stage.right - 1 &&
+        quadEmpty.content.w >= 344,
+      `内容面板在画布右边，宽 ${quadEmpty.content?.w}px（22rem）`,
+      `内容面板位置/宽度不对：内容 left=${quadEmpty.content?.left}，画布 right=${quadEmpty.stage?.right}，宽 ${quadEmpty.content?.w}`,
+    );
+    /*
+      画布比窗口窄 —— 这一条证明两侧是真的**占了宽度**，
+      而不是浮在画布上面（浮层的话画布仍然是整窗宽）。
+    */
+    expect_(
+      quadEmpty.stage !== null &&
+        quadEmpty.stage.w > 200 &&
+        quadEmpty.stage.w < quadEmpty.innerW - 500,
+      `画布在中间，宽 ${quadEmpty.stage?.w}px，比窗口窄（两侧真的占了宽度）`,
+      `画布宽 ${quadEmpty.stage?.w}px，窗口 ${quadEmpty.innerW}px —— 两侧面板没有占住版面？`,
+    );
+    expect_(
+      quadEmpty.contentPlaceholder,
+      "右侧是明确的占位块（[data-step-content-placeholder]）",
+      "右侧没有占位块 —— 分不清是没数据还是没接",
+    );
+    expect_(
+      quadEmpty.contentText.includes("尚未接入"),
+      "右侧写着「尚未接入」",
+      "右侧没有「尚未接入」四个字 —— 那一栏会看起来像已经接好了",
+    );
+    /*
+      1440 屏 ≥ 1280 断点：两侧常驻，那两个窄屏按钮**不该出现**。
+      它们要是露出来了，说明断点判断反了 —— 而画布会因此少一大块宽度。
+    */
+    expect_(
+      quadEmpty.visibleToggles === 0,
+      "1440 屏上窄屏按钮不显示（≥1280 两侧常驻）",
+      `出现了 ${quadEmpty.visibleToggles} 个窄屏按钮 —— 断点判反了`,
+    );
+    /*
+      没有运行就没有计划：清单给空态，**不编造六道工序**。
+      六道工序是"这次运行的六道工序"，连运行都没有的时候凭空列出六个
+      「待规划」，就是在描述一件不存在的事。
+    */
+    expect_(
+      quadEmpty.rows === 0 && quadEmpty.hasEmptyState,
+      "没有选中运行时清单是空态，不编造六道工序",
+      `清单里有 ${quadEmpty.rows} 行（应当 0 行 + 空态）`,
+    );
+    expect_(
+      quadEmpty.docScrollW <= quadEmpty.innerW + 1,
+      `没有横向滚动条（内容宽 ${quadEmpty.docScrollW} ≤ 窗口 ${quadEmpty.innerW}）`,
+      `出现横向滚动条：内容宽 ${quadEmpty.docScrollW} > 窗口 ${quadEmpty.innerW} —— 少写了 min-w-0？`,
+    );
+
+    /*
+      ---------- 换成一条"还没有任何 check 事件"的运行 ----------
+      见 seedRunningRun 上的说明：这一步要验的正是
+      「没到点的那几道工序，清单上说什么」。
+    */
+    const planRun = seedRunningRun(username);
+    info(`造了一条运行 ${planRun.slice(0, 8)}，没有任何 check 事件`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${planRun}` });
+    await sleep(4200);
+
+    const quadPlan = await readQuad();
+    info(
+      `清单 ${quadPlan.rows} 行：一级 ${quadPlan.level1} · 占位 ${quadPlan.placeholders} · ` +
+        `占位文字 ${JSON.stringify(quadPlan.placeholderTexts)}`,
+    );
+
+    expect_(
+      quadPlan.level1 === 6,
+      "清单里恰好 6 个一级行（六道工序）",
+      `一级行有 ${quadPlan.level1} 个，应该是 6`,
+    );
+    /*
+      ★ 这一条是"没到点就说待规划"的硬证据 ★
+
+      这次运行一条 check 事件都没有，所以六道工序下面一个执行点都没出生。
+      六行占位就是界面在说六遍「这里将来会有东西，只是还没到点」——
+      而"空白"会被读成"跑完了什么都没有"，那是另一件事。
+    */
+    expect_(
+      quadPlan.placeholders === 6,
+      `六道工序都给出了「待规划」占位行（${quadPlan.placeholders}/6）`,
+      `只有 ${quadPlan.placeholders} 行占位 —— 那几道工序在清单上是空白，用户分不清"没轮到"和"没东西"`,
+    );
+    expect_(
+      quadPlan.placeholderTexts.length === 1 && quadPlan.placeholderTexts[0] === "待规划",
+      "占位行的文字就是「待规划」",
+      `占位行的文字是 ${JSON.stringify(quadPlan.placeholderTexts)}，期望「待规划」`,
+    );
+    /*
+      状态色必须**真的按 statusTone 走**，不是随手写个绿点。
+      这次运行停在规格化（phase:"spec"），所以有一行是 running ——
+      调色板里 running 的色调是 green，对应 rgb(74 222 128)，
+      和画布上"正在跑"用的是同一个色值（清单和画布必须说同一句话）。
+    */
+    expect_(
+      quadPlan.runningDot === "rgb(74, 222, 128)",
+      `正在跑的那道工序色点是绿色 ${quadPlan.runningDot}（和画布同一套状态色）`,
+      `正在跑那一行的色点是 ${quadPlan.runningDot}，期望 rgb(74, 222, 128)`,
+    );
+
+    cleanupVerifyRun(planRun);
+    info("夹具已清理");
 
     cdp.close();
     ok("画布交互、详情、面板、顶栏一致性、缩放让位、退役页面、子树与双击聚焦全部通过");
