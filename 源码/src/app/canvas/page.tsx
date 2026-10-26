@@ -15,7 +15,7 @@ import { sqliteRunStore } from "@/adapters/store/run-repo";
 import { env } from "@/config/env";
 import { describeTime } from "@/core/domain/run";
 import { groupCostByStage, type CostByStage } from "@/core/domain/stage-cost";
-import { planningFromRun } from "@/core/planning/from-run";
+import { PLANNING_ROOT_ID, planningFromRun } from "@/core/planning/from-run";
 import { toOutline, type OutlineRow } from "@/core/planning/outline";
 import { maxSeq, projectAt } from "@/core/planning/planning-log";
 import { checksToChildren, type ChildrenByStage } from "@/core/pipeline/forest";
@@ -23,6 +23,7 @@ import { STAGES } from "@/core/pipeline/stages";
 import { getOwnedRun, listRuns } from "@/core/run/service";
 import { requireUser } from "@/server/auth-context";
 import { serverNow } from "@/server/clock";
+import type { CanvasRootCard } from "@/components/canvas/pipeline-canvas";
 
 /**
  * 主界面 /canvas
@@ -147,6 +148,13 @@ export default async function CanvasPage({
     连运行都没有的时候，清单不该凭空造出六个"待规划"来。
   */
   let outlineRows: OutlineRow[] = [];
+  /*
+    一级 Agent 那张卡的数据。
+    ⚠️ 它**只有从真实投影里取**这一条路 —— 没有 fallback、没有默认值：
+       投影里没有根节点（比如根本没有运行）时它就是 undefined，
+       画布于是画成六根并列，而不是"顺手造一个一级 Agent 放上去"。
+  */
+  let rootCard: CanvasRootCard | undefined;
   if (selectedRun) {
     const planLog = planningFromRun({
       /*
@@ -176,7 +184,37 @@ export default async function CanvasPage({
             : "running",
     });
     // maxSeq(log) 就是"现在"：投影到此刻为止的任务点树
-    outlineRows = toOutline(projectAt(planLog, maxSeq(planLog)));
+    /*
+      ⚠️ 这一份投影**只算一次**，画布和清单共用。
+        分成两次 projectAt 的话，两个视图可能拿到不同时刻的快照，
+        而"清单和画布对不上"正是这一版最不该出现的事
+        （和上面 events 只读一次是同一条理由）。
+
+      ── 一级 Agent 从哪儿来 ──
+        就是这棵投影树里 id 为 PLANNING_ROOT_ID 的那个点，
+        它的 title / status 全部来自 from-run.ts 对真实事件的投影：
+          · 没有运行 → 没有这个点 → 不传 rootCard（画布六根并列）
+          · 运行在跑 → 它是 running
+          · 运行结束 → 它是 done / failed
+        这里**一个字段都不许改写**。尤其 status：一级 Agent 的"总规划"
+        这一步目前还没真接入，它真实是什么就显示什么 ——
+        写死一个「已完成」会让这张卡变成一句假话，而它恰恰是
+        整棵三层树的根，最显眼的那一张。
+    */
+    const planPoints = projectAt(planLog, maxSeq(planLog));
+    outlineRows = toOutline(planPoints);
+
+    const rootPoint = planPoints.find((p) => p.id === PLANNING_ROOT_ID) ?? null;
+    if (rootPoint) {
+      rootCard = {
+        id: rootPoint.id,
+        title: rootPoint.title,
+        // 副标题是这一层的**角色**，不是状态 —— 状态由 status 承担，
+        // 两者写在两个地方才不会出现"副标题说规划中、胶囊说已完成"
+        subtitle: "总规划",
+        status: rootPoint.status,
+      };
+    }
   }
 
   return (
@@ -244,6 +282,12 @@ export default async function CanvasPage({
               costByStage={costByStage}
               gateOverride={env.run.specGate}
               childrenByStage={childrenByStage}
+              /*
+                一级 Agent 根节点 —— 三层树成型的那一层。
+                没选中运行时不传：那时候连"这次运行"都还没有，
+                画一个不存在的总规划出来，比少画一层更糟。
+              */
+              rootCard={rootCard}
             />
           </div>
 

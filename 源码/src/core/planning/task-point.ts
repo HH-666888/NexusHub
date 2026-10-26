@@ -218,3 +218,67 @@ const STATUS_TONE: Record<TaskPointStatus, TaskPointTone> = {
 export function statusTone(status: TaskPointStatus): TaskPointTone {
   return STATUS_TONE[status];
 }
+
+/**
+ * 六种色调 → 实际颜色（`r g b` 三段，写进 `rgb(...)` 用）。
+ *
+ * ── 为什么它住在内核，而不是各组件自己写一份 ──
+ *   同一个任务点会在**好几个地方**同时出现：左侧清单一行、
+ *   画布上一级 Agent 卡的状态胶囊、以后还会有运行日志。
+ *   它们必须说同一句话 —— 清单里是绿的、画布上是蓝的，
+ *   用户第一个念头是"这是两件事吧"，然后他就不信任任何一边了。
+ *
+ *   所以色调 → 颜色这一层也只留一份实现。谁要显示状态，
+ *   就 status → statusTone → TONE_RGB 走一遍，不自己挑颜色。
+ *
+ * 括号里的含义和 statusTone 那段注释是同一句话：
+ *   绿 = 正在发生（running / planning） · 蓝 = 完成（done）
+ *   白 = 还没动（pending / ready）      · 红 = 失败（failed）
+ *   灰 = 有意跳过（skipped）            · 黄 = 在等人（waiting）
+ *
+ * ⚠️ 写成 Record<TaskPointTone, string>：将来加第七种色调时
+ *    编译器会在这里报错，而不是让界面上的点静默变成透明。
+ */
+export const TONE_RGB: Record<TaskPointTone, string> = {
+  green: "74 222 128",
+  blue: "96 165 250",
+  white: "148 163 184",
+  red: "248 113 113",
+  gray: "100 116 139",
+  yellow: "250 204 21",
+};
+
+/**
+ * 八种状态 → 胶囊上那几个字。
+ *
+ * ── 和 STATUS_TONE 分开存，理由也是分开的 ──
+ *   颜色回答「一眼看上去它在动吗」，文字回答「它到底怎么了」。
+ *   两者不是一一对应：planning 和 running 都是绿的，但一个写着
+ *   「规划中」、一个写着「正在跑」—— 合并成一个字段就没法表达。
+ *
+ * ── 为什么每一档都要有字，不能只给常用的几档 ──
+ *   Record<TaskPointStatus, string> 是**穷尽**的：往 TaskPointStatus
+ *   里加第九种状态时编译器会在这里报错。漏掉一档的表现是
+ *   画布上一个没有文字的胶囊 —— 而"空白胶囊"在界面上看起来
+ *   像样式问题，不像数据缺失，靠肉眼几乎发现不了。
+ *
+ * ── 措辞上的一处讲究 ──
+ *   一级 Agent 是**控制层**（它自己不产出代码，只做规划），所以
+ *   它的 done 写成「已完成」而不是「已通过」——「通过」是工序/验收的
+ *   说法，套在一个只做规划的点上会让人以为它产出了什么东西。
+ */
+const STATUS_LABEL: Record<TaskPointStatus, string> = {
+  pending: "待执行",
+  planning: "规划中",
+  ready: "就绪",
+  running: "正在跑",
+  done: "已完成",
+  failed: "失败",
+  skipped: "已跳过",
+  waiting: "在等人",
+};
+
+/** 状态 → 胶囊上的字。映射表在上一段，理由也在那里 */
+export function statusLabel(status: TaskPointStatus): string {
+  return STATUS_LABEL[status];
+}

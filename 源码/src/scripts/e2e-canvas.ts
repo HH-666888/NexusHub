@@ -19,6 +19,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { PLANNING_ROOT_ID } from "@/core/planning/from-run";
 import { expect_, finish, heading, info, ok, signUp } from "./e2e-kit";
 
 /**
@@ -1220,10 +1221,27 @@ async function main() {
         const chips = [...document.querySelectorAll('[data-canvas-child]')];
         const links = [...document.querySelectorAll('[data-canvas-tree-link]')];
         const trunks = [...document.querySelectorAll('[data-canvas-tree-trunk]')];
+        /*
+          某个父节点名下有几条横枝。
+
+          ⚠️ 必须按父节点分开数，不能再用"横枝总数 === 子方块数"。
+             三层树里**有两个父节点有孩子**：一级 Agent（→ 六道工序）
+             和验收（→ 七项检查）。总数是 6 + 7 = 13，
+             而子方块只有 7 个 —— 拿总数去比，这条断言必然红，
+             而它想守的"没有孤儿方块"其实好好的。
+             按父节点数就没这个问题，而且比原来更严：
+             现在连"六道工序各自有没有连回一级 Agent"也一起验了。
+        */
+        const branchesOf = (pid) => {
+          const trunk = document.querySelector('[data-canvas-tree-trunk="' + pid + '"]');
+          const g = trunk ? trunk.closest('g') : null;
+          return g ? g.querySelectorAll('[data-canvas-tree-link]').length : 0;
+        };
         return JSON.stringify({
           chips: chips.length,
           links: links.length,
           trunks: trunks.length,
+          verifyLinks: branchesOf('verify'),
           // 每张子卡是不是真的"有内容"，而不是只有一个标题
           withStatus: chips.filter(c => c.querySelector('[data-child-status]')).length,
           withDetail: chips.filter(c => c.querySelector('[data-child-detail]')).length,
@@ -1242,6 +1260,7 @@ async function main() {
       chips: number;
       links: number;
       trunks: number;
+      verifyLinks: number;
       withStatus: number;
       withDetail: number;
       withMetric: number;
@@ -1249,8 +1268,8 @@ async function main() {
       styled: number;
     };
     info(
-      `子方块 ${tree.chips} 个 · 连线 ${tree.links} 条 · 躯干 ${tree.trunks} 条 · ` +
-        `带状态 ${tree.withStatus} · 带依据 ${tree.withDetail} · 带数值 ${tree.withMetric}`,
+      `子方块 ${tree.chips} 个 · 连线 ${tree.links} 条（其中验收名下 ${tree.verifyLinks} 条）· ` +
+        `躯干 ${tree.trunks} 条 · 带状态 ${tree.withStatus} · 带依据 ${tree.withDetail} · 带数值 ${tree.withMetric}`,
     );
 
     expect_(
@@ -1262,16 +1281,33 @@ async function main() {
       连线数必须等于方块数 —— 少一条就是"孤儿方块"。
       注意退化横枝（孩子横跨脊线）也渲染了零长度的线，
       所以这个等式在最后一行只有 1 个孩子时仍然成立。
+
+      ⚠️ 数的是**验收名下**的横枝（7 条），不是全画布的横枝（13 条）——
+         多出来的 6 条是一级 Agent 连给六道工序的。理由见上面 branchesOf 那段。
     */
     expect_(
-      tree.links === tree.chips,
-      `每个方块都有一条线连回父工序（${tree.links}/${tree.chips}）`,
-      `有 ${tree.chips} 个方块，却只有 ${tree.links} 条横枝 —— 会有孤儿`,
+      tree.verifyLinks === tree.chips,
+      `每个方块都有一条线连回父工序（${tree.verifyLinks}/${tree.chips}）`,
+      `有 ${tree.chips} 个方块，却只有 ${tree.verifyLinks} 条横枝 —— 会有孤儿`,
     );
+    /*
+      ⚠️ 这一条从「躯干 = 1」改成了「躯干 = 2」。
+
+      ── 为什么必须改，而不是把这条删掉 ──
+        躯干是"父节点连给它所有孩子"的那条竖线，一个父节点一条。
+        升级成三层树之前，有孩子的工序只有验收一道，所以是 1 条。
+        现在多了一层：一级 Agent 也有孩子（六道工序），
+        它同样要有一条躯干把自己的六个孩子连起来 —— **2 条是新的正确值**。
+
+        删掉这条的话，"根和六道工序之间没有连线"就没人守了；
+        而那种情况下画面上看起来就是"上面飘着一张卡"（用户反馈过的原话：
+        「为什么没有树节点的效果」）。所以是改数字 + 写清楚为什么，不是删。
+        第十九步里还会按父节点逐条验一次根名下的 6 条横枝。
+    */
     expect_(
-      tree.trunks === 1,
-      "只有一个父工序有子树，所以只有一条躯干",
-      `躯干有 ${tree.trunks} 条，应该是 1（只有「验收」有子节点）`,
+      tree.trunks === 2,
+      "两个父节点各有一条躯干：一级 Agent → 六道工序、验收 → 七项检查",
+      `躯干有 ${tree.trunks} 条，应该是 2（一级 Agent 一条 + 验收一条）`,
     );
     /*
       三样内容都要在。用户的原话：「不能只是一个标题」——
@@ -2099,9 +2135,371 @@ async function main() {
       `恢复宽屏后版面没回来：视口 ${restored.innerW} matchMedia 宽屏=${restored.wideMedia} 按钮宽=${restored.toggleLeft.box?.w} 清单宽=${restored.outline?.w}`,
     );
 
+    /* ---------- 19. 一级 Agent 根节点：三层树成型 ---------- */
+    /*
+      这一步补的是**这一期新加的那一层** —— 画布最上面的「一级 Agent」。
+
+      ── 为什么它必须进常驻回归，而不是看一眼截图 ──
+        三层树是**结构**，不是配色。结构错了的几种样子都很安静：
+          · 根卡没画出来 → 还是六根并列，看着"挺正常"
+          · 根卡画了但没有连线 → 上面飘着一张卡（用户反馈过的原话：
+            「为什么没有树节点的效果」）
+          · 根卡画在了六道工序下面 → 层级反了，一眼看不出，因为卡片长得一样
+          · 根卡的状态写死成「已完成」→ 界面在说一句没发生过的事
+        这四种没有一种会抛异常。所以只能靠断言钉住。
+
+      ── 最要紧的一条：状态必须是**真的** ──
+        一级 Agent 的「总规划」这一步目前还没真接入。它该显示什么，
+        完全由 from-run.ts 从这条运行的事件里投影出来的那个点的 status 决定。
+        所以这里**造两条状态不同的运行**（一条 done、一条 running），
+        断言根卡的 data-root-status 跟着变、颜色跟着变 ——
+        写死任何一种状态，都会在其中一条上原形毕露。
+        这不是"测颜色好不好看"，是测**界面有没有在说实话**。
+    */
+    heading("第十九步 · 一级 Agent 根节点（1 根 + 6 工序 + 7 执行点）");
+
+    /**
+     * 一次把三层读全：根卡、六道工序、执行点、连线、以及左侧清单的色点。
+     *
+     * 量的是 getBoundingClientRect（屏幕上真实的位置），不是 style.left ——
+     * 世界坐标层的 style.left/top 是**世界坐标**，和屏幕位置差着一个
+     * 平移加缩放（第四步那段注释里踩过同一个坑）。
+     */
+    const READ_TREE3 = `(() => {
+      const box = (el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          left: Math.round(r.left), top: Math.round(r.top),
+          right: Math.round(r.right), bottom: Math.round(r.bottom),
+          w: Math.round(r.width), h: Math.round(r.height),
+        };
+      };
+      const roots = [...document.querySelectorAll('[data-pipeline-root]')];
+      const stages = [...document.querySelectorAll('[data-pipeline-stage]')];
+      const chips = [...document.querySelectorAll('[data-canvas-child]')];
+      const root = roots[0] ?? null;
+      const pill = root ? root.querySelector('[data-root-pill]') : null;
+      const rootId = root ? root.getAttribute('data-pipeline-root') : null;
+      const trunk = rootId
+        ? document.querySelector('[data-canvas-tree-trunk="' + rootId + '"]')
+        : null;
+      const group = trunk ? trunk.closest('g') : null;
+      const text = (el) => (el ? el.textContent.trim() : '');
+      return JSON.stringify({
+        rootCount: roots.length,
+        rootId,
+        rootStatus: root ? root.getAttribute('data-root-status') : null,
+        rootTone: root ? root.getAttribute('data-root-tone') : null,
+        /*
+          状态色读 data-root-rgb，**不读计算样式**。
+          胶囊那一行是 data-canvas-label="minor"：缩到一定档位时
+          它的文字本来就是透明的（"缩小时字让位"，见 globals.css），
+          那时候计算出来是 rgba(0,0,0,0) —— 而"颜色配错了"
+          和"这一档把字藏了"在读到的值上完全一样。
+        */
+        rootRgb: root ? root.getAttribute('data-root-rgb') : null,
+        rootPillText: text(pill),
+        // running 那一档的轻微脉冲：读动画名就知道挂上没有（'none' = 没挂）
+        rootPillPulse: pill ? getComputedStyle(pill).animationName : null,
+        /*
+          标题走 data-root-title，不是 [data-canvas-label="major"]：
+          卡里第一个 major 是左上角那个「AGENT」标识（序号那一行的替身），
+          querySelector 拿到的会是它。
+        */
+        rootTitle: text(root ? root.querySelector('[data-root-title]') : null),
+        rootSubtitle: text(root ? root.querySelector('[data-root-subtitle]') : null),
+        /*
+          缩小时的"文字让位"这一档，在根卡上也要成立。
+          量的是底部那行**内层** span 的颜色 —— 外层 div 标了 minor 一定会透明，
+          而真正会漏的是内层那两个自带文字颜色的 span。
+        */
+        tier: document.querySelector('[data-canvas-world]')?.getAttribute('data-label-tier') ?? null,
+        rootStagesColor: (() => {
+          const el = root ? root.querySelector('[data-root-stages] span') : null;
+          return el ? getComputedStyle(el).color : null;
+        })(),
+        rootBox: root ? box(root) : null,
+        stageCount: stages.length,
+        stageIds: stages.map(el => el.getAttribute('data-pipeline-stage')),
+        stageTops: stages.map(el => Math.round(el.getBoundingClientRect().top)),
+        chipCount: chips.length,
+        trunks: document.querySelectorAll('[data-canvas-tree-trunk]').length,
+        trunkFromRoot: trunk ? 1 : 0,
+        branchesFromRoot: group ? group.querySelectorAll('[data-canvas-tree-link]').length : 0,
+        /*
+          左侧清单：每一行的状态 + 色点的实际颜色。
+          两个视图必须说同一句话 —— 同一个状态在两处不同色，
+          用户会以为是两件事（planning-outline.ts 开头那段）。
+        */
+        outline: [...document.querySelectorAll('[data-outline-row]')].map(el => {
+          const dot = el.querySelector('[data-outline-dot]');
+          return {
+            status: el.getAttribute('data-outline-status'),
+            dot: dot ? getComputedStyle(dot).backgroundColor : null,
+          };
+        }),
+      });
+    })()`;
+
+    interface Tree3 {
+      rootCount: number;
+      rootId: string | null;
+      rootStatus: string | null;
+      rootTone: string | null;
+      rootRgb: string | null;
+      rootPillText: string;
+      rootPillPulse: string | null;
+      rootTitle: string;
+      rootSubtitle: string;
+      tier: string | null;
+      rootStagesColor: string | null;
+      rootBox: { left: number; top: number; w: number; h: number } | null;
+      stageCount: number;
+      stageIds: (string | null)[];
+      stageTops: number[];
+      chipCount: number;
+      trunks: number;
+      trunkFromRoot: number;
+      branchesFromRoot: number;
+      outline: { status: string | null; dot: string | null }[];
+    }
+
+    const readTree3 = async (): Promise<Tree3> => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: READ_TREE3,
+        returnByValue: true,
+      });
+      return JSON.parse(r.result!.value!) as Tree3;
+    };
+
+    /** 清单里所有处于某个状态的行，色点是什么颜色（去重） */
+    const dotsOfStatus = (t: Tree3, status: string): string[] => [
+      ...new Set(t.outline.filter((r) => r.status === status).map((r) => r.dot ?? "")),
+    ];
+
+    /**
+     * "96 165 250" → "rgb(96, 165, 250)"。
+     *
+     * 卡片上写的是调色板里的三段（`r g b`，塞进 `rgb(... / 0.5)` 那种模板用），
+     * 而 getComputedStyle 报出来的是带逗号的规范形式。两边是同一种颜色的
+     * 两种写法，比之前先把格式对齐 —— 否则这条断言红的原因会是"逗号"，
+     * 和它要验的"两个视图是不是同一个色值"毫无关系。
+     */
+    const asRgb = (triple: string | null): string =>
+      triple ? `rgb(${triple.trim().split(/\s+/).join(", ")})` : "";
+
+    /* ---- 19.1 一条跑完的运行：1 根 + 6 工序 + 7 执行点 ---- */
+    const doneRun = seedVerifyRun(username);
+    info(`造了一条运行 ${doneRun.runId.slice(0, 8)}（status=done，带 ${doneRun.count} 项检查）`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${doneRun.runId}` });
+    await sleep(4200);
+
+    const done = await readTree3();
+    info(
+      `三层：根 ${done.rootCount} 个（${done.rootId} / ${done.rootStatus}）· ` +
+        `工序 ${done.stageCount} 个 · 执行点 ${done.chipCount} 个 · 躯干 ${done.trunks} 条 · ` +
+        `根名下横枝 ${done.branchesFromRoot} 条`,
+    );
+    info(
+      `根卡 ${done.rootBox?.w}×${done.rootBox?.h} 在 top=${done.rootBox?.top}，` +
+        `六道工序 top=${done.stageTops.join(",")}`,
+    );
+
+    expect_(
+      done.rootCount === 1 && done.rootId === PLANNING_ROOT_ID,
+      `画布上有且只有 1 个一级 Agent 根节点（[data-pipeline-root="${done.rootId}"]）`,
+      `根节点有 ${done.rootCount} 个（id=${done.rootId}）—— 三层树的根必须是唯一的一个`,
+    );
+    expect_(
+      done.stageCount === 6 &&
+        done.stageIds.join(",") === "spec,arch,ui,build,assemble,verify",
+      "六道工序仍然是 6 个，顺序不变（①②③④⑤⑥）",
+      `工序卡有 ${done.stageCount} 个：${done.stageIds.join(" ")} —— 加一层不该动到第 1 层`,
+    );
+    /*
+      ★ 三层同时在 ★
+      这一条同时钉住三件事：根还在、六道工序都还在、七个执行点都还在。
+      少任何一层，这棵树就不叫三层树了 —— 而少一层在画面上
+      看起来只是"东西少了一点"，不报错。
+    */
+    const layerSum = done.rootCount + done.stageCount + done.chipCount;
+    expect_(
+      done.rootCount === 1 && done.stageCount === 6 && done.chipCount === doneRun.count,
+      `三层同时在：1 根 + 6 工序 + ${doneRun.count} 执行点（共 ${layerSum} 个节点）`,
+      `三层不齐：根 ${done.rootCount} + 工序 ${done.stageCount} + 执行点 ${done.chipCount}（执行点应有 ${doneRun.count} 个）`,
+    );
+    expect_(
+      done.rootTitle === "一级 Agent" && done.rootSubtitle === "总规划",
+      `根卡的标题和副标题来自投影：「${done.rootTitle}」/「${done.rootSubtitle}」`,
+      `根卡文字是「${done.rootTitle}」/「${done.rootSubtitle}」，期望「一级 Agent」/「总规划」`,
+    );
+    /*
+      ★ 根在六道工序**上方** ★
+      量的是屏幕坐标（getBoundingClientRect）。层级反了的话，
+      这棵树读起来就变成"六道工序管着一个 Agent"—— 而卡片长得一样，
+      位置是唯一说得出层级的东西。
+    */
+    expect_(
+      done.rootBox !== null &&
+        done.stageTops.length === 6 &&
+        done.rootBox.top + done.rootBox.h <= Math.min(...done.stageTops),
+      `根卡在六道工序上方（根底边 ${done.rootBox ? done.rootBox.top + done.rootBox.h : "?"} ≤ 工序顶边 ${Math.min(...done.stageTops)}）`,
+      `根卡不在上面：根 ${done.rootBox?.top}~${done.rootBox ? done.rootBox.top + done.rootBox.h : "?"}，工序顶边最小 ${Math.min(...done.stageTops)}`,
+    );
+    /*
+      ★ 根和六道工序之间**有线** ★
+      没有这条线，三层树在视觉上就只是"上面多了一张卡" ——
+      用户的原话「为什么没有树节点的效果」说的正是这个。
+      躯干 + 每个孩子一根横枝：6 个孩子就是 6 条。
+    */
+    expect_(
+      done.trunkFromRoot === 1 && done.branchesFromRoot === done.stageCount,
+      `根与六道工序之间有连线（1 条躯干 + ${done.branchesFromRoot} 条横枝，每道工序一条）`,
+      `根名下的连线不对：躯干 ${done.trunkFromRoot} 条、横枝 ${done.branchesFromRoot} 条（期望 1 条躯干 + ${done.stageCount} 条横枝）`,
+    );
+    /*
+      ★ 状态是投影说的，不是写死的 ★
+      run.status = 'done'，from-run.ts 把根节点的状态投影成 done
+      （一级 Agent 代表整条运行本身）。界面上就该是「已完成」+ 蓝色，
+      而且**不能有脉冲**（脉冲是"还在动"的意思）。
+    */
+    expect_(
+      done.rootStatus === "done" && done.rootPillText === "已完成" && done.rootPillPulse === "none",
+      `根卡如实显示这条运行的真实状态：${done.rootStatus} · 胶囊「${done.rootPillText}」· 无脉冲`,
+      `根卡显示 ${done.rootStatus} / 「${done.rootPillText}」/ 动画 ${done.rootPillPulse}` +
+        ` —— 这条运行是 done，就该是「已完成」且不动`,
+    );
+    /*
+      ★ 状态色与规划数据一致 ★
+      两级证据，缺一不可：
+        一、色值等于调色板里 done 那一档（蓝 = 96 165 250）；
+        二、等于**左侧清单里同状态那一行**的色点颜色 ——
+            同一棵树的两种视图，必须说同一句话。
+      只有第一条的话，"两处都错成同一个颜色"验不出来；
+      只有第二条的话，"两处一起漂到别的颜色上"验不出来。
+    */
+    /*
+      ★ 缩小时"字让位"这条规矩，根卡也要守 ★
+
+      根卡底部那行「下辖 6 道工序」是次要文字：档位掉到 major 以下必须让位
+      （globals.css 那条规则，见第十三步）。它特别容易漏 ——
+      外层 div 标了 data-canvas-label="minor" 一定会透明，
+      **内层那两个自带文字颜色的 span 不在选择器射程里**，照样显示，
+      表现是缩小时一行 4 像素的暗色灰渣。
+      所以这里量的是内层 span 的颜色，而且跟着**当前档位**判断，
+      不写死"必须透明"：屏幕一变、自动适应的倍率就变，档位跟着变 ——
+      写死的话这条断言会在别的屏宽上红，而它和"字有没有让位"无关。
+    */
+    const hidden = done.rootStagesColor === "rgba(0, 0, 0, 0)" || done.rootStagesColor === "transparent";
+    expect_(
+      done.tier === "all" ? !hidden : hidden,
+      `根卡的次要文字跟着档位走（档位 ${done.tier}，底部那行颜色 ${done.rootStagesColor}）`,
+      `档位 ${done.tier} 但底部那行的颜色是 ${done.rootStagesColor}` +
+        ` —— 该让位的时候没让（内层 span 漏出了选择器射程？）`,
+    );
+
+    const doneDots = dotsOfStatus(done, "done");
+    expect_(
+      done.rootRgb === "96 165 250" &&
+        doneDots.length === 1 &&
+        doneDots[0] === asRgb(done.rootRgb),
+      `根卡状态色 = 蓝 rgb(96, 165, 250)（done），和左侧清单里 done 那一行的色点同色`,
+      `根卡色是 ${done.rootRgb}（清单里 done 行的色点是 ${JSON.stringify(doneDots)}）` +
+        ` —— 期望一致的 96 165 250`,
+    );
+
+    cleanupVerifyRun(doneRun.runId);
+
+    /* ---- 19.2 换一条**还在跑**的运行：根的状态和颜色都得跟着变 ---- */
+    /*
+      ★ 这一条是"不写死"的硬证据 ★
+
+      同一张卡、同一段代码，只把运行换成 running：
+      如果根卡的状态是写死的（"已完成"或"规划中"），
+      这里必然和 19.1 一样，两条一对比就露馅。
+      它同时证明颜色不是随手挑的：running → green → 74 222 128，
+      和左侧清单里正在跑那一行是同一个色值。
+    */
+    const runningRun = seedRunningRun(username);
+    info(`造了一条运行 ${runningRun.slice(0, 8)}（status=running，只有一条 phase:spec）`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${runningRun}` });
+    await sleep(4200);
+
+    const running = await readTree3();
+    info(
+      `三层：根 ${running.rootCount} 个（${running.rootId} / ${running.rootStatus}）· ` +
+        `工序 ${running.stageCount} 个 · 执行点 ${running.chipCount} 个`,
+    );
+
+    expect_(
+      running.rootStatus === "running" &&
+        running.rootPillText === "正在跑" &&
+        running.rootPillPulse !== "none",
+      `换成还在跑的运行，根卡跟着变成 running「正在跑」且有脉冲（动画 ${running.rootPillPulse}）`,
+      `根卡显示 ${running.rootStatus} /「${running.rootPillText}」/ 动画 ${running.rootPillPulse}` +
+        ` —— 这条运行是 running，根卡该是「正在跑」并带一点脉冲`,
+    );
+    const runningDots = dotsOfStatus(running, "running");
+    expect_(
+      running.rootRgb === "74 222 128" &&
+        runningDots.length === 1 &&
+        runningDots[0] === asRgb(running.rootRgb),
+      `根卡状态色 = 绿 rgb(74, 222, 128)（running），和清单里正在跑那一行同色`,
+      `根卡色是 ${running.rootRgb}，清单里 running 行的色点是 ${JSON.stringify(runningDots)}`,
+    );
+    /*
+      两条运行 → 两种状态、两种颜色。这一条单独列出来，
+      是因为它才是"没有写死"这件事最直接的证据：
+      上面两条各自也可能在"写死成某一档"的情况下碰巧成立，
+      放在一起就不可能了。
+    */
+    expect_(
+      done.rootStatus !== running.rootStatus && done.rootRgb !== running.rootRgb,
+      `两条运行下根卡的状态与颜色都不同（${done.rootStatus}/${running.rootStatus}，` +
+        `${done.rootRgb} vs ${running.rootRgb}）—— 状态确实来自真实投影`,
+      `两条运行的根卡一样（${done.rootStatus} vs ${running.rootStatus}）—— 状态像是写死的`,
+    );
+
+    cleanupVerifyRun(runningRun);
+
+    /* ---- 19.3 没有选中运行时：回到六根并列的旧样子 ---- */
+    /*
+      rootCard 是**可选** prop，不传时画布必须和以前一模一样。
+      夹具在这一步之前已经全部删掉，所以 /canvas（不带 run）会落到
+      "没有运行"那条分支上 —— 那正是不传 rootCard 的那种情况。
+
+      为什么不干脆把 rootCard 写死成"总是三层"：
+      没有运行的时候连"这次运行"都还没有，凭空画一个总规划出来，
+      描述的是一个不存在的东西。少画一层，比多画一层假的强。
+    */
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas` });
+    await sleep(3500);
+
+    const noRun = await readTree3();
+    info(
+      `没有选中运行：根 ${noRun.rootCount} 个 · 工序 ${noRun.stageCount} 个 · ` +
+        `执行点 ${noRun.chipCount} 个`,
+    );
+    expect_(
+      noRun.rootCount === 0,
+      "没有选中运行时画布上**没有**一级 Agent 根节点（不凭空造一个总规划）",
+      `没有运行却画出了 ${noRun.rootCount} 个根节点 —— 那描述的是一个不存在的东西`,
+    );
+    expect_(
+      noRun.stageCount === 6,
+      "没有选中运行时仍然是六道工序并列（rootCard 不传 = 旧样子）",
+      `工序卡有 ${noRun.stageCount} 个 —— 不传 rootCard 时画布该和以前一模一样`,
+    );
+
     cdp.close();
     ok("画布交互、详情、面板、顶栏一致性、缩放让位、退役页面、子树与双击聚焦全部通过");
     ok("窄屏降级（<1280）：两侧收起为 0 宽、覆盖层 272/352 可开可关、画布全宽且滚轮仍能缩放 —— 全部通过");
+    ok(
+      "一级 Agent 根节点：三层树 1 根 + 6 工序 + 7 执行点、根在工序上方且有连线、" +
+        "状态与颜色随真实投影变化（done/running 两种运行验过）—— 全部通过",
+    );
   } finally {
     browser.kill();
     setTimeout(() => {

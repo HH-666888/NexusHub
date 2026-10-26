@@ -2,16 +2,16 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { CanvasStage } from "./canvas-stage";
-import { PipelineCanvas } from "./pipeline-canvas";
+import { PipelineCanvas, type CanvasRootCard } from "./pipeline-canvas";
 import { StageDetail } from "./stage-detail";
 import type { CostByStage } from "@/core/domain/stage-cost";
 import type { GateOverride } from "@/core/pipeline/gate-policy";
 import { buildPipelineGraph, tracePath } from "@/core/pipeline/graph";
-import { toLayoutNodes, type ChildrenByStage } from "@/core/pipeline/forest";
+import { toForestNodes, toLayoutNodes, type ChildrenByStage } from "@/core/pipeline/forest";
 import type { RunProgressInput } from "@/core/pipeline/progress";
 import { PANEL_GEOMETRY, WIDE_GEOMETRY, pipelineBounds } from "@/core/canvas/pipeline-layout";
 import { fitFloor } from "@/core/canvas/viewport";
-import { FOREST_GEOMETRY, layoutForest } from "@/core/canvas/forest-layout";
+import { FOREST_GEOMETRY, TREE_LEVELS, layoutForest } from "@/core/canvas/forest-layout";
 import { STAGES } from "@/core/pipeline/stages";
 import type { StageId } from "@/core/pipeline/stages";
 
@@ -54,6 +54,15 @@ export interface CanvasWorkbenchProps {
    * 「看不清就不该假装看得清」这条规矩在这里也适用。
    */
   childrenByStage?: ChildrenByStage;
+  /**
+   * 一级 Agent 根节点。**原样透传给 PipelineCanvas**，这里不加任何判断 ——
+   * 「这棵树该长什么样」是调用方（服务端的投影）的事实，
+   * 工作台只负责把它连同视口一起摆好。
+   *
+   * 唯一的另一处用途是算「打开时对准哪儿」：有根节点时，
+   * 整棵三层树才是该被装进视口的东西（见下面 bounds 那段）。
+   */
+  rootCard?: CanvasRootCard;
 }
 
 export function CanvasWorkbench({
@@ -62,6 +71,7 @@ export function CanvasWorkbench({
   gateOverride = "declared",
   variant = "page",
   childrenByStage,
+  rootCard,
 }: CanvasWorkbenchProps) {
   const [activeId, setActiveId] = useState<StageId | null>(null);
   const geometry = variant === "panel" ? PANEL_GEOMETRY : WIDE_GEOMETRY;
@@ -120,17 +130,45 @@ export function CanvasWorkbench({
   /*
     「打开时对准哪儿」。
 
-    ⚠️ 分两种情况，不能一律用 pipelineBounds：
+    ⚠️ 分三种情况，不能一律用 pipelineBounds：
 
-      没有子树（面板那一档，或者这次运行还没跑到验收）
-        → 用旧算法。它逐像素等于改之前的布局（有单测钉着）
+      有根节点（三层树）
+        → 用**整棵树**的包围盒（一级 Agent + 六道工序 + 各自的子树）。
+          少了根的话，最上面那一层开局就在屏幕外 —— 详见下面那段
 
-      有子树
+      没有根节点、但有子树
         → 用**森林自己的包围盒**（含子树）。
           用只按六个根算的话，「打开时看得全」会变成
           「看得全六个根、子树全在屏幕外」—— 而子树正是要给人看的东西
+
+      两者都没有（面板那一档，或者这次运行还没跑到验收）
+        → 用旧算法。它逐像素等于改之前的布局（有单测钉着）
   */
   const bounds = useMemo(() => {
+    /*
+      ⚠️ 有根节点时**必须先算这一条**，不能落到下面那两条上去。
+
+      下面那条"有子树"用的是六棵根（toLayoutNodes）的包围盒 ——
+      它**不含一级 Agent**。一头扎进去的话，打开画布时自动适应装下的是
+      "六道工序那片区域"，而根卡在它上面 212 像素处 ——
+      于是三层树最上面那一层**开局就在屏幕外**，
+      要用户自己往上拖才看得见（"还有东西在上面"这件事，不拖是看不出来的）。
+
+      几何用的是和 PipelineCanvas 同一份（FOREST_GEOMETRY + TREE_LEVELS）：
+      两边算的不是同一个东西的话，视口会"对准"一个画布上并不存在的位置。
+      这也是 TREE_LEVELS 住在 core 而不是某个组件里的原因。
+    */
+    if (rootCard) {
+      return layoutForest(
+        toForestNodes(
+          rootCard.id,
+          STAGES.map((s) => s.id),
+          kids ?? {},
+        ),
+        { ...FOREST_GEOMETRY, levels: TREE_LEVELS },
+      ).bounds;
+    }
+
     if (!kids || Object.keys(kids).length === 0) {
       return pipelineBounds(STAGES.length, geometry);
     }
@@ -141,7 +179,7 @@ export function CanvasWorkbench({
       ),
       FOREST_GEOMETRY,
     ).bounds;
-  }, [kids, geometry]);
+  }, [kids, geometry, rootCard]);
 
   const pick = useCallback(
     (id: StageId) => setActiveId((cur) => (cur === id ? null : id)),
@@ -190,6 +228,7 @@ export function CanvasWorkbench({
           geometry={geometry}
           childrenByStage={kids}
           gateOverride={gateOverride}
+          rootCard={rootCard}
         />
       </CanvasStage>
 

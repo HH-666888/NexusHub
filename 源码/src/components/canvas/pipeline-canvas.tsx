@@ -14,6 +14,7 @@ import {
 } from "@/core/canvas/pipeline-layout";
 import {
   FOREST_GEOMETRY,
+  TREE_LEVELS,
   layoutForest,
   treeLinks,
   type ForestGeometry,
@@ -21,10 +22,17 @@ import {
 import {
   childIndex,
   summarizeChildren,
+  toForestNodes,
   toLayoutNodes,
   type ChildrenByStage,
   type StageChild,
 } from "@/core/pipeline/forest";
+import {
+  TONE_RGB,
+  statusLabel,
+  statusTone,
+  type TaskPointStatus,
+} from "@/core/planning/task-point";
 import type { StageId } from "@/core/pipeline/stages";
 import { useAnimatedLayout } from "./use-animated-layout";
 
@@ -48,6 +56,24 @@ import { useAnimatedLayout } from "./use-animated-layout";
  *   没有产物就不显示产物大小，没有耗时就不显示耗时。
  *   图比列表更容易让人相信「这里真的有东西」，所以更不能画假的。
  */
+
+/**
+ * 一级 Agent 根节点 —— 三层树最上面那一层。
+ *
+ * ⚠️ 这里的 status **必须来自真实投影**，调用方不许写死。
+ *    它是 core/planning/from-run.ts 从这条运行的事件里投影出来的
+ *    那个任务点的状态（task-point.ts 的 TaskPointStatus 八档之一）。
+ *    一级 Agent 的"总规划"这一步真接入了没有，就显示成什么样：
+ *    投影说 pending 就画 pending 的样子 —— **那是实话，不是缺陷**。
+ *    画一个好看的「已完成」，而它其实一行规划都没跑过，
+ *    是这个项目最不能接受的那类谎（见文件头那条硬约束）。
+ */
+export interface CanvasRootCard {
+  id: string;
+  title: string;
+  subtitle?: string;
+  status: TaskPointStatus;
+}
 
 export interface PipelineCanvasProps {
   nodes: readonly PipelineNode[];
@@ -83,6 +109,24 @@ export interface PipelineCanvasProps {
    * 不给的话六道工序就是六个孤立的根节点，和以前一样。
    */
   childrenByStage?: ChildrenByStage;
+  /**
+   * 一级 Agent 根节点。**不传 = 还是现在的六根并列**（面板等旧用法不受影响）。
+   *
+   * ── 为什么做成可选 prop，而不是"画布自此就是三层树" ──
+   *   画布有三个使用者，它们看到的树**不是同一棵**：
+   *     /canvas 整页   —— 选中一条运行时，它有一级 Agent，是三层树
+   *     工作台面板     —— 退役页面的总览，只有六道工序
+   *     没选中运行的整页 —— 连"这次运行"都还没有，谈不上根节点
+   *   把"是不是三层"做成画布的内部约定，上面三种情况就有两种要造假：
+   *   要么凭空画一个不存在的一级 Agent，要么把一棵完整的树拆掉一层。
+   *   做成入参之后，**画布只负责画它拿到的那棵树**，
+   *   "这棵树该长什么样"留在有事实的那一层（服务端的投影）。
+   *
+   * ── 不传时逐像素不变 ──
+   *   这条不是口号：布局走的是原来那条 toLayoutNodes + 不带 levels 的路，
+   *   连 `levels` 这个键都不出现（有单测钉着「不传 levels ≡ 传 levels: {}」）。
+   */
+  rootCard?: CanvasRootCard;
 }
 
 /* ============================================================
@@ -405,6 +449,189 @@ function AuthorityChip({ node, dim }: { node: PipelineNode; dim: boolean }) {
 }
 
 /* ============================================================
+   一级 Agent（三层树的根）
+   ============================================================ */
+
+/**
+ * 画布最上面那张卡 —— 一级 Agent。
+ *
+ * ── 为什么它和 StageCard 长得一样，却不是一个组件 ──
+ *   一样的部分（**必须一样**）：边框、底色渐变、顶部那条细亮线、圆角、
+ *   状态胶囊、用 transform 摆放。用户的原话是「只是位置上的区分，
+ *   卡片样式先不区分」—— 层级感由**结构和连线**给，不由样式给。
+ *   所以下面那些 class 是照着 StageCard 抄的，改那边的时候要一起看。
+ *
+ *   不一样的部分（**必须不一样**）：它没有 01..06 那种序号，也不该有。
+ *   序号是"这是第几道工序"的意思，而根节点不是第 0 道工序 ——
+ *   它是**管这六道的那一个**。所以标识换成 ◆ AGENT。
+ *   另外它没有权限胶囊、没有"看什么数"、没有花费：那些都是工序的属性，
+ *   一级 Agent 这一期还不产出这些东西，硬填上去就是编。
+ *
+ * ── 状态色是算出来的，不是挑出来的 ──
+ *   颜色走内核对所有视图唯一的那一份映射（status → statusTone → TONE_RGB），
+ *   和左侧清单那一行是同一个色值。所以"清单里蓝的、画布上也是蓝的"
+ *   这件事不靠约定，靠它俩调的是同一个函数。
+ *
+ * ── 关于 pending ──
+ *   一级 Agent 的"总规划"这一步目前还没有真接入。它真实的状态就是
+ *   投影算出来的那个（常常是 pending）—— **照实画**。
+ *   一个灰的「待执行」比一个假的「已完成」有价值得多：
+ *   前者告诉你这块还没接上，后者让你以为可以验收了。
+ */
+function RootCard({
+  card,
+  rect,
+  entering = false,
+}: {
+  card: CanvasRootCard;
+  /** 这一帧画在哪。和 StageCard 一样，实际传进来的是 LaidNode（要它的 childCount） */
+  rect: NodeRect & { childCount?: number };
+  entering?: boolean;
+}) {
+  const tone = statusTone(card.status);
+  const rgb = TONE_RGB[tone];
+  /*
+    正在跑的那一档给一点脉冲。
+    用 Tailwind 现成的 animate-pulse + motion-reduce:animate-none，
+    而不是自己写 keyframes：**prefers-reduced-motion 下必须不动**，
+    而"自己写动画就忘了关"是这个项目里反复出现过的毛病
+    （见 globals.css 那一节）。现成的 motion-reduce: 变体让这条不可能被忘掉。
+  */
+  const running = card.status === "running";
+  /** 它管着几道工序。这个数是布局给的（LaidNode.childCount），不是写死的 6 */
+  const stages = rect.childCount ?? 0;
+
+  return (
+    <div
+      /*
+        ⚠️ 属性名是 data-pipeline-root，和工序卡的 data-pipeline-stage 分开。
+        e2e 数「六道工序」用的是后者 —— 两张卡共用一个属性名的话，
+        "恰好六个"会变成七个，而那种错只有数数才发现（和 StageCard 那段同一个坑）。
+      */
+      data-pipeline-root={card.id}
+      /*
+        状态**原样**写进 DOM，连 statusTone 都不参与 ——
+        好让"界面上显示的到底是哪一档"可以被直接读出来断言，
+        而不是从颜色上反推。反推的话，"颜色配错了"和"状态传错了"
+        在测试里长得一模一样。
+      */
+      data-root-status={card.status}
+      data-root-tone={tone}
+      /*
+        这张卡为状态挑的那个色值（TONE_RGB 里的三段），原样写进 DOM。
+        为什么不靠读计算样式：胶囊是 `data-canvas-label="minor"`，
+        缩到一定档位时它的文字本来就是**透明的**（"缩小时字让位"，
+        见 globals.css）—— 那时候读到的颜色是 rgba(0,0,0,0)，
+        而"状态色配错了"和"现在这一档把字藏了"在测试里长得一模一样。
+        写出来之后，e2e 可以直接拿它和左侧清单里同状态那一行的色点比。
+      */
+      data-root-rgb={rgb}
+      data-root-entering={entering ? "1" : undefined}
+      /*
+        pointer-events-auto 的理由和工序卡一样：
+        世界坐标那层是 pointer-events-none（拖着空白处才能平移画布）。
+      */
+      className="pointer-events-auto absolute overflow-hidden rounded-xl border px-3.5 py-3 transition-[border-color,opacity] duration-200"
+      style={{
+        /* 同 StageCard：transform 而不是 left/top，动画时不触发布局重算 */
+        transform: `translate(${rect.x}px, ${rect.y}px)`,
+        transformOrigin: "0 0",
+        width: rect.w,
+        height: rect.h,
+        borderColor: `rgb(${rgb} / 0.45)`,
+        backgroundColor: "var(--color-surface)",
+        backgroundImage: `linear-gradient(150deg, rgb(${rgb} / 0.14) 0%, rgb(${rgb} / 0.03) 58%, transparent 100%)`,
+        opacity: entering ? 0.25 : 1,
+        // 刚长出来的时候从透明淡入 —— 和子方块同一个理由（见 ChildChip）
+      }}
+    >
+      {/* 顶部细亮线。和工序卡、子方块是同一件事：说明这一格是"活的" */}
+      <span
+        aria-hidden
+        className="absolute inset-x-0 top-0 h-px"
+        style={{ background: `linear-gradient(90deg, transparent, rgb(${rgb} / 0.9), transparent)` }}
+      />
+
+      {/* ---------- 第一行：标识 + 状态胶囊 ----------
+          和 StageCard 那一行同构，只是把「点 + 序号 01」换成「◆ AGENT」 */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="inline-block text-[11px] leading-none"
+            style={{ color: `rgb(${rgb})`, textShadow: `0 0 8px rgb(${rgb} / 0.6)` }}
+          >
+            ◆
+          </span>
+          <span
+            data-canvas-label="major"
+            className="font-mono text-[11px] font-semibold tracking-wider"
+            style={{ color: `rgb(${rgb})` }}
+          >
+            AGENT
+          </span>
+        </div>
+        <span
+          data-root-pill
+          data-canvas-label="minor"
+          className={`rounded border px-1.5 py-px text-[10px] whitespace-nowrap ${
+            running ? "animate-pulse motion-reduce:animate-none" : ""
+          }`}
+          style={{
+            borderColor: `rgb(${rgb} / 0.5)`,
+            color: `rgb(${rgb})`,
+            background: `rgb(${rgb} / 0.12)`,
+          }}
+        >
+          {statusLabel(card.status)}
+        </span>
+      </div>
+
+      {/* ---------- 标题 / 副标题 ---------- */}
+      <div
+        data-root-title
+        data-canvas-label="major"
+        className="mt-2 text-[15px] leading-tight font-medium text-slate-100"
+      >
+        {card.title}
+      </div>
+      {card.subtitle && (
+        <div data-root-subtitle data-canvas-label="minor" className="mt-0.5 font-mono text-[10.5px] text-slate-500">
+          {card.subtitle}
+        </div>
+      )}
+
+      {/* ---------- 它管着几道工序 ----------
+          数字来自布局，不是写死的 6 —— 树形变了这里自己就跟着变。
+          没有它的话卡片下半截是一片空，而"它是这六道的上一层"
+          这件事就只剩位置在表达了。
+
+          ⚠️ 里面两个 span **也**标 data-canvas-label="minor"。
+             tier 规则靠的就是这个属性（globals.css 里那条选择器只认
+             `[data-canvas-label="minor"]`，而且必须 !important 才压得住内联色）；
+             只标外层的话，内层这两个带文字颜色的 span 不在选择器射程里，
+             缩小到 62% 以下它们**照样显示** —— 一行 4 像素的暗色小字，
+             正是"缩小时字让位"要消灭的那种灰渣。
+             （StageCard 的花费那一行是同样的结构、同样的毛病，
+               属于既有代码，这一次没动它。） */}
+      <div
+        data-root-stages
+        data-canvas-label="minor"
+        className="mt-2 border-t pt-1.5 text-[10.5px] tabular-nums"
+        style={{ borderColor: `rgb(${rgb} / 0.15)` }}
+      >
+        <span data-canvas-label="minor" className="text-slate-500">
+          下辖{" "}
+        </span>
+        <span data-canvas-label="minor" className="text-slate-300">
+          {stages} 道工序
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    一个子节点
    ============================================================ */
 
@@ -568,8 +795,11 @@ function ChildChip({
  *   硬合成一个类型的话，面板那一档就得凭空填一堆用不到的子树参数。
  *
  * 根的三个值直接搬过去，这样**没有子树时结果和旧布局逐像素相同**。
+ *
+ * @param threeLayer 画的是不是三层树（也就是有没有一级 Agent 根节点）。
+ *   只有它为 true 时才会带上 levels —— 见下面那段。
  */
-function forestGeometryOf(g: CanvasPipelineGeometry): ForestGeometry {
+function forestGeometryOf(g: CanvasPipelineGeometry, threeLayer: boolean): ForestGeometry {
   return {
     ...FOREST_GEOMETRY,
     root: { w: g.nodeW, h: g.nodeH, gapX: g.gapX, perRow: g.perRow },
@@ -577,6 +807,21 @@ function forestGeometryOf(g: CanvasPipelineGeometry): ForestGeometry {
     // 根节点换行时两行之间的距离，沿用画布那套的 gapY
     // （它已经保证装得下回退弧线了 —— 这正是 gapY 当年被定成 136 的原因）
     rootRowGap: g.gapY,
+    /*
+      ---------- 三层树才有 levels ----------
+      ⚠️ 不画根节点时**连这个键都不出现**（不是 levels: undefined）：
+         「不传 levels ≡ 传 levels: {}」那条单测守的是同一个意思，
+         但"键在不在"这件事读代码时一眼就能看出来，比 null 值清楚。
+
+      ── 为什么按深度覆盖，而不是改 FOREST_GEOMETRY ──
+        第 1 层的六道工序和画布原来的根节点**必须一模一样大**（240×156）。
+        直接改 g.child 的话，第 2 层往后那七个执行任务点会跟着一起变大 ——
+        子树横向撑宽，六道工序被挤到看不清（那笔宽度账见 forest-layout 文件头）。
+        只有"按深度"这一个维度能同时满足这两件事：第 0、1 层主卡尺寸，
+        第 2 层起子卡尺寸。数字本身在 core 里（TREE_LEVELS），
+        和 CanvasWorkbench 算"打开时看得全"用的是同一份。
+    */
+    ...(threeLayer ? { levels: TREE_LEVELS } : {}),
   };
 }
 
@@ -588,9 +833,11 @@ export function PipelineCanvas({
   onFocusBounds,
   geometry = PIPELINE_GEOMETRY,
   childrenByStage,
+  rootCard,
 }: PipelineCanvasProps) {
   const g = geometry;
   const total = nodes.length;
+  const threeLayer = rootCard !== undefined;
 
   /** id → 子节点数据。渲染时按 id 查，O(1) */
   const childOf = useMemo(() => childIndex(childrenByStage ?? {}), [childrenByStage]);
@@ -602,17 +849,29 @@ export function PipelineCanvas({
 
     有子节点时，根节点之间的距离会按**子树宽**自动撑开 ——
     这就是「自动扩展」，不需要任何额外的推动逻辑。
+
+    ⚠️ 有根节点时走的是**另一棵树**：
+       toForestNodes 把「一级 Agent → 六道工序 → 各自的子节点」
+       拼成一棵三层树。布局本身完全没变 —— 它一直都支持任意深度，
+       变的是喂进去的形状。连线的自动出现也是同一个道理：
+       treeLinks 按 parentId 分组，多一层父节点就多一条躯干。
   */
   const forest = useMemo(
     () =>
       layoutForest(
-        toLayoutNodes(
-          nodes.map((n) => n.id),
-          childrenByStage ?? {},
-        ),
-        forestGeometryOf(g),
+        threeLayer && rootCard
+          ? toForestNodes(
+              rootCard.id,
+              nodes.map((n) => n.id),
+              childrenByStage ?? {},
+            )
+          : toLayoutNodes(
+              nodes.map((n) => n.id),
+              childrenByStage ?? {},
+            ),
+        forestGeometryOf(g, threeLayer),
       ),
-    [nodes, childrenByStage, g],
+    [nodes, childrenByStage, g, threeLayer, rootCard],
   );
 
   /*
@@ -638,6 +897,22 @@ export function PipelineCanvas({
     [nodes, animatedNodes, forest, g],
   );
 
+  /*
+    一级 Agent 那张卡画在哪。
+
+    和六道工序用**同一套坐标**：优先取动画态（理由见上面的 animated 段），
+    找不到才退回布局的目标位置。
+
+    为什么不是"反正它不动，直接用 forest.byId"：
+      换运行的瞬间整棵树都在动 —— 从"六根并列"切到"三层树"时，
+      六道工序会往下让位、根卡从无到有。这时候根卡如果用的是目标位置，
+      它会**先落在终点**，而它下面那六张还在半路上 —— 看起来像根卡
+      和自己的孩子脱节了。跟同一套坐标走才不会。
+  */
+  const rootRect = rootCard
+    ? (animatedNodes.find((a) => a.id === rootCard.id) ?? forest.byId.get(rootCard.id) ?? null)
+    : null;
+
   /** 有聚焦点时，不在链上的压暗 —— 让链自己浮出来 */
   const hasFocus = chain !== null;
   const onChain = useCallback(
@@ -651,6 +926,20 @@ export function PipelineCanvas({
   );
 
   const bounds = forest.bounds;
+
+  /**
+   * 往下第几层起才画成子方块。
+   *
+   * ── 这个下限不是可有可无的 ──
+   *   没有根节点时，六道工序是**根**（depth 0），所以"depth > 0 的都是子节点"成立。
+   *   有了根节点之后，六道工序掉到了 depth 1 —— 再按 `depth > 0` 过滤，
+   *   它们会**全都进子方块的渲染循环**。
+   *   现在之所以没出事，只是因为 childOf 里查不到工序的 id（有一步 `if (!child) return null`
+   *   兜住了）。靠着"查不到"来正确，是会很脆的：哪天想给工序也挂一份子数据
+   *   （比如"这一步的产物"），六张工序卡会当场变成六个小方块。
+   *   所以层级下限按**这棵树有几层**算，不靠兜底。
+   */
+  const childDepthFloor = threeLayer ? 1 : 0;
   /*
     ⚠️ 这里原来还有一根 `const lane = bounds.x - 32` ——
        跨行回退边共用的那根竖线。回退弧线不画了，它也就没人用了，删掉。
@@ -790,6 +1079,18 @@ export function PipelineCanvas({
         ))}
       </svg>
 
+      {/* ---------- 一级 Agent（三层树最上面那一层）----------
+          不传 rootCard 时这里什么都不画 —— 旧用法（六根并列）逐像素不变。
+          渲染顺序放在六道工序**前面**：DOM 顺序和树形顺序一致，
+          调试时 querySelectorAll 出来的第一张卡就是最上面那张。 */}
+      {rootCard && rootRect && (
+        <RootCard
+          card={rootCard}
+          rect={rootRect}
+          entering={animated.newIds.has(rootCard.id)}
+        />
+      )}
+
       {/* ---------- 节点 ---------- */}
       {nodes.map((node, i) => (
         <StageCard
@@ -827,8 +1128,12 @@ export function PipelineCanvas({
 
       {/*
         ---------- 子节点 ----------
-        挂在每道工序下面。depth > 0 的就是它们 ——
+        挂在每道工序下面。比 `childDepthFloor` 深的就是它们 ——
         布局只吐出位置，这里按 id 把数据找回来。
+
+        ⚠️ 下限由 childDepthFloor 给，不是写死的 0：
+           有根节点时六道工序在 depth 1，写死 0 会把它们也卷进这个循环
+           （现在只靠"childOf 里查不到"侥幸没出事，见那个常量的说明）。
 
         ⚠️ 用 animatedNodes（动画态），理由同上面的连线。
         另外带上 `entering`：这一帧里刚冒出来的方块要淡入 ——
@@ -836,7 +1141,7 @@ export function PipelineCanvas({
         如果一上来就是全不透明，看起来像"弹出来"而不是"长出来"。
       */}
       {animatedNodes
-        .filter((n) => n.depth > 0)
+        .filter((n) => n.depth > childDepthFloor)
         .map((n) => {
           const child = childOf.get(n.id);
           if (!child) return null;

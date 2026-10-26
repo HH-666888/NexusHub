@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   FOREST_GEOMETRY,
+  TREE_LEVELS,
   layoutForest,
   levelAt,
   type ForestGeometry,
@@ -276,7 +277,70 @@ describe("toForestNodes 的形状", () => {
   });
 });
 
-/* ⑤ levelAt 的解析规则 */
+/* ⑤ 出厂的那份几何（core 里的 TREE_LEVELS） */
+
+describe("TREE_LEVELS：画布真正用到的那份三层几何", () => {
+  /**
+   * 上面那几组用的 LEVELS 是这个测试文件里的**本地副本** ——
+   * 它证明的是"这套几何摆得对"，证明不了"画布用的就是这套"。
+   * 真正的画布（PipelineCanvas）和视口（CanvasWorkbench）取的是
+   * core/canvas/forest-layout.ts 里的 TREE_LEVELS。
+   *
+   * 两边漂开的后果不会报错，只会让画面悄悄变样：
+   * 六道工序回到 232×112、或者被折成三行 —— 而单测全绿。
+   * 所以这一组直接把出厂常量和上面钉过的那份比。
+   */
+  it("出厂的 TREE_LEVELS 就是本文件里那套（三层的尺寸和行数一个不差）", () => {
+    expect(TREE_LEVELS).toEqual(LEVELS.levels);
+  });
+
+  it("拿出厂常量摆一遍，三层各自的尺寸/深度/行数都对得上", () => {
+    const laid = layoutForest(TREE, { ...FOREST_GEOMETRY, levels: TREE_LEVELS });
+
+    /* 第 0 层：一级 Agent，唯一的根，主卡尺寸 */
+    expect(laid.roots).toHaveLength(1);
+    const root = laid.byId.get("agent-1")!;
+    expect({ w: root.w, h: root.h, depth: root.depth }).toEqual({ w: 240, h: 156, depth: 0 });
+
+    /* 第 1 层：六道工序，主卡尺寸，**一行六个** */
+    const stages = SIX.map((id) => laid.byId.get(id)!);
+    for (const n of stages) expect({ id: n.id, w: n.w, h: n.h }).toEqual({ id: n.id, w: 240, h: 156 });
+    expect(new Set(stages.map((n) => n.y)).size, "六道工序被折成了多行").toBe(1);
+
+    /* 第 2 层：执行任务点，子卡尺寸，每行两个 */
+    const kids = SIX.flatMap((s) => byStage[s] ?? []).map((k) => laid.byId.get(k.id)!);
+    expect(kids.length).toBe(9);
+    for (const n of kids) expect({ id: n.id, w: n.w, h: n.h }).toEqual({ id: n.id, w: 232, h: 112 });
+
+    /*
+      ── 宽度这笔账 ──
+      六道工序**自己那一行**是 6×240 + 5×28 = 1580（gapX 那一层没覆盖，
+      退回 child.gapX = 28）。这个数用"没有任何子节点"的树来量最干净 ——
+      有子树之后 measure 会按子树宽把兄弟撑开（见下面第二条）。
+    */
+    const bare = layoutForest(toForestNodes("agent-1", SIX, {}), {
+      ...FOREST_GEOMETRY,
+      levels: TREE_LEVELS,
+    });
+    const bareStages = SIX.map((id) => bare.byId.get(id)!);
+    expect(Math.max(...bareStages.map((n) => n.x + n.w)) - Math.min(...bareStages.map((n) => n.x))).toBe(
+      1580,
+    );
+    expect(bare.bounds.w).toBe(1580);
+
+    /*
+      带上子树之后这一行会被撑宽 —— 撑到多少由**各自的子树宽**决定：
+      本文件里 ui / build / assemble 各挂 2~3 个执行任务点（492 宽），
+      所以是 3×240 + 3×492 + 5×28 = 2336。
+      这一条不是为了钉住 2336 这个数（换一棵树就变），而是钉住
+      **它不会失控**：文件头那条硬约束是总宽 ≤ 2450。
+    */
+    expect(laid.bounds.w).toBeLessThanOrEqual(2450);
+    expect(laid.bounds.w).toBe(2336);
+  });
+});
+
+/* ⑥ levelAt 的解析规则 */
 
 describe("levelAt 解析规则", () => {
   it("只写 { w } 的那一层，h / gapX / perRow / gapY 逐字段退回默认", () => {

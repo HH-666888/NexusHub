@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   CONTROL_LAYER_MAX_DEPTH,
   TASK_POINT_STATUSES,
+  TONE_RGB,
   childrenOf,
   hasOrphans,
   isControlLayer,
   rollUpStatus,
+  statusLabel,
   statusTone,
   type TaskPoint,
   type TaskPointStatus,
@@ -336,5 +338,66 @@ describe("statusTone：八种状态 → 六种色调", () => {
       "white",
       "yellow",
     ]);
+  });
+});
+
+/* ── 状态 → 胶囊上的字 ── */
+
+describe("statusLabel：八种状态 → 八句话", () => {
+  it("八种状态每一种都有字，一种都没漏", () => {
+    /*
+      和上面那条同一个理由，只是后果不同：
+      漏了色调 → 一个白点（看不见）；漏了文字 → 一个**空白胶囊**。
+      空白胶囊在界面上看起来像样式没加载，不像数据缺失 ——
+      所以它更需要一条遍历全集的测试，而不是抽查。
+    */
+    for (const status of TASK_POINT_STATUSES) {
+      const label = statusLabel(status);
+      expect(typeof label, `状态 ${status} 没有文字`).toBe("string");
+      expect(label.length, `状态 ${status} 的文字是空的`).toBeGreaterThan(0);
+    }
+    expect(TASK_POINT_STATUSES).toHaveLength(8);
+  });
+
+  it("八句话互不相同 —— 没有任何两档被合成一句", () => {
+    /*
+      两档写成同一句话的后果不只是"看着粗糙"：用户没法从界面区分
+      「还没轮到」（pending）和「还跑不了」（skipped / failed），
+      而这两种情况该做的事完全不同 —— 一个等着就行，一个得去查。
+    */
+    const labels = TASK_POINT_STATUSES.map(statusLabel);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("控制层的 done 说的是「已完成」，不是「已通过」", () => {
+    /*
+      一级 Agent 是控制层：它只做规划，不产出任何可"通过"的东西。
+      写成「已通过」会让人以为它交出了什么被验收过的东西 ——
+      那是替它说了它没做过的事。
+    */
+    expect(statusLabel("done")).toBe("已完成");
+    expect(statusLabel("running")).toBe("正在跑");
+    expect(statusLabel("pending")).toBe("待执行");
+  });
+
+  it("每一档都有一套合法的色值 —— 三种分量、都在 0..255", () => {
+    /*
+      TONE_RGB 是画布和清单共用的调色板（写成 `r g b` 三段，塞进 rgb(...)）。
+      它的消费者是 `rgb(${TONE_RGB[tone]} / 0.5)` 这种模板串：
+      少写一段、多写个逗号**都不会报错**，只会让整条 CSS 失效 ——
+      表现是那个元素没有颜色，一眼看不出来是数据问题。
+      所以这里逐条校验形状，而不是只查"键在不在"。
+    */
+    for (const status of TASK_POINT_STATUSES) {
+      const rgb = TONE_RGB[statusTone(status)];
+      const parts = rgb.split(" ");
+      expect(parts, `${status} 的色值不是三段：${JSON.stringify(rgb)}`).toHaveLength(3);
+      for (const p of parts) {
+        const n = Number(p);
+        expect(Number.isInteger(n), `${status} 的色值分量不是整数：${p}`).toBe(true);
+        expect(n).toBeGreaterThanOrEqual(0);
+        expect(n).toBeLessThanOrEqual(255);
+      }
+    }
   });
 });

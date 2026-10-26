@@ -1,5 +1,5 @@
 import type { OutlineRow } from "@/core/planning/outline";
-import { statusTone, type TaskPointTone } from "@/core/planning/task-point";
+import { TONE_RGB, statusTone } from "@/core/planning/task-point";
 
 /**
  * 左侧任务点清单
@@ -25,30 +25,13 @@ import { statusTone, type TaskPointTone } from "@/core/planning/task-point";
  */
 
 /**
- * 六种色调 → 实际颜色。
+ * ⚠️ 色值表**不在这里**，它搬去了 core/planning/task-point.ts（TONE_RGB）。
  *
- * ⚠️ 写成 Record<TaskPointTone, string> 而不是普通对象：
- *    将来内核里加第七种色调时，**编译器会在这里报错**，
- *    逼着人当场决定它是什么颜色。
- *    写成普通对象的话，新色调会静默地变成 undefined ——
- *    界面上是一个没有颜色的圆点，靠肉眼几乎发现不了。
- *
- * 括号里的含义和画布上那张卡说的是同一句话：
- *   绿 = 正在发生（running / planning）
- *   蓝 = 完成（done）
- *   白 = 还没动（pending / ready）
- *   红 = 失败（failed）
- *   灰 = 有意跳过（skipped）
- *   黄 = 在等人（waiting）
+ * 原因：画布上的一级 Agent 卡也要按同一套色调上色。
+ * 两处各留一份六色表的话，改一处忘一处不会有任何报错 ——
+ * 只会让同一个任务点在清单里是蓝的、在画布上是灰的。
+ * 那也是 statusTone 住在内核里的同一个理由（唯一一份映射，有单测遍历八种状态）。
  */
-const TONE_RGB: Record<TaskPointTone, string> = {
-  green: "74 222 128",
-  blue: "96 165 250",
-  white: "148 163 184",
-  red: "248 113 113",
-  gray: "100 116 139",
-  yellow: "250 204 21",
-};
 
 export function PlanningOutline({ rows }: { rows: readonly OutlineRow[] }) {
   return (
