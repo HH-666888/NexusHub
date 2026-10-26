@@ -56,6 +56,15 @@ export interface PipelineCanvasProps {
   chain?: ReadonlySet<StageId> | null;
   activeId?: StageId | null;
   onPick?: (id: StageId) => void;
+  /**
+   * 双击一个工序 → 请画布聚焦到它**整棵子树**。
+   *
+   * 为什么传区域而不是传节点 id：
+   *   区域是布局算出来的（LaidNode.subtree，"含自己整棵子树"那个字段），
+   *   而画布只负责"把这块区域装进视口"。让画布自己去查布局的话，
+   *   它就得认识森林数据结构 —— 那是业务，不是画布该知道的事。
+   */
+  onFocusBounds?: (bounds: { x: number; y: number; w: number; h: number }) => void;
   gateOverride?: GateOverride;
   /**
    * 摆几行。
@@ -125,6 +134,7 @@ function StageCard({
   active,
   dimmed,
   onPick,
+  onFocus,
 }: {
   node: PipelineNode;
   rect: NodeRect;
@@ -132,6 +142,8 @@ function StageCard({
   active: boolean;
   dimmed: boolean;
   onPick?: (id: StageId) => void;
+  /** 双击 —— 聚焦到这棵树。区域由外面给（只有布局知道子树多大） */
+  onFocus?: () => void;
 }) {
   const empty = node.implementation === "planned";
   const tone = toneOf(node);
@@ -187,6 +199,19 @@ function StageCard({
         } as CSSProperties
       }
       onClick={() => onPick?.(node.id)}
+      /*
+        双击聚焦到这棵树。
+
+        ── 为什么是双击而不是单击 ──
+          单击已经用来"点亮整条上下游链"了（那是查看依赖）。
+          聚焦是**换视角**，动作更重，给双击正合适 ——
+          而且它和"双击进入文件夹"是同一个肌肉记忆。
+      */
+      onDoubleClick={(e) => {
+        e.stopPropagation(); // 别让双击穿透到画布（那里也可能有双击回全局）
+        onFocus?.();
+      }}
+      title="单击高亮上下游链 · 双击聚焦到这棵树"
     >
       {/* 顶部细亮线。只有真正接入了的工序才有 ——
           灰掉的工序连这条线都不该有，否则看起来还是「活的」 */}
@@ -512,6 +537,7 @@ export function PipelineCanvas({
   chain = null,
   activeId = null,
   onPick,
+  onFocusBounds,
   geometry = PIPELINE_GEOMETRY,
   childrenByStage,
 }: PipelineCanvasProps) {
@@ -726,6 +752,22 @@ export function PipelineCanvas({
           active={activeId === node.id}
           dimmed={dimmedExcept(node.id)}
           onPick={onPick}
+          /*
+            聚焦区域用 **forest.byId 的 subtree**，不是 animatedNodes 的。
+
+            为什么：subtree 是"这棵树最终占多大地方"，是个**稳定的目标**。
+            动画途中 animatedNodes 上的位置是插值中间态，
+            拿它当聚焦区域的话，双击时如果动画还没跑完，
+            聚焦到的会是一个"正在移动中的、偏小的"区域。
+          */
+          onFocus={
+            onFocusBounds
+              ? () => {
+                  const target = forest.byId.get(node.id);
+                  if (target) onFocusBounds(target.subtree);
+                }
+              : undefined
+          }
         />
       ))}
 

@@ -143,14 +143,45 @@ export function CanvasWorkbench({
     [],
   );
 
+  /*
+    ---------- 双击聚焦 ----------
+    点一个工序的双击 → 让视口装下**它整棵子树**（区域由 PipelineCanvas
+    从布局的 subtree 字段里取，见那边的说明）。
+
+    ── 为什么要有 nonce ──
+      连点同一个节点两次，bounds 是同一个值 —— 只传 bounds 的话
+      第二次依赖没变、effect 不触发，看起来就是"双击没反应"。
+      nonce 让每次请求都是新的一次。
+
+    ── 为什么"回到原点"不用在这里清掉它 ──
+      画布那个按钮直接 fit 到 homeBounds（整片森林），
+      而 focusRequest 只在 nonce 变化时才生效 ——
+      所以按回去之后，那个旧的 focusRequest 不会再把人拽回来。
+      这正是把它设计成"事件"而不是"状态"的原因。
+  */
+  const [focusRequest, setFocusRequest] = useState<{
+    bounds: { x: number; y: number; w: number; h: number };
+    nonce: number;
+  } | null>(null);
+
+  const focusOn = useCallback((b: { x: number; y: number; w: number; h: number }) => {
+    setFocusRequest((cur) => ({ bounds: b, nonce: (cur?.nonce ?? 0) + 1 }));
+  }, []);
+
   return (
     <div className="relative h-full w-full">
-      <CanvasStage fitBounds={bounds} homeBounds={bounds} minFitScale={minFitScale}>
+      <CanvasStage
+        fitBounds={bounds}
+        homeBounds={bounds}
+        minFitScale={minFitScale}
+        focusRequest={focusRequest}
+      >
         <PipelineCanvas
           nodes={graph.nodes}
           chain={chain}
           activeId={activeId}
           onPick={pick}
+          onFocusBounds={focusOn}
           geometry={geometry}
           childrenByStage={kids}
           gateOverride={gateOverride}

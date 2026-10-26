@@ -18,7 +18,85 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { expect_, finish, heading, info, ok, signUp } from "./e2e-kit";
+
+/**
+ * 给测试账号造一条「跑到验收」的运行。
+ *
+ * ── 为什么要造，而不是真跑一次 ──
+ *   真跑一次要调模型、花钱、等几十秒 —— e2e 不该为了验一棵树去生成一个应用。
+ *   而子树是**只有跑过验收才有**的东西，不造的话画布上永远是空的。
+ *
+ * ── 造出来的必须"真的可能出现" ──
+ *   下面七项就是 inspectArtifact 真正产出的那七项，results 的形状
+ *   （name / pass / detail）和真实事件逐字段一致。
+ *   造一个现实里不可能出现的形状，这条断言就失去意义了。
+ *
+ * ── 故意让一项不过 ──
+ *   "有事件处理" 设为 fail。全是 pass 的话，
+ *   tone 有没有真的读进渲染是看不出来的。
+ */
+function seedVerifyRun(username: string): { runId: string; count: number } {
+  const db = new Database("./data/nexus.db");
+  try {
+    const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
+      | { id: number }
+      | undefined;
+    if (!user) throw new Error(`找不到测试账号 ${username}`);
+
+    const runId = `e2e-tree-${Date.now().toString(36)}`;
+    const now = Date.now();
+
+    db.prepare(
+      `INSERT INTO runs (id, user_id, prompt, stage, status, workflow_version, created_at, updated_at)
+       VALUES (?, ?, ?, 'verify', 'done', 'e2e-fixture', ?, ?)`,
+    ).run(runId, user.id, "端到端夹具：一棵有子树的验收", now, now);
+
+    const results = [
+      { name: "完整 HTML 结构", pass: true, detail: "产物含 html/head/body 三段完整结构" },
+      { name: "内联样式", pass: true, detail: "样式全部内联，没有外部样式表引用" },
+      { name: "内联脚本", pass: true, detail: "脚本全部内联，没有外部 js 引用" },
+      { name: "完全自包含（无外部引用）", pass: true, detail: "没有任何指向外部域名的引用" },
+      { name: "有事件处理", pass: false, detail: "没有找到 addEventListener 或 on* 属性" },
+      { name: "数据能持久化", pass: true, detail: "用到了 localStorage 存取" },
+      { name: "中文界面", pass: true, detail: "界面文案是中文" },
+    ];
+
+    db.prepare(
+      `INSERT INTO run_events (run_id, seq, at, kind, payload) VALUES (?, ?, ?, 'check', ?)`,
+    ).run(
+      runId,
+      0,
+      now,
+      JSON.stringify({
+        kind: "check",
+        results,
+        summary: {
+          total: results.length,
+          passed: results.filter((r) => r.pass).length,
+          failed: results.filter((r) => !r.pass).length,
+          failures: results.filter((r) => !r.pass),
+        },
+      }),
+    );
+
+    return { runId, count: results.length };
+  } finally {
+    db.close();
+  }
+}
+
+/** 删掉夹具。e2e 跑完不该在库里留东西 */
+function cleanupVerifyRun(runId: string): void {
+  const db = new Database("./data/nexus.db");
+  try {
+    db.prepare("DELETE FROM run_events WHERE run_id = ?").run(runId);
+    db.prepare("DELETE FROM runs WHERE id = ?").run(runId);
+  } finally {
+    db.close();
+  }
+}
 
 const BASE = process.env.NEXUS_BASE ?? "http://localhost:3000";
 const EDGE = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
@@ -1007,8 +1085,134 @@ async function main() {
       `顶栏有 ${navLinkCount} 个链接`,
     );
 
+    /* ---------- 15. 子树真的画出来了 ---------- */
+    /*
+      ⚠️ 这一条填的是一个**验证空洞**。
+
+      前面十四步用的都是全新的测试账号 —— 那个账号没有任何运行记录、
+      也就没有任何检查结果。所以画布上的子节点数**永远是 0**，
+      关于子树的那些断言全都空转（`if (chips > 0)` 直接跳过）。
+
+      这件事必须说清楚：**那一版看起来"绿了"，但什么都没验证。**
+      子树是这个项目最核心的视觉产出，不能只靠人眼看截图。
+
+      所以这一步**给测试账号造一条带检查结果的运行** ——
+      直接往库里插一行 runs + 一条 kind:"check" 的事件，
+      然后打开 /canvas?run=<id>，断言子树真的长出来了。
+
+      ── 为什么可以直接插库 ──
+        这是**测试夹具**，插的是测试账号的一次运行，用完就删。
+        生成一次真的运行要调模型、花钱、还要等几十秒 ——
+        e2e 不该为了验一棵树去跑一次生成。
+
+      ── 造的数据必须是**真的能出现的** ──
+        下面这七项就是 inspectArtifact 真正产出的那七项，
+        results 的形状和真实事件逐字段一致。造一个现实里不可能出现的
+        形状（比如 name 变成数字）就让这条断言失去意义了。
+    */
+    heading("第十五步 · 子树真的画出来了（造一条带检查结果的运行）");
+
+    const seeded = seedVerifyRun(username);
+    info(`造了一条运行 ${seeded.runId.slice(0, 8)}，带 ${seeded.count} 项检查`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${seeded.runId}` });
+    await sleep(4200);
+
+    const treeRaw = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const chips = [...document.querySelectorAll('[data-canvas-child]')];
+        const links = [...document.querySelectorAll('[data-canvas-tree-link]')];
+        const trunks = [...document.querySelectorAll('[data-canvas-tree-trunk]')];
+        return JSON.stringify({
+          chips: chips.length,
+          links: links.length,
+          trunks: trunks.length,
+          // 每张子卡是不是真的"有内容"，而不是只有一个标题
+          withStatus: chips.filter(c => c.querySelector('[data-child-status]')).length,
+          withDetail: chips.filter(c => c.querySelector('[data-child-detail]')).length,
+          withMetric: chips.filter(c => c.querySelector('[data-child-metric]')).length,
+          tones: chips.map(c => c.getAttribute('data-child-tone')),
+          // 子卡是不是真的和主卡同一套：有边框、有底色、有圆角
+          styled: chips.filter(c => {
+            const s = getComputedStyle(c);
+            return s.borderTopWidth !== '0px' && s.backgroundColor !== 'rgba(0, 0, 0, 0)';
+          }).length,
+        });
+      })()`,
+      returnByValue: true,
+    });
+    const tree = JSON.parse(treeRaw.result!.value!) as {
+      chips: number;
+      links: number;
+      trunks: number;
+      withStatus: number;
+      withDetail: number;
+      withMetric: number;
+      tones: string[];
+      styled: number;
+    };
+    info(
+      `子方块 ${tree.chips} 个 · 连线 ${tree.links} 条 · 躯干 ${tree.trunks} 条 · ` +
+        `带状态 ${tree.withStatus} · 带依据 ${tree.withDetail} · 带数值 ${tree.withMetric}`,
+    );
+
+    expect_(
+      tree.chips === seeded.count,
+      `${seeded.count} 项检查长成了 ${seeded.count} 个方块`,
+      `只画出了 ${tree.chips} 个方块`,
+    );
+    /*
+      连线数必须等于方块数 —— 少一条就是"孤儿方块"。
+      注意退化横枝（孩子横跨脊线）也渲染了零长度的线，
+      所以这个等式在最后一行只有 1 个孩子时仍然成立。
+    */
+    expect_(
+      tree.links === tree.chips,
+      `每个方块都有一条线连回父工序（${tree.links}/${tree.chips}）`,
+      `有 ${tree.chips} 个方块，却只有 ${tree.links} 条横枝 —— 会有孤儿`,
+    );
+    expect_(
+      tree.trunks === 1,
+      "只有一个父工序有子树，所以只有一条躯干",
+      `躯干有 ${tree.trunks} 条，应该是 1（只有「验收」有子节点）`,
+    );
+    /*
+      三样内容都要在。用户的原话：「不能只是一个标题」——
+      这条断言守的就是那句话：子卡必须和主卡一样有状态、有依据、有数值。
+    */
+    expect_(
+      tree.withStatus === tree.chips &&
+        tree.withDetail === tree.chips &&
+        tree.withMetric === tree.chips,
+      "每张子卡都有状态胶囊、判定依据和底部数值（不是只有一个标题）",
+      `缺内容：状态 ${tree.withStatus}/${tree.chips}、` +
+        `依据 ${tree.withDetail}/${tree.chips}、数值 ${tree.withMetric}/${tree.chips}`,
+    );
+    /*
+      颜色按结果走：造的 7 项里故意让一项不过，
+      如果全是 pass，说明 tone 根本没读进渲染。
+    */
+    expect_(
+      tree.tones.includes("fail") && tree.tones.includes("pass"),
+      "通过和未过的方块颜色是不同的（tone 真的读进去了）",
+      `tone 只有 ${JSON.stringify([...new Set(tree.tones)])}`,
+    );
+    /*
+      子卡要有边框和底色 —— 这一条守「和主卡同一套视觉语言」。
+      退化成一行文字的话这两个都会是 0。
+    */
+    expect_(
+      tree.styled === tree.chips,
+      "每张子卡都有边框和底色（和主卡同一套视觉语言，不是一行文字）",
+      `只有 ${tree.styled}/${tree.chips} 张有边框和底色`,
+    );
+
+    // 用完就删，别把夹具留在库里
+    cleanupVerifyRun(seeded.runId);
+    info("夹具已清理");
+
     cdp.close();
-    ok("画布交互、详情、面板、顶栏一致性、缩放让位与退役页面全部通过");
+    ok("画布交互、详情、面板、顶栏一致性、缩放让位、退役页面与子树全部通过");
   } finally {
     browser.kill();
     setTimeout(() => {

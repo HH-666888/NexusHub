@@ -88,6 +88,16 @@ export interface CanvasStageProps {
    * 见 fitViewport 里那段说明。
    */
   minFitScale?: number;
+  /**
+   * 聚焦到某块区域（双击一个节点时用）。
+   *
+   * ── 为什么用「值 + 计数器」而不是「值」 ──
+   *   连点同一个节点两次，bounds 是**同一个对象值** ——
+   *   只看值的话第二次不会触发（依赖没变）。
+   *   带上 nonce 才能表达"又来了一次请求"。
+   *   这和 homeBounds 那种"去的地方"不一样：那是状态，这是**事件**。
+   */
+  focusRequest?: { bounds: { x: number; y: number; w: number; h: number }; nonce: number } | null;
 }
 
 /**
@@ -183,6 +193,7 @@ export function CanvasStage({
   fitBounds,
   homeBounds,
   minFitScale = 0,
+  focusRequest = null,
 }: CanvasStageProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   /*
@@ -310,6 +321,27 @@ export function CanvasStage({
 
   const step = gridStepScreen(viewport.scale);
 
+  /*
+    ---------- 聚焦请求 ----------
+    双击一个节点时，父组件把"装下这棵子树"的区域发过来。
+    只认 nonce —— 见 focusRequest 的说明：连点同一个节点时
+    bounds 是同一个值，只看值的话第二次不会触发。
+
+    ⚠️ 这里要量一次容器尺寸。用 shellRef 而不是 effect 里的 el，
+       是因为这个请求可能在挂载之后很久才来，那时 el 一定在。
+  */
+  const lastNonceRef = useRef(0);
+  useEffect(() => {
+    if (!focusRequest) return;
+    if (focusRequest.nonce === lastNonceRef.current) return;
+    lastNonceRef.current = focusRequest.nonce;
+
+    const el = shellRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setViewport(fitViewport(focusRequest.bounds, rect.width, rect.height, 56, minFitScale));
+  }, [focusRequest, minFitScale]);
+
   return (
     /*
       ⚠️ 指针和滚轮事件挂在**这一层**（外层容器），不是挂在画布本体上。
@@ -330,6 +362,16 @@ export function CanvasStage({
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
+      /*
+        双击空白处 → 回到全局视口。
+
+        ── 为什么这个"回退"必须有 ──
+          双击一个工序会聚焦到它那棵树（放大、别的都出画了）。
+          进去之后如果只能靠找「回到原点」那个小按钮出来，
+          那这个功能就会让人不敢用 —— **进去容易出来难的功能没人用**。
+          双击空白是和"进去"完全对称的"出来"，不用学。
+      */
+      onDoubleClick={goHome}
     >
       {/* ---------- 网格（纯背景，不接事件） ---------- */}
       <div
