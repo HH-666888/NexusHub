@@ -40,9 +40,10 @@ import { runUiStage } from "@/core/generate/ui-stage";
 import {
   ANSWERS_ARTIFACT_NAME,
   decideGate,
+  isGateResume,
   type SpecAnswers,
 } from "@/core/generate/gate";
-import type { AppSpec } from "@/core/domain/spec";
+import { isFallbackSpec, reviewSpec, type AppSpec } from "@/core/domain/spec";
 import type { ArchSpec } from "@/core/domain/arch";
 import { resolveGatePolicy } from "@/core/pipeline/gate-policy";
 import {
@@ -304,18 +305,72 @@ export async function GET(
             所以这里必须把它接下来，交给下面的 readGateDecision。
           */
           let specFallbackFromStage = false;
-          for await (const e of runSpecStage(ports, {
+
+          /*
+            ---------- 续跑：答完疑问再点生成时，不重跑规格化 ----------
+            门禁那一段的文档写着「再点生成 → 检查到答案存在，跳过门禁，
+            继续往下走」。但这里原来是**无条件重跑规格化**的，于是：
+            规格被重新生成 → 疑问换了一批新的 → 用户刚答的那几条对不上号
+            → 门禁又拦下。实测连点三次（3 个疑问 → 4 个 → 3 个），
+            一次都没走到架构，白花 ¥0.023，用户看到的是"答了又问"。
+
+            修兜底之前这个问题看不见：兜底规格没有疑问，门禁一路放行。
+            所以"兜底不再被说成就绪"的代价，就是这条路必须真的接上。
+
+            判据是纯函数（core/generate/gate.ts 的 isGateResume），
+            那里写了为什么"有规格 + 有非空回答"这两个条件就够、
+            以及为什么"重新生成"不会误判成续跑（它走 DELETE 会清掉两者）。
+          */
+          const storedSpec = await readJsonArtifact<AppSpec>(runId, SPEC_ARTIFACT_NAME);
+          const storedAnswers = await readJsonArtifact<SpecAnswers>(
             runId,
-            prompt: runPrompt,
-            costLimitCny: env.run.costLimitCny,
-            spentCny: spent,
-          })) {
-            if (e.kind === "spec") {
-              specFromStage = e.spec;
-              specFallbackFromStage = e.fallback;
+            ANSWERS_ARTIFACT_NAME,
+          );
+
+          if (isGateResume(storedSpec, storedAnswers) && storedSpec) {
+            specFromStage = storedSpec;
+            // 规格是自己从盘上读的，兜底与否要现判 —— 它同样是界面必须看见的
+            specFallbackFromStage = isFallbackSpec(storedSpec);
+
+            const answered = (storedAnswers?.answers ?? []).filter(
+              (a) => a.answer.trim().length > 0,
+            ).length;
+
+            yield {
+              kind: "phase",
+              phase: "spec",
+              label:
+                `沿用你已确认过的那份规格（已答 ${answered} 个疑问），不重跑规格化 —— ` +
+                `重跑会换一批新疑问，你刚答过的就对不上了`,
+            };
+
+            /*
+              规格事件要**重新发一次**：每趟生成开始时事件日志会被清空
+              （见上面 deleteByRun 那一段），不复发的话，
+              工作台这一趟就看不到规格面板了。
+              gate 用 reviewSpec 现算：它是对规格本身的一次审阅，
+              纯函数、不花钱、也不改规格。
+            */
+            yield {
+              kind: "spec",
+              spec: storedSpec,
+              gate: reviewSpec(storedSpec),
+              fallback: specFallbackFromStage,
+            };
+          } else {
+            for await (const e of runSpecStage(ports, {
+              runId,
+              prompt: runPrompt,
+              costLimitCny: env.run.costLimitCny,
+              spentCny: spent,
+            })) {
+              if (e.kind === "spec") {
+                specFromStage = e.spec;
+                specFallbackFromStage = e.fallback;
+              }
+              // SpecStageEvent 的几种事件与 GenerateEvent 结构一致，直接透传
+              yield e as GenerateEvent;
             }
-            // SpecStageEvent 的几种事件与 GenerateEvent 结构一致，直接透传
-            yield e as GenerateEvent;
           }
 
           /*

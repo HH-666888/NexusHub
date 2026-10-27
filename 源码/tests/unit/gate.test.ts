@@ -3,6 +3,7 @@ import {
   answersToContext,
   applyAnswers,
   decideGate,
+  isGateResume,
   summarizeAnswers,
   validateAnswers,
   type SpecAnswers,
@@ -257,5 +258,57 @@ describe("人工门禁 · 兜底规格", () => {
     const without = decideGate(spec, answersFor([["q1", "要"]]));
     expect(withFlag.pending).toEqual(without.pending);
     expect(withFlag.pause).toBe(without.pause);
+  });
+});
+
+/* ============================================================
+   续跑判断（答完疑问再点生成，不许重跑规格化）
+   ============================================================ */
+
+describe("人工门禁 · 续跑判断", () => {
+  /*
+    这一组钉的是真实运行里暴露的一个死角：
+    续跑时如果重跑规格化，疑问会换一批新的，用户"答了又问"永远走不到下一步。
+    实测 run ed8fcdc3 连点三次：3 个疑问 → 4 个 → 3 个，一次都没到架构。
+  */
+  const SPEC = fallbackSpec(meta);
+
+  it("有规格 + 有非空回答 → 是续跑（这时不许再重跑规格化）", () => {
+    expect(isGateResume(SPEC, answersFor([["q1", "要"]]))).toBe(true);
+  });
+
+  it("只答了一部分也算续跑 —— 剩下的由门禁再拦一次，问题只会变少", () => {
+    expect(isGateResume({ ...SPEC, questions: ["q1", "q2"] }, answersFor([["q1", "要"]]))).toBe(
+      true,
+    );
+  });
+
+  it("★ 反例：还没有规格（第一次跑）→ 不是续跑", () => {
+    expect(isGateResume(null, answersFor([["q1", "要"]]))).toBe(false);
+  });
+
+  it("★ 反例：有规格但还没回答过（第一次停在门禁就是这种）→ 不是续跑", () => {
+    expect(isGateResume(SPEC, null)).toBe(false);
+  });
+
+  it("★ 反例：答案全是空白 → 不算表过态，不是续跑", () => {
+    expect(isGateResume(SPEC, answersFor([["q1", "   "], ["q2", ""]]))).toBe(false);
+  });
+
+  it("★ 反例：答案列表是空的 → 不是续跑", () => {
+    expect(isGateResume(SPEC, answersFor([]))).toBe(false);
+  });
+
+  it("兜底的规格也算规格 —— 它是用户看过并确认过的那一份", () => {
+    // 兜底规格同样会被落盘、同样要经门禁，所以它一样能构成"续跑"
+    expect(isGateResume(fallbackSpec(meta), answersFor([["q1", "要"]]))).toBe(true);
+  });
+
+  it("和 decideGate 对得上：续跑 + 疑问都答完了 → 门禁放行，循环到此为止", () => {
+    const spec = { ...SPEC, questions: ["q1"] };
+    const answers = answersFor([["q1", "要"]]);
+    expect(isGateResume(spec, answers)).toBe(true);
+    const d = decideGate(spec, answers, false);
+    expect(d.pause).toBe(false);
   });
 });

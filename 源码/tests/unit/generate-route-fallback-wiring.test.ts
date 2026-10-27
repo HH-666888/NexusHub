@@ -54,3 +54,33 @@ describe("生成接口 · 兜底标记的接线", () => {
     expect(src).toContain("let specFallbackFromStage = false");
   });
 });
+
+/**
+ * 续跑那一跳（同一类"接线"问题，所以放在同一个文件里）
+ * ============================================================
+ * 判据本身是纯函数、有单测（gate.test.ts 的 isGateResume）；
+ * 这里钉的是"route.ts 真的去问了这个判据、并且据此跳过了规格化"。
+ * 没有这一跳，用户答完疑问再点生成会换一批新疑问，永远走不到下一步 ——
+ * 实测连点三次都没过去（run ed8fcdc3）。
+ */
+describe("生成接口 · 续跑的接线", () => {
+  it("重跑规格化之前，先问了「这一趟是不是续跑」", () => {
+    // 钉的是"分支由这个判据决定"，不只是"调用了它" ——
+    // 只调不用（或把条件改成恒假）在老形态下看不出区别，但用户会"答了又问"
+    expect(src).toContain("if (isGateResume(storedSpec, storedAnswers) && storedSpec) {");
+    expect(src).toContain("readJsonArtifact<AppSpec>(runId, SPEC_ARTIFACT_NAME)");
+    expect(src).toContain("readJsonArtifact<SpecAnswers>(");
+  });
+
+  it("【关键】续跑时**不跑**规格化那一趟：runSpecStage 必须在 else 分支里", () => {
+    expect(src).toContain("} else { for await (const e of runSpecStage(ports, {");
+    // ★ 反例：无条件重跑的老形态必须不再出现 —— 那正是"答了又问"的成因
+    expect(src).not.toContain("specFallbackFromStage = false; for await (const e of runSpecStage(");
+  });
+
+  it("续跑那一路也要把规格事件重新发一次 —— 每趟开始时事件日志会被清空", () => {
+    expect(src).toContain("spec: storedSpec,");
+    expect(src).toContain("gate: reviewSpec(storedSpec),");
+    expect(src).toContain("isFallbackSpec(storedSpec)");
+  });
+});
