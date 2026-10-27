@@ -12,7 +12,7 @@
  *   测试不该碰真实数据（那些是演示素材），也不该依赖它当时的状态。
  *   每条测试都在自己的临时库里跑，结束就删。
  *
- * ⚠️ 用法上有一条硬性顺序：**先 setupTempEnv()，再 import 任何 adapter**。
+ * 用法上有一条硬性顺序：**先 setupTempEnv()，再 import 任何 adapter**。
  *    client.ts 在 import 的那一刻就按 DATABASE_PATH 把库打开了，
  *    env 设晚了它就已经连到真实库上去了。
  */
@@ -84,7 +84,7 @@ export async function seedUser(username: string): Promise<number> {
 /**
  * 关掉临时库的连接。
  *
- * ⚠️ 在 afterAll 里**必须先关再删目录**：Windows 上文件被占用时
+ * 在 afterAll 里**必须先关再删目录**：Windows 上文件被占用时
  *    rmSync 会直接抛 EPERM（WAL 模式还会多出 -wal / -shm 两个文件）。
  *    第一版没关连接，测试跑完就在清理这一步红了。
  */

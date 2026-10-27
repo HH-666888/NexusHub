@@ -217,7 +217,9 @@ const uiEvent = (h: Harness) =>
   h.events.find((e): e is Extract<UiStageEvent, { kind: "ui" }> => e.kind === "ui");
 
 const errorEvents = (h: Harness) =>
-  h.events.filter((e): e is Extract<UiStageEvent, { kind: "error" }> => e.kind === "error");
+  h.events.filter(
+    (e): e is Extract<UiStageEvent, { kind: "error" }> => e.kind === "error",
+  );
 
 describe("界面设计阶段 · 正常路径", () => {
   it("产出一条 ui 事件，且不是兜底", async () => {
@@ -258,7 +260,10 @@ describe("界面设计阶段 · 正常路径", () => {
   it("用了决策级档位，并要求 JSON 输出、带上界面设计的输出上限", async () => {
     // 显式声明参数类型，否则 mock.calls[0] 被推成空元组，取 [0] 会编译不过
     const spy = vi.fn(async (_req: ModelRequest) => makeResult());
-    const model = { complete: spy, stream: async function* () {} } as unknown as ModelPort;
+    const model = {
+      complete: spy,
+      stream: async function* () {},
+    } as unknown as ModelPort;
     const artifacts = {
       save: async (d: never) => d,
       listByRun: async () => [],
@@ -335,8 +340,10 @@ describe("界面设计阶段 · 记账与用量", () => {
     expect(h.runUpdates[0].totalCostCny).toBeCloseTo(0.53, 8);
   });
 
-  it("【关键】模型返回不可解析时**照样记账** —— 钱已经花了", async () => {
-    const h = await run({ modelResult: makeResult({ text: "我觉得这个界面挺清爽的" }) });
+  it("模型返回不可解析时**照样记账** —— 钱已经花了", async () => {
+    const h = await run({
+      modelResult: makeResult({ text: "我觉得这个界面挺清爽的" }),
+    });
     expect(h.costRecords).toHaveLength(1);
     expect(uiEvent(h)!.fallback).toBe(true);
   });
@@ -350,7 +357,7 @@ describe("界面设计阶段 · 记账与用量", () => {
 });
 
 describe("界面设计阶段 · 降级", () => {
-  it("【关键】调用模型本身失败：产出兜底界面（fallback=true）而且**照样落盘**", async () => {
+  it("调用模型本身失败：产出兜底界面（fallback=true）而且**照样落盘**", async () => {
     const h = await run({ modelThrows: "网络超时" });
     const e = uiEvent(h)!;
 
@@ -363,7 +370,7 @@ describe("界面设计阶段 · 降级", () => {
     expect(errorEvents(h)[0].message).toContain("调用模型失败");
   });
 
-  it("【关键】返回一坨不是 JSON 的东西：降级为兜底界面，说明原因，并落盘", async () => {
+  it("返回一坨不是 JSON 的东西：降级为兜底界面，说明原因，并落盘", async () => {
     const h = await run({ modelResult: makeResult({ text: "总之先做两个页面吧" }) });
     const e = uiEvent(h)!;
 
@@ -394,7 +401,9 @@ describe("界面设计阶段 · 降级", () => {
 
     // 第一条：一个页面承接了规格里**全部**条目
     const only = e.ui.pages[0];
-    expect([...only.coversFeatures].sort()).toEqual(SPEC.acceptance.map((a) => a.id).sort());
+    expect([...only.coversFeatures].sort()).toEqual(
+      SPEC.acceptance.map((a) => a.id).sort(),
+    );
     // 第二条：它只引用自己定义过的变量，一个悬空都没有
     const defined = new Set(e.ui.tokens.map((t) => t.name));
     for (const c of e.ui.components) {
@@ -410,7 +419,12 @@ describe("界面设计阶段 · 降级", () => {
     expect(e.ui.pages.some((p) => p.name.includes("兜底界面"))).toBe(true);
 
     // domain 层的兜底生成器与这里的产物要一致
-    const direct = fallbackUi({ spec: SPEC, arch: ARCH, model: "fallback", generatedAt: 0 });
+    const direct = fallbackUi({
+      spec: SPEC,
+      arch: ARCH,
+      model: "fallback",
+      generatedAt: 0,
+    });
     expect(direct.pages[0].coversFeatures).toEqual(SPEC.acceptance.map((a) => a.id));
     expect(inspectUi(direct, SPEC, ARCH).passed).toBe(3);
   });
@@ -428,7 +442,7 @@ describe("界面设计阶段 · 降级", () => {
 });
 
 describe("界面设计阶段 · 预算闸门", () => {
-  it("【关键】已经超预算时**一次模型调用都不发**，只发一条 error", async () => {
+  it("已经超预算时**一次模型调用都不发**，只发一条 error", async () => {
     // 闸门必须排在调用之前，否则超预算这句话会在钱花完之后才说出来。
     // 那时它已经不是闸门，只是一句事后通知。
     const h = await run({ spentCny: 5, costLimitCny: 5 });
@@ -483,12 +497,15 @@ describe("界面设计阶段 · 事件顺序", () => {
 
   it("收尾的阶段标签里带上界面摘要，用户不用点开就知道结果", async () => {
     const h = await run({});
-    const last = h.events[h.events.length - 1] as Extract<UiStageEvent, { kind: "phase" }>;
+    const last = h.events[h.events.length - 1] as Extract<
+      UiStageEvent,
+      { kind: "phase" }
+    >;
     expect(last.label).toContain("2 个页面");
     expect(last.label).toContain("界面已设计");
   });
 
-  it("检查没过时，收尾标签说的是哪一条没过，而不是含糊的「已设计」", async () => {
+  it("检查没过时，收尾标签说的是哪一条没过，而不是含糊的“已设计”", async () => {
     // 这份界面只覆盖 ac-1，第一条检查会红。
     // 收尾标签必须说出哪一条没过，只写界面已产出会让人以为三条都过了。
     const bad = JSON.stringify({
@@ -511,7 +528,10 @@ describe("界面设计阶段 · 事件顺序", () => {
     expect(e.fallback).toBe(false);
     expect(e.check.passed).toBe(2);
 
-    const last = h.events[h.events.length - 1] as Extract<UiStageEvent, { kind: "phase" }>;
+    const last = h.events[h.events.length - 1] as Extract<
+      UiStageEvent,
+      { kind: "phase" }
+    >;
     expect(last.label).toContain("2/3");
     expect(last.label).toContain("页面");
   });
@@ -539,24 +559,24 @@ describe("界面设计阶段 · 思考事件", () => {
       (e): e is Extract<UiStageEvent, { kind: "reasoning" }> => e.kind === "reasoning",
     );
 
-  it("【关键】complete() 返回的思考要发成 reasoning 事件，内容一字不改", async () => {
+  it("complete() 返回的思考要发成 reasoning 事件，内容一字不改", async () => {
     const h = await run({ modelResult: makeResult({ reasoning: THOUGHT }) });
     const t = thoughts(h);
     expect(t).toHaveLength(1);
     expect(t[0].delta).toBe(THOUGHT);
   });
 
-  it("★ 反例：没有思考时**不发** reasoning 事件 —— 不许拿正文冒充思考", async () => {
+  it("反例：没有思考时**不发** reasoning 事件 —— 不许拿正文冒充思考", async () => {
     const h = await run({ modelResult: makeResult({ reasoning: "" }) });
     expect(thoughts(h)).toHaveLength(0);
   });
 
-  it("★ 反例：只有空白字符也不发 —— 空白思考等于没思考", async () => {
+  it("反例：只有空白字符也不发 —— 空白思考等于没思考", async () => {
     const h = await run({ modelResult: makeResult({ reasoning: "\t\n " }) });
     expect(thoughts(h)).toHaveLength(0);
   });
 
-  it("顺序：思考排在 ui 事件之前 —— 读起来就是「先想，再给答案」", async () => {
+  it("顺序：思考排在 ui 事件之前 —— 读起来就是“先想，再给答案”", async () => {
     const h = await run({ modelResult: makeResult({ reasoning: THOUGHT }) });
     const thinkAt = h.events.findIndex((e) => e.kind === "reasoning");
     const uiAt = h.events.findIndex((e) => e.kind === "ui");
@@ -564,7 +584,7 @@ describe("界面设计阶段 · 思考事件", () => {
     expect(thinkAt).toBeLessThan(uiAt);
   });
 
-  it("★ 反例：调用模型就失败时**不可能**有思考事件（压根没有 result）", async () => {
+  it("反例：调用模型就失败时**不可能**有思考事件（压根没有 result）", async () => {
     const h = await run({ modelThrows: "网络超时" });
     expect(thoughts(h)).toHaveLength(0);
     expect(uiEvent(h)!.fallback).toBe(true);
@@ -588,7 +608,7 @@ describe("界面设计阶段 · 兜底标签", () => {
       .filter((e): e is Extract<UiStageEvent, { kind: "phase" }> => e.kind === "phase")
       .map((e) => e.label);
 
-  it("【关键】降级时收尾标签必须自报家门 —— 否则「没做过设计决策」会被说成「已设计」", async () => {
+  it("降级时收尾标签必须自报家门 —— 否则“没做过设计决策”会被说成“已设计”", async () => {
     const h = await run({ modelResult: makeResult({ text: "这几个页面够了" }) });
     expect(uiEvent(h)!.fallback).toBe(true);
     const labels = phaseLabels(h);
@@ -596,7 +616,7 @@ describe("界面设计阶段 · 兜底标签", () => {
     expect(labels[labels.length - 1]).toContain("界面已设计");
   });
 
-  it("★ 反例：正常界面的标签里**不许**出现「（兜底）」—— 防恒真", async () => {
+  it("反例：正常界面的标签里**不许**出现“（兜底）”—— 防恒真", async () => {
     const h = await run({});
     expect(uiEvent(h)!.fallback).toBe(false);
     expect(phaseLabels(h).some((l) => l.includes("（兜底）"))).toBe(false);

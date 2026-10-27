@@ -52,7 +52,7 @@ export const SPEC_SYSTEM_PROMPT = `你是一位需求分析师。用户会用一
     {
       "id": "ac-1",
       "statement": "用可判断真假的一句话描述做到什么算做到",
-      "verifyBy": "怎么验证。要说具体动作，不能写「看起来对」",
+      "verifyBy": "怎么验证。要说具体动作，不能写“看起来对”",
       "level": "must 或 should"
     }
   ],
@@ -79,8 +79,7 @@ export function buildSpecPrompt(userInput: string): string {
 // 模型输出不可信：可能带围栏、带前后解释、字段类型不对。逐层剥，剥不出来就明确失败
 
 export type SpecParseResult =
-  | { ok: true; spec: AppSpec }
-  | { ok: false; reason: string; raw: string };
+  { ok: true; spec: AppSpec } | { ok: false; reason: string; raw: string };
 
 /** 从输出里抠出 JSON 文本 */
 export function extractJsonText(raw: string): string | null {
@@ -109,7 +108,8 @@ export function extractJsonText(raw: string): string | null {
   const fenced = /```(?:json)?\s*\n?([\s\S]*?)```/.exec(text);
   if (fenced) {
     const inner = fenced[1].trim();
-    if (inner.startsWith("{") || inner.startsWith("[")) return escapeRawControlChars(inner);
+    if (inner.startsWith("{") || inner.startsWith("["))
+      return escapeRawControlChars(inner);
   }
 
   // 最后试第一个 { 到最后一个 }
@@ -230,7 +230,9 @@ export function parseSpec(
 
   const acceptance: AcceptanceCriterion[] = Array.isArray(o.acceptance)
     ? o.acceptance
-        .filter((x): x is Record<string, unknown> => typeof x === "object" && x !== null)
+        .filter(
+          (x): x is Record<string, unknown> => typeof x === "object" && x !== null,
+        )
         .map((x, i) => ({
           id: asString(x.id) || `ac-${i + 1}`,
           statement: asString(x.statement),
@@ -295,7 +297,7 @@ export function validateSpec(spec: AppSpec): SpecIssue[] {
   if (mustCount < SPEC_MIN_MUST) {
     issues.push({
       level: "blocking",
-      message: `必需级验收标准只有 ${mustCount} 条，至少要 ${SPEC_MIN_MUST} 条 —— 全是「期望」的话，验收就没有底线`,
+      message: `必需级验收标准只有 ${mustCount} 条，至少要 ${SPEC_MIN_MUST} 条 —— 全是“期望”的话，验收就没有底线`,
     });
   }
 
@@ -304,13 +306,13 @@ export function validateSpec(spec: AppSpec): SpecIssue[] {
     if (!a.verifyBy) {
       issues.push({
         level: "blocking",
-        message: `验收标准「${a.statement}」没有写怎么验证`,
+        message: `验收标准“${a.statement}”没有写怎么验证`,
       });
     }
     if (isVagueStatement(a.statement)) {
       issues.push({
         level: "advisory",
-        message: `验收标准「${a.statement}」说得很含糊，验收时会产生分歧`,
+        message: `验收标准“${a.statement}”说得很含糊，验收时会产生分歧`,
       });
     }
   }

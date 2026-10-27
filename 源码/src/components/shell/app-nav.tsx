@@ -17,14 +17,14 @@ export interface AppNavProps {
   /**
    * 当前用户。null 表示还没登录，那时右侧显示登录/注册，而不是把用户区藏起来。
    * /welcome 是唯一未登录也能看的页面，原来它自己写了第四套顶栏，
-   * 于是「未登录」和「已登录」之间导航也会横跳一次。
+   * 于是“未登录”和“已登录”之间导航也会横跳一次。
    */
   user: { displayName: string; username: string } | null;
   /** 主题开关。服务端渲染好传进来 —— 客户端组件不能直接 import 服务端组件 */
   themeToggle?: React.ReactNode;
   /** 中间放什么。不给就按登录状态放链接，或什么都不放 */
   center?: React.ReactNode;
-  /** 右侧在「主题 + 用户」之前额外放什么（工作台的设置 / 退出按钮） */
+  /** 右侧在“主题 + 用户”之前额外放什么（工作台的设置 / 退出按钮） */
   actions?: React.ReactNode;
   /** 品牌下面那行小字。只有工作台给 */
   tagline?: string;
@@ -33,9 +33,9 @@ export interface AppNavProps {
 }
 
 /*
-  三项，不是四项。「产物」那一项指向 /studio?tab=graph，工作台退役之后就没有落点了，
+  三项，不是四项。“产物”那一项指向 /studio?tab=graph，工作台退役之后就没有落点了，
   而产物本身没消失：成品预览就在画布下面那块，不该再单开一个入口。
-  「构建」指向 /canvas 而不是 /studio —— 留一个指向退役页面的入口比没有更糟。
+  “构建”指向 /canvas 而不是 /studio —— 留一个指向退役页面的入口比没有更糟。
 */
 const LINKS = [
   { href: "/", label: "首页" },
@@ -66,7 +66,7 @@ export function AppNav({
 
   return (
     /*
-      data-app-nav 是给自动化测试认的。不能靠「页面里第一个 header」去认顶栏 ——
+      data-app-nav 是给自动化测试认的。不能靠“页面里第一个 header”去认顶栏 ——
       header 是合法的语义化标签，卡片和区块都会用它（设置页就有三个）。
     */
     <header
@@ -76,10 +76,17 @@ export function AppNav({
       <div className={`flex h-16 items-center gap-6 ${NAV_GUTTER}`}>
         {/* 品牌 */}
         <Link href="/" className="flex flex-none items-center gap-2">
-          <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-[var(--app-accent)]" />
+          <span
+            aria-hidden
+            className="inline-block h-2 w-2 rounded-full bg-[var(--app-accent)]"
+          />
           <span className="flex flex-col leading-none">
-            <span className="text-[17px] font-semibold tracking-tight text-slate-100">Nexus</span>
-            {tagline && <span className="mt-0.5 text-[10.5px] text-slate-500">{tagline}</span>}
+            <span className="text-[17px] font-semibold tracking-tight text-slate-100">
+              Nexus
+            </span>
+            {tagline && (
+              <span className="mt-0.5 text-[10.5px] text-slate-500">{tagline}</span>
+            )}
           </span>
         </Link>
 
@@ -89,7 +96,12 @@ export function AppNav({
         {/* 右侧：已登录和未登录各一档，但位置一样 */}
         <div className="ml-auto flex flex-none items-center gap-4">
           {user ? (
-            <SignedIn user={user} spentCny={spentCny} themeToggle={themeToggle} actions={actions} />
+            <SignedIn
+              user={user}
+              spentCny={spentCny}
+              themeToggle={themeToggle}
+              actions={actions}
+            />
           ) : (
             <SignedOut themeToggle={themeToggle} />
           )}
@@ -117,14 +129,16 @@ function SignedIn({
   return (
     <>
       {/*
-        累计已花费。没有花过时显示「—」而不是 ¥0.0000 ——
-        「还没花过」和「花了零元」是两回事。
+        累计已花费。没有花过时显示“—”而不是 ¥0.0000 ——
+        “还没花过”和“花了零元”是两回事。
       */}
       <div className="flex items-center gap-1.5 text-[13px] tabular-nums">
         <span aria-hidden className="text-amber-400/80">
           ¥
         </span>
-        <span className="text-slate-200">{spentCny === null ? "—" : spentCny.toFixed(4)}</span>
+        <span className="text-slate-200">
+          {spentCny === null ? "—" : spentCny.toFixed(4)}
+        </span>
         <span className="text-[11px] text-slate-500">累计已花费</span>
       </div>
 
@@ -175,14 +189,16 @@ function NavLinks({ pathname }: { pathname: string }) {
   return (
     <nav className="flex items-center gap-1">
       {LINKS.map((l) => {
-        // 只比路径，不比查询串：?tab=graph 仍然属于「产物」这一项
+        // 只比路径，不比查询串：?tab=graph 仍然属于“产物”这一项
         const active = pathname === l.href.split("?")[0];
         return (
           <Link
             key={l.href}
             href={l.href}
             className={`rounded-full px-4 py-1.5 text-[13.5px] transition-colors duration-150 ${
-              active ? "bg-slate-700/50 text-slate-100" : "text-slate-400 hover:text-slate-200"
+              active
+                ? "bg-slate-700/50 text-slate-100"
+                : "text-slate-400 hover:text-slate-200"
             }`}
           >
             {l.label}

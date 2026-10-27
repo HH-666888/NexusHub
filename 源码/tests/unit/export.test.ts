@@ -44,7 +44,11 @@ function validExport(): NexusExport {
       {
         seq: 2,
         at: 1_700_000_002_000,
-        payload: { kind: "check", results: [], summary: { total: 0, passed: 0, failed: 0, failures: [] } },
+        payload: {
+          kind: "check",
+          results: [],
+          summary: { total: 0, passed: 0, failed: 0, failures: [] },
+        },
       },
     ],
     artifacts: [
@@ -80,7 +84,7 @@ function roundTrip(payload: NexusExport): NexusExport | null {
 }
 
 describe("parseExport：合法的文件必须通过", () => {
-  it("一份自己组装出来的导出文件，解析回来逐字段相同（不是「关键字段对得上」）", () => {
+  it("一份自己组装出来的导出文件，解析回来逐字段相同（不是“关键字段对得上”）", () => {
     const before = validExport();
     const after = roundTrip(before);
     expect(after).not.toBeNull();
@@ -119,12 +123,12 @@ describe("parseExport：形状不对的一律拒绝（返回 null，不抛）", 
     expect(parseExport(bad)).toBeNull();
   });
 
-  it("version = 2（未来的版本）→ null，绝不「当成 1 处理」", () => {
+  it("version = 2（未来的版本）→ null，绝不“当成 1 处理”", () => {
     const bad = { ...validExport(), version: 2 };
     expect(parseExport(bad)).toBeNull();
   });
 
-  it("version 是字符串「1」→ null（类型不对也是不对）", () => {
+  it("version 是字符串“1”→ null（类型不对也是不对）", () => {
     const bad = { ...validExport(), version: "1" };
     expect(parseExport(bad)).toBeNull();
   });
@@ -209,7 +213,7 @@ describe("parseExport：缺失的字段补安全默认（而不是拒绝）", ()
     expect(parsed.run.status).toBe("running");
   });
 
-  it("缺 updatedAt → 回落到 createdAt（不能补成 0，那会让界面说「从 1970 年起就没动过」）", () => {
+  it("缺 updatedAt → 回落到 createdAt（不能补成 0，那会让界面说“从 1970 年起就没动过”）", () => {
     const v = validExport();
     const parsed = parseExport({
       ...v,
@@ -218,25 +222,36 @@ describe("parseExport：缺失的字段补安全默认（而不是拒绝）", ()
     expect(parsed.run.updatedAt).toBe(RUN.createdAt);
   });
 
-  it("缺产物的 kind / content → 补「text」与空串（文件在、内容是空的，仍算成功导出）", () => {
+  it("缺产物的 kind / content → 补“text”与空串（文件在、内容是空的，仍算成功导出）", () => {
     const v = validExport();
     const parsed = parseExport({ ...v, artifacts: [{ path: "run-abc/a.txt" }] })!;
-    expect(parsed.artifacts).toEqual([{ path: "run-abc/a.txt", kind: "text", content: "" }]);
+    expect(parsed.artifacts).toEqual([
+      { path: "run-abc/a.txt", kind: "text", content: "" },
+    ]);
   });
 
   it("缺事件的 seq → 用它的下标补（顺序不能丢）", () => {
     const v = validExport();
     const parsed = parseExport({
       ...v,
-      events: [{ payload: { kind: "text", delta: "甲" } }, { payload: { kind: "text", delta: "乙" } }],
+      events: [
+        { payload: { kind: "text", delta: "甲" } },
+        { payload: { kind: "text", delta: "乙" } },
+      ],
     })!;
     expect(parsed.events.map((e) => e.seq)).toEqual([0, 1]);
   });
 
   it("事件缺 at → 这一条**不带这个键**（而不是带一个 undefined）", () => {
     const v = validExport();
-    const parsed = parseExport({ ...v, events: [{ seq: 7, payload: { kind: "text", delta: "甲" } }] })!;
-    expect(parsed.events[0]).toEqual({ seq: 7, payload: { kind: "text", delta: "甲" } });
+    const parsed = parseExport({
+      ...v,
+      events: [{ seq: 7, payload: { kind: "text", delta: "甲" } }],
+    })!;
+    expect(parsed.events[0]).toEqual({
+      seq: 7,
+      payload: { kind: "text", delta: "甲" },
+    });
     expect("at" in parsed.events[0]).toBe(false);
   });
 });
@@ -295,7 +310,7 @@ describe("exportFileName：文件名不能拿用户那句话直接当路径", ()
     expect(exportFileName("")).toBe("nexus-run.nexus.json");
     expect(exportFileName("    ")).toBe("nexus-run.nexus.json");
     // 洗干净之后什么都不剩，也要回落 —— 否则会得到一个只有后缀的文件名
-    expect(exportFileName('///:::')).toBe("nexus-run.nexus.json");
+    expect(exportFileName("///:::")).toBe("nexus-run.nexus.json");
   });
 
   it("超长只取前 20 个字", () => {
@@ -303,7 +318,7 @@ describe("exportFileName：文件名不能拿用户那句话直接当路径", ()
     expect(exportFileName(long)).toBe("一".repeat(20) + ".nexus.json");
   });
 
-  it("首尾的点与空白去掉，中间的不动（「番茄钟 v1.2」不该被改）", () => {
+  it("首尾的点与空白去掉，中间的不动（“番茄钟 v1.2”不该被改）", () => {
     expect(exportFileName("...番茄钟...")).toBe("番茄钟.nexus.json");
     expect(exportFileName("  番茄钟  ")).toBe("番茄钟.nexus.json");
     expect(exportFileName("番茄钟 v1.2")).toBe("番茄钟 v1.2.nexus.json");
@@ -320,7 +335,9 @@ describe("exportFileName：文件名不能拿用户那句话直接当路径", ()
 
 describe("rebaseArtifactPath：导入不能覆盖导出那条运行的产物", () => {
   it("只换最外层那一段（运行目录），文件名一个字不动", () => {
-    expect(rebaseArtifactPath("run-abc/index.html", "run-new")).toBe("run-new/index.html");
+    expect(rebaseArtifactPath("run-abc/index.html", "run-new")).toBe(
+      "run-new/index.html",
+    );
   });
 
   it("运行目录里的小目录也照旧（相对布局不动）", () => {

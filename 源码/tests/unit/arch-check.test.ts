@@ -44,16 +44,22 @@ function mod(id: string, over: Partial<ArchModule> = {}): ArchModule {
   };
 }
 
-function archWith(modules: ArchModule[], packages: ArchSpec["packages"] = []): ArchSpec {
+function archWith(
+  modules: ArchModule[],
+  packages: ArchSpec["packages"] = [],
+): ArchSpec {
   return { modules, packages };
 }
 
 /** 按检查名里的关键词取一条结果 —— 顺序不该由测试另行假设 */
-function byKeyword(check: { results: ArchCheckItem[] }, keyword: string): ArchCheckItem {
+function byKeyword(
+  check: { results: ArchCheckItem[] },
+  keyword: string,
+): ArchCheckItem {
   const hit = check.results.find((r) => r.name.includes(keyword));
   if (!hit) {
     throw new Error(
-      `检查结果里没有含「${keyword}」的那一条（现有：${check.results.map((r) => r.name).join(" / ")}）`,
+      `检查结果里没有含“${keyword}”的那一条（现有：${check.results.map((r) => r.name).join(" / ")}）`,
     );
   }
   return hit;
@@ -75,7 +81,7 @@ describe("第一条 · 规格里每条功能都能映射到至少一个模块（
     expect(item.detail).toContain("3 条功能全部有模块承接");
   });
 
-  it("【关键】有孤儿需求时**不通过**，而且 detail 把没被覆盖的 id 逐条列出来", () => {
+  it("有孤儿需求时**不通过**，而且 detail 把没被覆盖的 id 逐条列出来", () => {
     // detail 里必须出现那两个没被覆盖的 id，只说有孤儿需求不够。
     const spec = specWith(["ac-1", "ac-2", "ac-3", "ac-4"]);
     const arch = archWith([mod("store", { coversFeatures: ["ac-1", "ac-2"] })]);
@@ -109,17 +115,23 @@ describe("第一条 · 规格里每条功能都能映射到至少一个模块（
 
   it("规格里一条验收标准都没有时：通过，但 detail 明说这一条无从判定", () => {
     // 空规格时通过是空真，detail 要写明这一条无从判定。
-    const item = byKeyword(inspectArch(archWith([mod("a")]), specWith([])), "无孤儿需求");
+    const item = byKeyword(
+      inspectArch(archWith([mod("a")]), specWith([])),
+      "无孤儿需求",
+    );
     expect(item.pass).toBe(true);
     expect(item.detail).toContain("无从判定");
   });
 });
 
 describe("第二条 · 依赖包名合法（未联网核实是否真实存在）", () => {
-  it("★ 诚实底线：检查名里必须写着「未联网」★", () => {
+  it("诚实底线：检查名里必须写着“未联网”", () => {
     // 纯函数没法联网，第二条只能做到包名合法；这个边界必须钉在名字上。
     // 名字一旦改成更强的说法（依赖真实存在），这条立刻红。
-    const item = byKeyword(inspectArch(archWith([mod("a")]), specWith(["ac-1"])), "包名合法");
+    const item = byKeyword(
+      inspectArch(archWith([mod("a")]), specWith(["ac-1"])),
+      "包名合法",
+    );
     expect(item.name).toContain("未联网");
     expect(item.detail).toContain("未联网");
     // 而且它必须说清楚"没做什么"，而不是含糊过去
@@ -161,8 +173,11 @@ describe("第二条 · 依赖包名合法（未联网核实是否真实存在）
     expect(item.detail).toContain("未联网");
   });
 
-  it("依赖清单为空 → 通过，但 detail 明说没有包名可查（不许读成「都核实过了」）", () => {
-    const item = byKeyword(inspectArch(archWith([mod("a")]), specWith(["ac-1"])), "包名合法");
+  it("依赖清单为空 → 通过，但 detail 明说没有包名可查（不许读成“都核实过了”）", () => {
+    const item = byKeyword(
+      inspectArch(archWith([mod("a")]), specWith(["ac-1"])),
+      "包名合法",
+    );
     expect(item.pass).toBe(true);
     expect(item.detail).toContain("依赖清单是空的");
     expect(item.detail).toContain("未联网");
@@ -204,7 +219,7 @@ describe("第三条 · 模块依赖图无环", () => {
     expect(byKeyword(inspectArch(arch, specWith(["ac-1"])), "无环").pass).toBe(true);
   });
 
-  it("【关键】A→B→A → 不通过，且 detail 写出环是哪几个模块", () => {
+  it("A→B→A → 不通过，且 detail 写出环是哪几个模块", () => {
     const arch = archWith([
       mod("a", { dependsOn: ["b"] }),
       mod("b", { dependsOn: ["a"] }),
@@ -227,12 +242,9 @@ describe("第三条 · 模块依赖图无环", () => {
     expect(item.detail).toContain("a → a");
   });
 
-  it("【关键】引用了不存在的模块 id → 不通过，且 detail 指出是哪一个被谁引用", () => {
+  it("引用了不存在的模块 id → 不通过，且 detail 指出是哪一个被谁引用", () => {
     // 引用不存在的模块不是环，但会让第四道按 dependsOn 找上游时静默出错。
-    const arch = archWith([
-      mod("a", { dependsOn: ["b", "ghost"] }),
-      mod("b"),
-    ]);
+    const arch = archWith([mod("a", { dependsOn: ["b", "ghost"] }), mod("b")]);
 
     const item = byKeyword(inspectArch(arch, specWith(["ac-1"])), "无环");
     expect(item.pass).toBe(false);
@@ -299,7 +311,10 @@ describe("汇总：passed / total / 与 stages.ts 的对应关系", () => {
   });
 
   it("纯函数：同一份输入判两次结果完全一样，且不改动输入", () => {
-    const arch = archWith([mod("a", { coversFeatures: ["ac-1"], dependsOn: ["b"] }), mod("b")]);
+    const arch = archWith([
+      mod("a", { coversFeatures: ["ac-1"], dependsOn: ["b"] }),
+      mod("b"),
+    ]);
     const spec = specWith(["ac-1"]);
     const archBefore = structuredClone(arch);
     const specBefore = structuredClone(spec);

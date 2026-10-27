@@ -280,7 +280,7 @@ describe("statusLabel：八种状态 → 八句话", () => {
     expect(new Set(labels).size).toBe(labels.length);
   });
 
-  it("控制层的 done 说的是「已完成」，不是「已通过」", () => {
+  it("控制层的 done 说的是“已完成”，不是“已通过”", () => {
     // 一级 Agent 只做规划，不产出可通过的东西；写已通过是替它说了没做过的事。
     expect(statusLabel("done")).toBe("已完成");
     expect(statusLabel("running")).toBe("正在跑");

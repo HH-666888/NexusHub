@@ -22,7 +22,7 @@ function step(mem: FocusFollowMemory, stageId: StageId | null) {
   return planFocusFollow(mem, stageId);
 }
 
-describe("起点：挂载时的第一个值不算「推进」", () => {
+describe("起点：挂载时的第一个值不算“推进”", () => {
   it("第一次拿到工序 → 记下来，但**不动视口**", () => {
     // 挂载时拿到的 focusStageId 是当前状态，不是推进；跟过去等于替用户选好看哪儿。
     const first = step(freshFocusFollow(), SPEC);
@@ -105,7 +105,7 @@ describe("尊重用户：他动过视口之后，这一趟不再跟", () => {
     expect(mem.lastStageId).toBe("assemble");
   });
 
-  it("「用户动过」是单向的：动过之后不会自己变回来", () => {
+  it("“用户动过”是单向的：动过之后不会自己变回来", () => {
     let mem = markUserMoved({ lastStageId: null, userMoved: false });
     mem = step(mem, SPEC).next;
     mem = step(mem, BUILD).next;
@@ -191,14 +191,14 @@ function nominate(mem: FocusRequestMemory, requestedId: string | null) {
   return planUserFocus(mem, requestedId);
 }
 
-describe("★ 用户点名：新的一次点名必须执行，不受「用户动过」那条禁令管", () => {
+describe("用户点名：新的一次点名必须执行，不受“用户动过”那条禁令管", () => {
   it("第一次点名 → 执行（go 就是被点的那个 id）", () => {
     const s = nominate(null, "verify:完整 HTML 结构");
     expect(s.go).toBe("verify:完整 HTML 结构");
     expect(s.next).toBe("verify:完整 HTML 结构");
   });
 
-  it("★ 换一个节点点 → 执行；而且**无视**上一条规矩里的 userMoved", () => {
+  it("换一个节点点 → 执行；而且**无视**上一条规矩里的 userMoved", () => {
     // 点名是用户自己开口要的，拿动过视口那条禁令去挡他，表现就是点了没反应。
     // planUserFocus 的记忆里没有 userMoved 字段：判据里根本没有这一项。
     const first = nominate(null, "spec");
@@ -222,7 +222,7 @@ describe("★ 用户点名：新的一次点名必须执行，不受「用户动
     expect(nominate("build", "").next).toBeNull();
   });
 
-  it("★ 点 A → 走开（不带 focus 的 URL）→ 再点 A，要重新生效", () => {
+  it("点 A → 走开（不带 focus 的 URL）→ 再点 A，要重新生效", () => {
     // 少了清空记忆那一步，症状是回家再点同一行没反应。
     const a = nominate(null, "spec");
     const away = nominate(a.next, null);
@@ -230,7 +230,7 @@ describe("★ 用户点名：新的一次点名必须执行，不受「用户动
     expect(back.go).toBe("spec");
   });
 
-  it("A → B → A：第三次（回到 A）要执行 —— 判据是「和上一次比」，不是「点过没有」", () => {
+  it("A → B → A：第三次（回到 A）要执行 —— 判据是“和上一次比”，不是“点过没有”", () => {
     // 判据若写成这个 id 点过没有，用户在两行之间来回看时第一行就点不动了。
     const a = nominate(null, "spec");
     const b = nominate(a.next, "build");

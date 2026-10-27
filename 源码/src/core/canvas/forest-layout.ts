@@ -36,7 +36,7 @@ export interface ForestLayout {
   byId: Map<string, LaidNode>;
   /** 只有根节点，按顺序 */
   roots: LaidNode[];
-  /** 整片森林的世界范围。用来做「缩放到全部」 */
+  /** 整片森林的世界范围。用来做“缩放到全部” */
   bounds: { x: number; y: number; w: number; h: number };
 }
 
@@ -47,7 +47,10 @@ export interface ForestGeometry {
   child: { w: number; h: number; gapX: number; gapY: number; perRow: number };
   /** 按深度覆盖；不传时行为不变 */
   levels?: Partial<
-    Record<number, { w?: number; h?: number; perRow?: number; gapX?: number; gapY?: number }>
+    Record<
+      number,
+      { w?: number; h?: number; perRow?: number; gapX?: number; gapY?: number }
+    >
   >;
   /** 父节点底边到第一行子节点顶边的距离 */
   parentGapY: number;
@@ -138,19 +141,30 @@ function measure(node: LayoutNode, depth: number, g: ForestGeometry): Measured {
   const kids = (node.children ?? []).map((c) => measure(c, depth + 1, g));
 
   if (kids.length === 0) {
-    return { node, depth, selfW: self.w, selfH: self.h, w: self.w, h: self.h, rows: [] };
+    return {
+      node,
+      depth,
+      selfW: self.w,
+      selfH: self.h,
+      w: self.w,
+      h: self.h,
+      rows: [],
+    };
   }
 
-  // 折行用子节点那一层的 perRow：perRow 说的是「这一行」，而这一行是子节点所在的行
+  // 折行用子节点那一层的 perRow：perRow 说的是“这一行”，而这一行是子节点所在的行
   const kidLevel = levelAt(g, depth + 1);
   const rows = chunk(kids, kidLevel.perRow).map((items) => ({
     items,
-    w: items.reduce((s, k) => s + k.w, 0) + Math.max(0, items.length - 1) * kidLevel.gapX,
+    w:
+      items.reduce((s, k) => s + k.w, 0) +
+      Math.max(0, items.length - 1) * kidLevel.gapX,
     h: Math.max(...items.map((k) => k.h)),
   }));
 
   const widest = Math.max(...rows.map((r) => r.w));
-  const rowsH = rows.reduce((s, r) => s + r.h, 0) + Math.max(0, rows.length - 1) * kidLevel.gapY;
+  const rowsH =
+    rows.reduce((s, r) => s + r.h, 0) + Math.max(0, rows.length - 1) * kidLevel.gapY;
 
   return {
     node,
@@ -226,7 +240,7 @@ function place(
 
 /**
  * 把一棵森林摆开。坐标系与旧 nodeRect 一致：以核心格 x 居中、首行加 rowOffsetY，
- * 于是「打开画布就看到整条流水线」不需要额外的对准逻辑。
+ * 于是“打开画布就看到整条流水线”不需要额外的对准逻辑。
  */
 export function layoutForest(
   roots: LayoutNode[],
@@ -415,7 +429,7 @@ export function lerpLayout(
   });
 }
 
-/** 是否这一帧新出现；渲染层据此做 0 → 1 淡入，「新」只有比较两套布局才知道 */
+/** 是否这一帧新出现；渲染层据此做 0 → 1 淡入，“新”只有比较两套布局才知道 */
 export function isNewNode(prev: readonly LaidNode[], id: string): boolean {
   return !prev.some((n) => n.id === id);
 }

@@ -135,7 +135,11 @@ export default async function CanvasPage({
       // 骨架用 core/pipeline 的 STAGES，不另抄一份工序名单
       stages: STAGES.map((s) => ({ id: s.id, name: s.name })),
       // 规划层认 e.payload.kind 而非事件行上的 kind：两者同值，用行上的会在将来静默算错
-      events: events.map((e) => ({ seq: e.seq, kind: e.payload.kind, payload: e.payload })),
+      events: events.map((e) => ({
+        seq: e.seq,
+        kind: e.payload.kind,
+        payload: e.payload,
+      })),
       // 运行状态按 run 记录如实翻译，不做推断：没有真实痕迹的工序一律 pending
       runStatus:
         selectedRun.status === "done"
@@ -153,7 +157,8 @@ export default async function CanvasPage({
 
     // 与清单、画布取自同一份 planPoints；TaskPoint.id 需真判一次，不用 as 断言。
     // 从别处再算一遍会出现清单说第 3 道在跑、画布却飞到第 4 道。
-    const runningStage = planPoints.find((p) => p.status === "running" && p.depth === 1) ?? null;
+    const runningStage =
+      planPoints.find((p) => p.status === "running" && p.depth === 1) ?? null;
     if (runningStage && isStageId(runningStage.id)) focusStageId = runningStage.id;
 
     const rootPoint = planPoints.find((p) => p.id === PLANNING_ROOT_ID) ?? null;
@@ -262,7 +267,7 @@ export default async function CanvasPage({
           ) : (
             <div className="flex items-center justify-center px-6 py-4 text-center">
               <p className="text-[11.5px] text-slate-500">
-                还没有选中任何构建 —— 回到首页说一句你想做的软件，点「↑」
+                还没有选中任何构建 —— 回到首页说一句你想做的软件，点“↑”
               </p>
             </div>
           )}

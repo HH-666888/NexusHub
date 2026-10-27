@@ -12,9 +12,51 @@ import { PLANNING_ROOT_ID } from "@/core/planning/from-run";
 
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
 import { fitFloor } from "@/core/canvas/viewport";
-import { expect_, finish, heading, info, ok, signUp } from "./e2e-kit";
-import { seedVerifyRun, cleanupVerifyRun, seedAdvancingRun, dropRunEvent, seedBystanderRun, seedRunningRun, STEP_CHECKS, stepPhase, stepText, stepReasoning, stepUsage, stepCheck, seedStepRun, appendStepEvents, TEXT_ONLY_BODY, ARCH_MODULES, ARCH_CHECK, UI_PAGES, UI_CHECK, seedArchRun, seedUiRun, MODULES_BATCH, FAILED_DOT, DONE_DOT, seedModulesRun, DONE_LABEL, PICK_THINKING, PICK_BODY, LAST_STEP_BODY, PORTABLE_PROMPT, PORTABLE_HTML, seedPortableRun, cleanupPortableRun } from "./e2e-canvas/fixtures";
-import { BASE, EDGE, PORT, sleep, waitForTarget, connect, read } from "./e2e-canvas/cdp";
+import { check, finish, heading, info, ok, signUp } from "./e2e-kit";
+import {
+  seedVerifyRun,
+  cleanupVerifyRun,
+  seedAdvancingRun,
+  dropRunEvent,
+  seedBystanderRun,
+  seedRunningRun,
+  STEP_CHECKS,
+  stepPhase,
+  stepText,
+  stepReasoning,
+  stepUsage,
+  stepCheck,
+  seedStepRun,
+  appendStepEvents,
+  TEXT_ONLY_BODY,
+  ARCH_MODULES,
+  ARCH_CHECK,
+  UI_PAGES,
+  UI_CHECK,
+  seedArchRun,
+  seedUiRun,
+  MODULES_BATCH,
+  FAILED_DOT,
+  DONE_DOT,
+  seedModulesRun,
+  DONE_LABEL,
+  PICK_THINKING,
+  PICK_BODY,
+  LAST_STEP_BODY,
+  PORTABLE_PROMPT,
+  PORTABLE_HTML,
+  seedPortableRun,
+  cleanupPortableRun,
+} from "./e2e-canvas/fixtures";
+import {
+  BASE,
+  EDGE,
+  PORT,
+  sleep,
+  waitForTarget,
+  connect,
+  read,
+} from "./e2e-canvas/cdp";
 
 async function main() {
   const started = Date.now();
@@ -41,7 +83,7 @@ async function main() {
     // 注册页是 Server Action 表单：直接 POST 会拿到 200 但没有 Cookie，看起来像成功了。
     const cookie = await signUp(BASE, username);
     const token = cookie.replace(/^nexus_session=/, "");
-    expect_(token.length > 0, "注册成功并拿到会话", "没拿到 Cookie");
+    check(token.length > 0, "注册成功并拿到会话", "没拿到 Cookie");
 
     heading("第二步 · 打开画布");
     const cdp = await connect(await waitForTarget());
@@ -58,30 +100,35 @@ async function main() {
     await sleep(3500);
 
     const initial = await read(cdp);
-    expect_(!("missing" in initial), "画布元素存在", "页面上找不到 [data-canvas-stage]");
+    check(!("missing" in initial), "画布元素存在", "页面上找不到 [data-canvas-stage]");
 
     // 期望值从画布真实尺寸算，不能从窗口尺寸推：外框、视口、画布差着两截。
     const vw = initial.stageW;
     const vh = initial.stageH;
-    info(`画布实际尺寸 ${vw}×${vh}，网格间距 ${initial.gridStep}px，倍率 ${initial.zoomLabel}`);
+    info(
+      `画布实际尺寸 ${vw}×${vh}，网格间距 ${initial.gridStep}px，倍率 ${initial.zoomLabel}`,
+    );
 
     // 打开时该把整条流水线装进视口；停在 100% 的话右边那道要自己滚才看得见。
     heading("第三步 · 初始视口装下整条流水线");
 
-    expect_(
+    check(
       initial.zoomLabel !== "100%",
       `打开时自动缩放（${initial.zoomLabel}），整条看得下`,
       "打开时还是 100% —— 六道工序一屏装不下",
     );
-    expect_(
+    check(
       initial.gridStep > 60 && initial.gridStep < 160,
       `网格间距 ${initial.gridStep}px，说明确实缩小了`,
       `网格间距是 ${initial.gridStep}px，看着不像缩过`,
     );
 
     // 原点标记落在视口内即可，具体位置由 fitViewport 决定（它有自己的单测）。
-    expect_(
-      initial.originX > 0 && initial.originX < vw && initial.originY > 0 && initial.originY < vh,
+    check(
+      initial.originX > 0 &&
+        initial.originX < vw &&
+        initial.originY > 0 &&
+        initial.originY < vh,
       "原点标记落在视口里",
       `原点跑到了视口外：(${Math.round(initial.originX)}, ${Math.round(initial.originY)})`,
     );
@@ -100,7 +147,10 @@ async function main() {
       })()`,
       returnByValue: true,
     });
-    const stageAt = JSON.parse(stageLeftRaw.result!.value!) as { left: number; top: number };
+    const stageAt = JSON.parse(stageLeftRaw.result!.value!) as {
+      left: number;
+      top: number;
+    };
     const anchorLocalX = anchorX - stageAt.left;
     info(
       `画布左上角在页面 (${Math.round(stageAt.left)}, ${Math.round(stageAt.top)})，` +
@@ -118,12 +168,12 @@ async function main() {
     await sleep(400);
     const zoomedIn = await read(cdp);
 
-    expect_(
+    check(
       zoomedIn.gridStep > initial.gridStep,
       `向上滚放大：网格 ${initial.gridStep}px → ${zoomedIn.gridStep}px`,
       `网格没有变大：还是 ${zoomedIn.gridStep}px`,
     );
-    expect_(
+    check(
       zoomedIn.zoomLabel !== initial.zoomLabel,
       `倍率显示跟着变：${initial.zoomLabel} → ${zoomedIn.zoomLabel}`,
       `倍率显示没变：还是 ${zoomedIn.zoomLabel}`,
@@ -132,7 +182,7 @@ async function main() {
     // 锚点不动：光标下的世界点在缩放前后落在同一屏幕位置。
     const worldX = (anchorLocalX - initial.panX) / (initial.gridStep / 160);
     const expectPanX = anchorLocalX - worldX * (zoomedIn.gridStep / 160);
-    expect_(
+    check(
       Math.abs(zoomedIn.panX - expectPanX) < 2,
       `缩放的锚点在光标处（期望平移 ${Math.round(expectPanX)}，实际 ${Math.round(zoomedIn.panX)}）`,
       `锚点漂了：期望 ${Math.round(expectPanX)}，实际 ${Math.round(zoomedIn.panX)}`,
@@ -148,7 +198,7 @@ async function main() {
     });
     await sleep(400);
     const zoomedBack = await read(cdp);
-    expect_(
+    check(
       zoomedBack.gridStep <= zoomedIn.gridStep,
       `向下滚缩小：网格 ${zoomedIn.gridStep}px → ${zoomedBack.gridStep}px`,
       `网格没有变小：还是 ${zoomedBack.gridStep}px`,
@@ -181,17 +231,17 @@ async function main() {
     await sleep(300);
 
     const afterDrag = await read(cdp);
-    expect_(
+    check(
       Math.abs(afterDrag.panX - beforeDrag.panX - 100) < 3,
       `拖动向右 100px，平移跟着走（${Math.round(beforeDrag.panX)} → ${Math.round(afterDrag.panX)}）`,
       `横向平移不对：期望 +100，实际 ${Math.round(afterDrag.panX - beforeDrag.panX)}`,
     );
-    expect_(
+    check(
       Math.abs(afterDrag.panY - beforeDrag.panY - 60) < 3,
       `拖动向下 60px，平移跟着走`,
       `纵向平移不对：期望 +60，实际 ${Math.round(afterDrag.panY - beforeDrag.panY)}`,
     );
-    expect_(
+    check(
       Math.abs(afterDrag.originX - beforeDrag.originX - 100) < 3,
       "原点标记跟着一起动（它属于画布内容，不是屏幕装饰）",
       `原点没跟着动：${Math.round(beforeDrag.originX)} → ${Math.round(afterDrag.originX)}`,
@@ -206,13 +256,14 @@ async function main() {
     await sleep(400);
     const home = await read(cdp);
 
-    expect_(
+    check(
       home.zoomLabel === initial.zoomLabel,
       `回到原点后倍率回到初始值 ${initial.zoomLabel}`,
       `实际 ${home.zoomLabel}，初始是 ${initial.zoomLabel}`,
     );
-    expect_(
-      Math.abs(home.originX - initial.originX) < 2 && Math.abs(home.originY - initial.originY) < 2,
+    check(
+      Math.abs(home.originX - initial.originX) < 2 &&
+        Math.abs(home.originY - initial.originY) < 2,
       "回到原点后画面回到初始位置",
       `回到 (${Math.round(home.originX)}, ${Math.round(home.originY)})，初始是 (${Math.round(initial.originX)}, ${Math.round(initial.originY)})`,
     );
@@ -224,10 +275,10 @@ async function main() {
     });
     await sleep(300);
     const afterPlus = await read(cdp);
-    expect_(
+    check(
       afterPlus.gridStep > home.gridStep,
-      `点「+」放大：${home.gridStep}px → ${afterPlus.gridStep}px`,
-      `点「+」没放大：还是 ${afterPlus.gridStep}px`,
+      `点“+”放大：${home.gridStep}px → ${afterPlus.gridStep}px`,
+      `点“+”没放大：还是 ${afterPlus.gridStep}px`,
     );
 
     await cdp.send("Runtime.evaluate", {
@@ -235,9 +286,9 @@ async function main() {
     });
     await sleep(300);
     const afterMinus = await read(cdp);
-    expect_(
+    check(
       Math.abs(afterMinus.gridStep - home.gridStep) < 1,
-      `点「−」缩回来：${afterPlus.gridStep}px → ${afterMinus.gridStep}px`,
+      `点“−”缩回来：${afterPlus.gridStep}px → ${afterMinus.gridStep}px`,
       `没缩回来：${afterMinus.gridStep}px，期望 ${home.gridStep}px`,
     );
 
@@ -280,35 +331,39 @@ async function main() {
 
     info(`画布上的工序：${pl.ids.join(" ")}`);
 
-    expect_(pl.hasWorld, "画布有世界坐标层", "没有世界坐标层 —— 内容无处安放");
-    expect_(pl.hasPipeline, "画布上有流水线", "画布上还是一片空白");
-    expect_(
+    check(pl.hasWorld, "画布有世界坐标层", "没有世界坐标层 —— 内容无处安放");
+    check(pl.hasPipeline, "画布上有流水线", "画布上还是一片空白");
+    check(
       pl.ids.length === 6,
       "六道工序都画出来了",
       `只有 ${pl.ids.length} 道：${pl.ids.join(" ")}`,
     );
-    expect_(
+    check(
       pl.ids.join(",") === "spec,arch,ui,build,assemble,verify",
       "顺序是 ①②③④⑤⑥",
       `顺序不对：${pl.ids.join(" ")}`,
     );
-    expect_(pl.hasGrid && pl.hasOrigin, "网格和原点标记都还在", "画布本体的网格或原点标记没了");
+    check(
+      pl.hasGrid && pl.hasOrigin,
+      "网格和原点标记都还在",
+      "画布本体的网格或原点标记没了",
+    );
 
     // 权限四件套也要上画布：那张图上有的，搬过来不能丢。
     const flowVerifyActor = pl.actors.find((a) => a.id === "verify");
-    expect_(
+    check(
       flowVerifyActor?.label === "AI · 只读",
-      "验收在画布上也是「AI · 只读」",
-      `验收标成了「${flowVerifyActor?.label}」—— 判定者不该参与生产`,
+      "验收在画布上也是“AI · 只读”",
+      `验收标成了“${flowVerifyActor?.label}”—— 判定者不该参与生产`,
     );
-    expect_(
+    check(
       pl.gates.length === 1 && pl.gates[0] === "on",
-      "只有规格化带门禁，且是「会停下问人」",
+      "只有规格化带门禁，且是“会停下问人”",
       `门禁标记：${pl.gates.join(" ") || "（无）"}`,
     );
-    expect_(
+    check(
       pl.watches === 6,
-      "六道工序都写了「看什么数」",
+      "六道工序都写了“看什么数”",
       `只有 ${pl.watches} 道写了看什么数`,
     );
 
@@ -322,15 +377,18 @@ async function main() {
       })()`,
       returnByValue: true,
     });
-    const ed = JSON.parse(edgeCheck.result!.value!) as { total: number; dashed: number };
+    const ed = JSON.parse(edgeCheck.result!.value!) as {
+      total: number;
+      dashed: number;
+    };
     info(`连线：共 ${ed.total} 条，其中虚线 ${ed.dashed} 条`);
 
-    expect_(
+    check(
       ed.total >= 5,
       `顺序流转的实线还在（共 ${ed.total} 条）`,
       `连一条线都没有（${ed.total}）—— 画布不该连"谁接谁"都不画`,
     );
-    expect_(
+    check(
       ed.dashed === 0,
       "画布上没有回退弧线（回退留在流程内部，不显示）",
       `出现了 ${ed.dashed} 条虚线 —— 回退弧线不该再画出来`,
@@ -349,7 +407,7 @@ async function main() {
     info(`子树：${lk.chips} 个子方块，${lk.links} 条父子连线`);
 
     if (lk.chips > 0) {
-      expect_(
+      check(
         lk.links === lk.chips,
         `每个子方块都有一条线连回父工序（${lk.links}/${lk.chips}）`,
         `有 ${lk.chips} 个子方块，却只有 ${lk.links} 条父子连线 —— 会有孤儿方块`,
@@ -363,7 +421,7 @@ async function main() {
     });
     const pct = Number(String(zoomCheck.result!.value).replace("%", ""));
     info(`打开时的缩放：${pct}%`);
-    expect_(
+    check(
       pct > 40 && pct < 100,
       `打开时自动缩到 ${pct}%，整条看得全`,
       `打开时是 ${pct}% —— 六道工序应该一屏看得下`,
@@ -393,7 +451,11 @@ async function main() {
     // 点验收：它的上游是全部五道，六个都该亮着。
     const allLit = await clickAndRead("verify");
     const dim1 = allLit.filter((c) => c.opacity < 0.5).map((c) => c.id);
-    expect_(dim1.length === 0, "点「验收」时六道全亮（它的上游是全部）", `这几道被压暗了：${dim1.join(" ")}`);
+    check(
+      dim1.length === 0,
+      "点“验收”时六道全亮（它的上游是全部）",
+      `这几道被压暗了：${dim1.join(" ")}`,
+    );
 
     // 线性流水线的 chain = 自己 + 全部上游 + 全部下游，点谁都是六个，
     // 所以点击的用处是选中它、让详情面板显示那一道，不是压暗别人。
@@ -409,13 +471,16 @@ async function main() {
       })()`,
       returnByValue: true,
     });
-    const sel = JSON.parse(selected.result!.value!) as { boxShadow: string; opacity: number };
-    expect_(
+    const sel = JSON.parse(selected.result!.value!) as {
+      boxShadow: string;
+      opacity: number;
+    };
+    check(
       sel.boxShadow !== "none",
       "点中的那一道有外发光",
       `没有外发光：boxShadow=${sel.boxShadow}`,
     );
-    expect_(
+    check(
       sel.opacity > 0.9,
       `点中的那一道没有被压暗（opacity=${sel.opacity}）`,
       `点中之后它是暗的（opacity=${sel.opacity}）—— 最需要看清的时候它最暗，是反的`,
@@ -445,11 +510,15 @@ async function main() {
       text?: string;
     };
 
-    expect_(!dt.missing, "点开工序后有详情面板", "点了却没出现详情面板");
-    expect_(dt.hasRationale === true, "详情里有「这一步为什么存在」", "详情里没有原理那一段");
+    check(!dt.missing, "点开工序后有详情面板", "点了却没出现详情面板");
+    check(
+      dt.hasRationale === true,
+      "详情里有“这一步为什么存在”",
+      "详情里没有原理那一段",
+    );
     // 卡片上只放得下几个字，权限与看什么数只能放进详情。
-    expect_(dt.hasAuthority === true, "详情里有权限说明", "详情里缺权限说明");
-    expect_(dt.hasWatches === true, "详情里有「看什么数」", "详情里缺看什么数");
+    check(dt.hasAuthority === true, "详情里有权限说明", "详情里缺权限说明");
+    check(dt.hasWatches === true, "详情里有“看什么数”", "详情里缺看什么数");
 
     // 工作台面板与 /canvas 用同一个组件：换回别的实现这里就找不到节点。
     heading("第十一步 · 工作台面板里是同一张图");
@@ -481,15 +550,19 @@ async function main() {
 
     info(`面板里的工序：${pn.ids.join(" ")}，缩放 ${pn.zoom}，卡片宽 ${pn.cardW}px`);
 
-    expect_(pn.hasWorld, "面板里也用的是自绘画布", "面板里没有世界坐标层 —— 换回别的实现了？");
-    expect_(
+    check(
+      pn.hasWorld,
+      "面板里也用的是自绘画布",
+      "面板里没有世界坐标层 —— 换回别的实现了？",
+    );
+    check(
       pn.ids.length === 6,
       "面板里也是六道工序",
       `只有 ${pn.ids.length} 道：${pn.ids.join(" ")}`,
     );
 
     // 面板 808×371，三列两行时卡片 149 宽，字才读得清；再小就读不出。
-    expect_(
+    check(
       pn.cardW !== null && pn.cardW >= 130,
       `面板里的卡片宽 ${pn.cardW}px，字读得清`,
       `卡片只有 ${pn.cardW}px 宽 —— 字会缩到看不清`,
@@ -499,7 +572,8 @@ async function main() {
     heading("第十二步 · 顶栏在所有页面上位置一致");
 
     const routes = ["/", "/canvas", "/studio?tab=graph", "/settings", "/welcome"];
-    const seen: Array<{ route: string; brandLeft: number | null; navCount: number }> = [];
+    const seen: Array<{ route: string; brandLeft: number | null; navCount: number }> =
+      [];
 
     for (const route of routes) {
       await cdp.send("Page.navigate", { url: `${BASE}${route}` });
@@ -507,7 +581,7 @@ async function main() {
       const r = await cdp.send("Runtime.evaluate", {
         expression: `(() => {
           /*
-            ⚠️ 按 data-app-nav 认顶栏，**不能**按"页面里第一个 header"。
+            按 data-app-nav 认顶栏，**不能**按"页面里第一个 header"。
             <header> 是个合法的语义化标签，卡片和区块都会用 ——
             设置页就有三个（顶栏 + 两张卡片）。按标签数会把它们一起数进来，
             于是报"出现了多个顶栏"，而实际上只有一个。
@@ -523,14 +597,17 @@ async function main() {
         })()`,
         returnByValue: true,
       });
-      const v = JSON.parse(r.result!.value!) as { brandLeft: number | null; navCount: number };
+      const v = JSON.parse(r.result!.value!) as {
+        brandLeft: number | null;
+        navCount: number;
+      };
       seen.push({ route, ...v });
     }
 
     info(seen.map((s) => `${s.route}=${s.brandLeft}`).join("  "));
 
     const missing = seen.filter((s) => s.brandLeft === null);
-    expect_(
+    check(
       missing.length === 0,
       "五个页面都有顶栏",
       `这几个页面没有顶栏：${missing.map((s) => s.route).join(" ")}`,
@@ -538,7 +615,7 @@ async function main() {
 
     // 位置必须完全一样：差一像素就说明有人自己写了一层顶栏
     const lefts = new Set(seen.map((s) => s.brandLeft));
-    expect_(
+    check(
       lefts.size === 1,
       `顶栏品牌在所有页面都落在同一个 x（${[...lefts][0]}px）`,
       `品牌位置不一致：${seen.map((s) => `${s.route}=${s.brandLeft}`).join(" ")}`,
@@ -546,7 +623,7 @@ async function main() {
 
     // 一页只能有一个顶栏：两个多半是 layout 和页面各写了一个
     const doubled = seen.filter((s) => s.navCount > 1);
-    expect_(
+    check(
       doubled.length === 0,
       "每个页面只有一个顶栏",
       `这几个页面出现了多个顶栏：${doubled.map((s) => `${s.route}(${s.navCount})`).join(" ")}`,
@@ -602,7 +679,7 @@ async function main() {
       }
     };
 
-    // 按固定次数写死会越过中间档位，所以按「档位变了就停」来找。
+    // 按固定次数写死会越过中间档位，所以按“档位变了就停”来找。
     const shrinkUntilTierChanges = async (max = 8) => {
       for (let i = 0; i < max; i++) {
         await clickZoom("缩小", 1);
@@ -625,12 +702,12 @@ async function main() {
 
     const start = await growToAll();
     info(`放大 ${start.clicks} 次后开始测阶梯：缩放 ${start.zoom}，档位 ${start.tier}`);
-    expect_(
+    check(
       start.tier === "all",
       `放大到字全都在（缩放 ${start.zoom}）`,
       `放大 ${start.clicks} 次后档位还是 ${start.tier} —— 字没能全回来`,
     );
-    expect_(
+    check(
       (start.minor ?? "").startsWith("rgb") || (start.minor ?? "").startsWith("#"),
       "倍率够大时次要文字是有颜色的",
       `次要文字的颜色是 ${start.minor}`,
@@ -639,18 +716,20 @@ async function main() {
     // 缩到中间档
     const mid = await shrinkUntilTierChanges();
     info(`缩 ${mid.clicks} 次后：缩放 ${mid.zoom}，档位 ${mid.tier}`);
-    expect_(
+    check(
       mid.tier === "major",
       `缩到 ${mid.zoom} 时只剩次要文字被藏（档位 ${mid.tier}）`,
       `档位是 ${mid.tier}，期望 major`,
     );
-    expect_(
+    check(
       mid.minor === "rgba(0, 0, 0, 0)" || mid.minor === "transparent",
       "次要文字变成了透明",
       `次要文字的颜色还是 ${mid.minor} —— 缩小后它会糊成一层灰渣`,
     );
-    expect_(
-      mid.major !== null && mid.major !== "rgba(0, 0, 0, 0)" && mid.major !== "transparent",
+    check(
+      mid.major !== null &&
+        mid.major !== "rgba(0, 0, 0, 0)" &&
+        mid.major !== "transparent",
       "工序名和序号还留着（这一档还要看得见是哪一道",
       `连工序名也没了（颜色 ${mid.major}）—— 那就不是"让位"，是把信息一起藏了`,
     );
@@ -659,12 +738,12 @@ async function main() {
     await clickZoom("缩小", 3);
     const far = await readTier();
     info(`再缩三次后：缩放 ${far.zoom}，档位 ${far.tier}`);
-    expect_(
+    check(
       far.tier === "none",
       `缩到 ${far.zoom} 时文字全藏（档位 ${far.tier}）`,
       `档位是 ${far.tier}，期望 none`,
     );
-    expect_(
+    check(
       far.minorCount > 0,
       "文字只是看不见，元素仍然在 DOM 里（屏幕阅读器还读得到）",
       "次要文字从 DOM 里消失了 —— 那是把无障碍做成了功能缺失",
@@ -674,7 +753,7 @@ async function main() {
     await clickZoom("放大", 6);
     const back = await readTier();
     info(`放大回来：缩放 ${back.zoom}，档位 ${back.tier}`);
-    expect_(
+    check(
       back.tier === "all",
       "放大之后文字自己回来了",
       `放大到 ${back.zoom} 档位还是 ${back.tier}`,
@@ -710,20 +789,20 @@ async function main() {
 
     info(`查了 ${liveRoutes.length} 个页面，顶栏链接 ${navLinkCount} 个`);
 
-    expect_(
+    check(
       stray.length === 0,
       `${liveRoutes.length} 个页面上都没有指向 /studio 的链接`,
       `这些页面还指着退役的工作台：${stray.join("  |  ")}`,
     );
 
-    expect_(
+    check(
       navLinkCount === 4,
       "顶栏是 品牌 + 三项（首页 / 构建 / 设置）",
       `顶栏有 ${navLinkCount} 个链接`,
     );
 
     // 前十四步的测试账号没有任何运行记录，子节点数永远是 0，子树断言全在空转。
-    // 这里插一条带检查结果的运行，把「子树真的长出来」验掉。
+    // 这里插一条带检查结果的运行，把“子树真的长出来”验掉。
     heading("第十五步 · 子树真的画出来了（造一条带检查结果的运行）");
 
     const seeded = seedVerifyRun(username);
@@ -740,7 +819,7 @@ async function main() {
         /*
           某个父节点名下有几条横枝。
 
-          ⚠️ 必须按父节点分开数，不能再用"横枝总数 === 子方块数"。
+          必须按父节点分开数，不能再用"横枝总数 === 子方块数"。
              三层树里**有两个父节点有孩子**：一级 Agent（→ 六道工序）
              和验收（→ 七项检查）。总数是 6 + 7 = 13，
              而子方块只有 7 个 —— 拿总数去比，这条断言必然红，
@@ -788,25 +867,25 @@ async function main() {
         `躯干 ${tree.trunks} 条 · 带状态 ${tree.withStatus} · 带依据 ${tree.withDetail} · 带数值 ${tree.withMetric}`,
     );
 
-    expect_(
+    check(
       tree.chips === seeded.count,
       `${seeded.count} 项检查长成了 ${seeded.count} 个方块`,
       `只画出了 ${tree.chips} 个方块`,
     );
     // 数的是验收名下的横枝（7 条），不是全画布的 13 条。
-    expect_(
+    check(
       tree.verifyLinks === tree.chips,
       `每个方块都有一条线连回父工序（${tree.verifyLinks}/${tree.chips}）`,
       `有 ${tree.chips} 个方块，却只有 ${tree.verifyLinks} 条横枝 —— 会有孤儿`,
     );
     // 两个父节点各一条躯干：一级 Agent 连六道工序、验收连七项检查。
-    expect_(
+    check(
       tree.trunks === 2,
       "两个父节点各有一条躯干：一级 Agent → 六道工序、验收 → 七项检查",
       `躯干有 ${tree.trunks} 条，应该是 2（一级 Agent 一条 + 验收一条）`,
     );
     // 子卡要有状态、依据、数值，不能只是一个标题。
-    expect_(
+    check(
       tree.withStatus === tree.chips &&
         tree.withDetail === tree.chips &&
         tree.withMetric === tree.chips,
@@ -815,13 +894,13 @@ async function main() {
         `依据 ${tree.withDetail}/${tree.chips}、数值 ${tree.withMetric}/${tree.chips}`,
     );
     // 造的七项里故意让一项不过，全是 pass 就看不出 tone 有没有读进去。
-    expect_(
+    check(
       tree.tones.includes("fail") && tree.tones.includes("pass"),
       "通过和未过的方块颜色是不同的（tone 真的读进去了）",
       `tone 只有 ${JSON.stringify([...new Set(tree.tones)])}`,
     );
     // 子卡要有边框和底色，和主卡同一套视觉语言。
-    expect_(
+    check(
       tree.styled === tree.chips,
       "每张子卡都有边框和底色（和主卡同一套视觉语言，不是一行文字）",
       `只有 ${tree.styled}/${tree.chips} 张有边框和底色`,
@@ -861,9 +940,9 @@ async function main() {
       returnByValue: true,
     });
     const at = JSON.parse(dbl.result!.value!) as { x: number; y: number };
-    expect_(
+    check(
       Number.isFinite(at.x) && Number.isFinite(at.y),
-      "找得到「验收与交付」那张卡",
+      "找得到“验收与交付”那张卡",
       "页面上没有 [data-pipeline-stage=verify]",
     );
 
@@ -887,8 +966,8 @@ async function main() {
     await sleep(900);
 
     const zoomNear = await readZoom();
-    info(`双击「验收与交付」之后：缩放 ${zoomNear}%`);
-    expect_(
+    info(`双击“验收与交付”之后：缩放 ${zoomNear}%`);
+    check(
       zoomNear > zoomFar,
       `双击一个工序会聚焦到它那棵树（${zoomFar}% → ${zoomNear}%）`,
       `缩放没变（还是 ${zoomNear}%）—— 双击没接上，或者聚焦区域算错了`,
@@ -940,7 +1019,7 @@ async function main() {
 
     const zoomBack = await readZoom();
     info(`双击空白之后：缩放 ${zoomBack}%`);
-    expect_(
+    check(
       Math.abs(zoomBack - zoomFar) < 1,
       `双击空白处回到全局视口（${zoomNear}% → ${zoomBack}%，原来是 ${zoomFar}%）`,
       `回到 ${zoomBack}%，和进来之前的 ${zoomFar}% 不一样 —— 出不去，或者回错了地方`,
@@ -1019,12 +1098,12 @@ async function main() {
         `内容 ${quadEmpty.content?.w}px（窗口 ${quadEmpty.innerW}px）`,
     );
 
-    expect_(
+    check(
       quadEmpty.outline !== null,
       "左侧有任务点清单（[data-planning-outline]）",
       "页面上找不到 [data-planning-outline] —— 左侧面板没有渲染",
     );
-    expect_(
+    check(
       quadEmpty.outline !== null &&
         quadEmpty.stage !== null &&
         quadEmpty.outline.right <= quadEmpty.stage.left + 1 &&
@@ -1032,7 +1111,7 @@ async function main() {
       `清单在画布左边，宽 ${quadEmpty.outline?.w}px（17rem）`,
       `清单位置/宽度不对：清单 right=${quadEmpty.outline?.right}，画布 left=${quadEmpty.stage?.left}，宽 ${quadEmpty.outline?.w}`,
     );
-    expect_(
+    check(
       quadEmpty.content !== null &&
         quadEmpty.stage !== null &&
         quadEmpty.content.left >= quadEmpty.stage.right - 1 &&
@@ -1041,43 +1120,43 @@ async function main() {
       `内容面板位置/宽度不对：内容 left=${quadEmpty.content?.left}，画布 right=${quadEmpty.stage?.right}，宽 ${quadEmpty.content?.w}`,
     );
     // 画布比窗口窄，证明两侧是占了宽度而不是浮在上面。
-    expect_(
+    check(
       quadEmpty.stage !== null &&
         quadEmpty.stage.w > 200 &&
         quadEmpty.stage.w < quadEmpty.innerW - 500,
       `画布在中间，宽 ${quadEmpty.stage?.w}px，比窗口窄（两侧真的占了宽度）`,
       `画布宽 ${quadEmpty.stage?.w}px，窗口 ${quadEmpty.innerW}px —— 两侧面板没有占住版面？`,
     );
-    expect_(
+    check(
       quadEmpty.contentPlaceholder,
       "右侧是明确的空态块（[data-step-content-placeholder]）",
       "右侧没有空态块 —— 分不清是没数据还是没接",
     );
-    // 空态写明「这次运行还没有产生任何过程事件」，指向的是数据，不是功能没做。
-    expect_(
+    // 空态写明“这次运行还没有产生任何过程事件”，指向的是数据，不是功能没做。
+    check(
       quadEmpty.contentText.includes("这次运行还没有产生任何过程事件"),
-      "右侧说的是实话：「这次运行还没有产生任何过程事件」",
-      `右侧没有这句空态文案 —— 读到的是「${quadEmpty.contentText.slice(0, 40)}」`,
+      "右侧说的是实话：“这次运行还没有产生任何过程事件”",
+      `右侧没有这句空态文案 —— 读到的是“${quadEmpty.contentText.slice(0, 40)}”`,
     );
     // 1440 屏在断点之上，窄屏按钮不该出现。
-    expect_(
+    check(
       quadEmpty.visibleToggles === 0,
       "1440 屏上窄屏按钮不显示（≥1280 两侧常驻）",
       `出现了 ${quadEmpty.visibleToggles} 个窄屏按钮 —— 断点判反了`,
     );
     // 没有运行就没有计划：清单给空态，不编造六道工序。
-    expect_(
+    check(
       quadEmpty.rows === 0 && quadEmpty.hasEmptyState,
       "没有选中运行时清单是空态，不编造六道工序",
       `清单里有 ${quadEmpty.rows} 行（应当 0 行 + 空态）`,
     );
-    expect_(
+    check(
       quadEmpty.docScrollW <= quadEmpty.innerW + 1,
       `没有横向滚动条（内容宽 ${quadEmpty.docScrollW} ≤ 窗口 ${quadEmpty.innerW}）`,
       `出现横向滚动条：内容宽 ${quadEmpty.docScrollW} > 窗口 ${quadEmpty.innerW} —— 少写了 min-w-0？`,
     );
 
-    // 换成一条没有任何 check 事件的运行，验「没到点的那几道说什么」。
+    // 换成一条没有任何 check 事件的运行，验“没到点的那几道说什么”。
     const planRun = seedRunningRun(username);
     info(`造了一条运行 ${planRun.slice(0, 8)}，没有任何 check 事件`);
 
@@ -1090,24 +1169,25 @@ async function main() {
         `占位文字 ${JSON.stringify(quadPlan.placeholderTexts)}`,
     );
 
-    expect_(
+    check(
       quadPlan.level1 === 6,
       "清单里恰好 6 个一级行（六道工序）",
       `一级行有 ${quadPlan.level1} 个，应该是 6`,
     );
-    // 六行占位是界面在说「将来会有，只是还没到点」；空白会被读成跑完了什么都没有。
-    expect_(
+    // 六行占位是界面在说“将来会有，只是还没到点”；空白会被读成跑完了什么都没有。
+    check(
       quadPlan.placeholders === 6,
-      `六道工序都给出了「待规划」占位行（${quadPlan.placeholders}/6）`,
+      `六道工序都给出了“待规划”占位行（${quadPlan.placeholders}/6）`,
       `只有 ${quadPlan.placeholders} 行占位 —— 那几道工序在清单上是空白，用户分不清"没轮到"和"没东西"`,
     );
-    expect_(
-      quadPlan.placeholderTexts.length === 1 && quadPlan.placeholderTexts[0] === "待规划",
-      "占位行的文字就是「待规划」",
-      `占位行的文字是 ${JSON.stringify(quadPlan.placeholderTexts)}，期望「待规划」`,
+    check(
+      quadPlan.placeholderTexts.length === 1 &&
+        quadPlan.placeholderTexts[0] === "待规划",
+      "占位行的文字就是“待规划”",
+      `占位行的文字是 ${JSON.stringify(quadPlan.placeholderTexts)}，期望“待规划”`,
     );
-    // running 的色点是 green，和画布上「正在跑」用同一个色值。
-    expect_(
+    // running 的色点是 green，和画布上“正在跑”用同一个色值。
+    check(
       quadPlan.runningDot === "rgb(74, 222, 128)",
       `正在跑的那道工序色点是绿色 ${quadPlan.runningDot}（和画布同一套状态色）`,
       `正在跑那一行的色点是 ${quadPlan.runningDot}，期望 rgb(74, 222, 128)`,
@@ -1256,7 +1336,7 @@ async function main() {
       `覆盖之前视口 ${wideBefore}px（第十七步量到的是 ${quadPlan.innerW}px；` +
         `--window-size=1440,900 给的是窗口外框，视口比它窄 ${1440 - quadPlan.innerW}px）`,
     );
-    expect_(
+    check(
       wideBefore === quadPlan.innerW && wideBefore >= 1280,
       `覆盖之前仍停在宽屏视口 ${wideBefore}px（和第十七步量到的是同一个，≥1280）`,
       `覆盖之前视口是 ${wideBefore}px，第十七步量到的是 ${quadPlan.innerW}px —— 中间有东西动过视口，下面的对照就不成立了`,
@@ -1269,7 +1349,9 @@ async function main() {
       deviceScaleFactor: 1,
       mobile: false,
     });
-    info("Emulation.setDeviceMetricsOverride：1100×800（浏览器没重启，会话和 Cookie 没重来）");
+    info(
+      "Emulation.setDeviceMetricsOverride：1100×800（浏览器没重启，会话和 Cookie 没重来）",
+    );
 
     await cdp.send("Page.navigate", { url: `${BASE}/canvas` });
     await sleep(3500);
@@ -1280,61 +1362,61 @@ async function main() {
         `内容 ${narrow.content?.w}px · 两个窄屏按钮 ${narrow.toggleLeft.box?.w}/${narrow.toggleRight.box?.w}px`,
     );
 
-    expect_(
+    check(
       narrow.innerW === 1100 && !narrow.wideMedia,
       `视口覆盖生效：innerWidth ${narrow.innerW}，matchMedia('(min-width:1280px)') = false`,
       `视口覆盖没生效：innerWidth ${narrow.innerW}，matchMedia 宽屏匹配 = ${narrow.wideMedia}`,
     );
 
     // 2. 两个窄屏按钮可见
-    expect_(
+    check(
       narrow.toggleLeft.exists &&
         (narrow.toggleLeft.box?.w ?? 0) > 0 &&
         narrow.toggleLeft.text === "清单",
-      `窄屏出现「清单」按钮（${narrow.toggleLeft.box?.w}×${narrow.toggleLeft.box?.h}，文字「${narrow.toggleLeft.text}」）`,
-      `「清单」按钮不可见：存在=${narrow.toggleLeft.exists} 宽=${narrow.toggleLeft.box?.w} 文字=${narrow.toggleLeft.text}`,
+      `窄屏出现“清单”按钮（${narrow.toggleLeft.box?.w}×${narrow.toggleLeft.box?.h}，文字“${narrow.toggleLeft.text}”）`,
+      `“清单”按钮不可见：存在=${narrow.toggleLeft.exists} 宽=${narrow.toggleLeft.box?.w} 文字=${narrow.toggleLeft.text}`,
     );
-    expect_(
+    check(
       narrow.toggleRight.exists &&
         (narrow.toggleRight.box?.w ?? 0) > 0 &&
         narrow.toggleRight.text === "内容",
-      `窄屏出现「内容」按钮（${narrow.toggleRight.box?.w}×${narrow.toggleRight.box?.h}，文字「${narrow.toggleRight.text}」）`,
-      `「内容」按钮不可见：存在=${narrow.toggleRight.exists} 宽=${narrow.toggleRight.box?.w} 文字=${narrow.toggleRight.text}`,
+      `窄屏出现“内容”按钮（${narrow.toggleRight.box?.w}×${narrow.toggleRight.box?.h}，文字“${narrow.toggleRight.text}”）`,
+      `“内容”按钮不可见：存在=${narrow.toggleRight.exists} 宽=${narrow.toggleRight.box?.w} 文字=${narrow.toggleRight.text}`,
     );
 
     // 3. 两侧默认收起：宽度必须是真的 0
-    // 「收起」必须是真的 0 宽：opacity 0 / 移出屏幕 / visibility hidden 都还占版面。
-    expect_(
+    // “收起”必须是真的 0 宽：opacity 0 / 移出屏幕 / visibility hidden 都还占版面。
+    check(
       narrow.outline !== null && narrow.outline.w === 0,
       "窄屏默认收起：左侧清单宽度为 0（不占版面）",
       `左侧清单宽 ${narrow.outline?.w}px —— 窄屏下它没有让开（收起写成了"看不见"？）`,
     );
-    expect_(
+    check(
       narrow.content !== null && narrow.content.w === 0,
       "窄屏默认收起：右侧内容宽度为 0（不占版面）",
       `右侧内容宽 ${narrow.content?.w}px —— 窄屏下它没有让开（收起写成了"看不见"？）`,
     );
 
     // 4. 画布铺满整个视口宽
-    expect_(
+    check(
       narrow.stage !== null && Math.abs(narrow.stage.w - narrow.innerW) <= 2,
       `画布铺满窄屏全宽（${narrow.stage?.w} ≈ 视口 ${narrow.innerW}）—— 两侧是真让开，不是浮层压着`,
       `画布宽 ${narrow.stage?.w}px，视口 ${narrow.innerW}px（差 ${narrow.innerW - (narrow.stage?.w ?? 0)}px）—— 两侧没有让开`,
     );
 
     // 5. 没有横向滚动条
-    expect_(
+    check(
       narrow.docScrollW <= narrow.innerW + 1,
       `窄屏没有横向滚动条（内容宽 ${narrow.docScrollW} ≤ 视口 ${narrow.innerW}）`,
       `窄屏出现横向滚动条：内容宽 ${narrow.docScrollW} > 视口 ${narrow.innerW}`,
     );
 
-    // 6. 点「清单」展开左侧覆盖层
+    // 6. 点“清单”展开左侧覆盖层
     const leftHit = await clickCenter('[data-panel-toggle="left"]');
     info(
       leftHit.ok
-        ? `点了「清单」按钮（页面坐标 ${leftHit.x}, ${leftHit.y}）`
-        : "页面上没有「清单」按钮可点 —— 下面这一组会红",
+        ? `点了“清单”按钮（页面坐标 ${leftHit.x}, ${leftHit.y}）`
+        : "页面上没有“清单”按钮可点 —— 下面这一组会红",
     );
     await sleep(400);
 
@@ -1343,23 +1425,23 @@ async function main() {
       `展开后：dock position ${leftOpen.dockLeft?.position} display ${leftOpen.dockLeft?.display} ` +
         `left ${leftOpen.dockLeft?.left} 宽 ${leftOpen.dockLeft?.w} · 面板宽 ${leftOpen.outline?.w}`,
     );
-    expect_(
+    check(
       leftOpen.dockLeft !== null &&
         leftOpen.dockLeft.position === "fixed" &&
         Math.abs(leftOpen.dockLeft.left) <= 1 &&
         Math.abs(leftOpen.dockLeft.w - 272) <= 8 &&
         Math.abs((leftOpen.outline?.w ?? 0) - 272) <= 8,
-      `点「清单」展开成覆盖层：position fixed · left ${leftOpen.dockLeft?.left} · 宽 ${leftOpen.outline?.w}px（17rem = 272，只盖左一条）`,
+      `点“清单”展开成覆盖层：position fixed · left ${leftOpen.dockLeft?.left} · 宽 ${leftOpen.outline?.w}px（17rem = 272，只盖左一条）`,
       `清单覆盖层不对：position=${leftOpen.dockLeft?.position} left=${leftOpen.dockLeft?.left} ` +
         `dock 宽=${leftOpen.dockLeft?.w} 面板宽=${leftOpen.outline?.w}（期望 fixed / 0 / 272）`,
     );
-    expect_(
+    check(
       leftOpen.closeLeft.exists && (leftOpen.closeLeft.box?.w ?? 0) > 0,
       `覆盖层里有关闭按钮（[data-panel-close="left"] ${leftOpen.closeLeft.box?.w}×${leftOpen.closeLeft.box?.h}）`,
       `覆盖层里没有可点的关闭按钮：存在=${leftOpen.closeLeft.exists} 宽=${leftOpen.closeLeft.box?.w}`,
     );
     // 覆盖层不是抽屉：展开时画布仍是全宽，而且必须真的是 fixed 覆盖层。
-    expect_(
+    check(
       leftOpen.dockLeft !== null &&
         leftOpen.dockLeft.position === "fixed" &&
         Math.abs((leftOpen.stage?.w ?? 0) - leftOpen.innerW) <= 2,
@@ -1379,7 +1461,7 @@ async function main() {
 
     const leftClosed = await readNarrow();
     // 同样要求点之前它真的展开过，否则没展开过也能变绿。
-    expect_(
+    check(
       leftOpen.dockLeft !== null &&
         leftOpen.dockLeft.position === "fixed" &&
         leftClosed.outline !== null &&
@@ -1390,12 +1472,12 @@ async function main() {
         `（点之前展开成覆盖层了吗：position=${leftOpen.dockLeft?.position}）`,
     );
 
-    // 8. 右侧「内容」同样走一轮（22rem = 352）
+    // 8. 右侧“内容”同样走一轮（22rem = 352）
     const rightHit = await clickCenter('[data-panel-toggle="right"]');
     info(
       rightHit.ok
-        ? `点了「内容」按钮（页面坐标 ${rightHit.x}, ${rightHit.y}）`
-        : "页面上没有「内容」按钮可点 —— 下面这一组会红",
+        ? `点了“内容”按钮（页面坐标 ${rightHit.x}, ${rightHit.y}）`
+        : "页面上没有“内容”按钮可点 —— 下面这一组会红",
     );
     await sleep(400);
 
@@ -1404,18 +1486,18 @@ async function main() {
       `展开后：dock position ${rightOpen.dockRight?.position} right ${rightOpen.dockRight?.right} ` +
         `宽 ${rightOpen.dockRight?.w} · 面板宽 ${rightOpen.content?.w}`,
     );
-    expect_(
+    check(
       rightOpen.dockRight !== null &&
         rightOpen.dockRight.position === "fixed" &&
         Math.abs(rightOpen.dockRight.right - rightOpen.innerW) <= 1 &&
         Math.abs(rightOpen.dockRight.w - 352) <= 8 &&
         Math.abs((rightOpen.content?.w ?? 0) - 352) <= 8,
-      `点「内容」展开成覆盖层：position fixed · right ${rightOpen.dockRight?.right} ≈ 视口 ${rightOpen.innerW} · ` +
+      `点“内容”展开成覆盖层：position fixed · right ${rightOpen.dockRight?.right} ≈ 视口 ${rightOpen.innerW} · ` +
         `宽 ${rightOpen.content?.w}px（22rem = 352，贴右边缘）`,
       `内容覆盖层不对：position=${rightOpen.dockRight?.position} right=${rightOpen.dockRight?.right}` +
         `（视口 ${rightOpen.innerW}）dock 宽=${rightOpen.dockRight?.w} 面板宽=${rightOpen.content?.w}（期望 fixed / 1100 / 352）`,
     );
-    expect_(
+    check(
       rightOpen.closeRight.exists && (rightOpen.closeRight.box?.w ?? 0) > 0,
       `内容覆盖层里有关闭按钮（[data-panel-close="right"] ${rightOpen.closeRight.box?.w}×${rightOpen.closeRight.box?.h}）`,
       `内容覆盖层里没有可点的关闭按钮：存在=${rightOpen.closeRight.exists} 宽=${rightOpen.closeRight.box?.w}`,
@@ -1430,7 +1512,7 @@ async function main() {
     await sleep(400);
 
     const rightClosed = await readNarrow();
-    expect_(
+    check(
       rightOpen.dockRight !== null &&
         rightOpen.dockRight.position === "fixed" &&
         rightClosed.content !== null &&
@@ -1440,7 +1522,7 @@ async function main() {
     );
 
     // 9. 窄屏下画布仍然可用，不是让开了但用不了
-    expect_(
+    check(
       narrow.shell !== null && (narrow.shell.w ?? 0) > 0 && (narrow.shell.h ?? 0) > 0,
       `窄屏下画布容器还在且有真实尺寸（[data-canvas-shell] ${narrow.shell?.w}×${narrow.shell?.h}）`,
       `窄屏下画布容器没了或尺寸为 0：${JSON.stringify(narrow.shell)}`,
@@ -1463,8 +1545,9 @@ async function main() {
       `窄屏下在画布中心 (${wheelX}, ${wheelY}) 滚一次：缩放 ${zoomBefore.zoomLabel} → ${zoomAfter.zoomLabel}，` +
         `网格 ${zoomBefore.gridStep} → ${zoomAfter.gridStep}px`,
     );
-    expect_(
-      zoomAfter.zoomLabel !== zoomBefore.zoomLabel && zoomAfter.gridStep > zoomBefore.gridStep,
+    check(
+      zoomAfter.zoomLabel !== zoomBefore.zoomLabel &&
+        zoomAfter.gridStep > zoomBefore.gridStep,
       `窄屏下滚轮仍然缩放：${zoomBefore.zoomLabel} → ${zoomAfter.zoomLabel}`,
       `窄屏下滚轮没反应：缩放还是 ${zoomAfter.zoomLabel}（网格 ${zoomBefore.gridStep} → ${zoomAfter.gridStep}px）`,
     );
@@ -1475,12 +1558,12 @@ async function main() {
 
     const wideAfter = await readInnerW();
     const restored = await readNarrow();
-    expect_(
+    check(
       wideAfter === wideBefore && wideAfter === quadPlan.innerW,
       `清掉覆盖后视口精确回到覆盖之前的 ${wideAfter}px（= 第十七步那个宽屏视口）`,
       `清掉覆盖后视口是 ${wideAfter}px，覆盖之前是 ${wideBefore}px（第十七步是 ${quadPlan.innerW}px）—— 没回到干净状态`,
     );
-    expect_(
+    check(
       restored.wideMedia === true &&
         restored.toggleLeft.exists &&
         (restored.toggleLeft.box?.w ?? 0) === 0 &&
@@ -1533,7 +1616,7 @@ async function main() {
         rootPillPulse: pill ? getComputedStyle(pill).animationName : null,
         /*
           标题走 data-root-title，不是 [data-canvas-label="major"]：
-          卡里第一个 major 是左上角那个「AGENT」标识（序号那一行的替身），
+          卡里第一个 major 是左上角那个“AGENT”标识（序号那一行的替身），
           querySelector 拿到的会是它。
         */
         rootTitle: text(root ? root.querySelector('[data-root-title]') : null),
@@ -1613,7 +1696,9 @@ async function main() {
 
     // 19.1 一条跑完的运行：1 根 + 6 工序 + 7 执行点
     const doneRun = seedVerifyRun(username);
-    info(`造了一条运行 ${doneRun.runId.slice(0, 8)}（status=done，带 ${doneRun.count} 项检查）`);
+    info(
+      `造了一条运行 ${doneRun.runId.slice(0, 8)}（status=done，带 ${doneRun.count} 项检查）`,
+    );
 
     await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${doneRun.runId}` });
     await sleep(4200);
@@ -1629,12 +1714,12 @@ async function main() {
         `六道工序 top=${done.stageTops.join(",")}`,
     );
 
-    expect_(
+    check(
       done.rootCount === 1 && done.rootId === PLANNING_ROOT_ID,
       `画布上有且只有 1 个一级 Agent 根节点（[data-pipeline-root="${done.rootId}"]）`,
       `根节点有 ${done.rootCount} 个（id=${done.rootId}）—— 三层树的根必须是唯一的一个`,
     );
-    expect_(
+    check(
       done.stageCount === 6 &&
         done.stageIds.join(",") === "spec,arch,ui,build,assemble,verify",
       "六道工序仍然是 6 个，顺序不变（①②③④⑤⑥）",
@@ -1642,18 +1727,18 @@ async function main() {
     );
     // 三层同时在：根、六道工序、七个执行点；少一层画面只是少点东西，不报错。
     const layerSum = done.rootCount + done.stageCount + done.chipCount;
-    expect_(
+    check(
       done.rootCount === 1 && done.stageCount === 6 && done.chipCount === doneRun.count,
       `三层同时在：1 根 + 6 工序 + ${doneRun.count} 执行点（共 ${layerSum} 个节点）`,
       `三层不齐：根 ${done.rootCount} + 工序 ${done.stageCount} + 执行点 ${done.chipCount}（执行点应有 ${doneRun.count} 个）`,
     );
-    expect_(
+    check(
       done.rootTitle === "一级 Agent" && done.rootSubtitle === "总规划",
-      `根卡的标题和副标题来自投影：「${done.rootTitle}」/「${done.rootSubtitle}」`,
-      `根卡文字是「${done.rootTitle}」/「${done.rootSubtitle}」，期望「一级 Agent」/「总规划」`,
+      `根卡的标题和副标题来自投影：“${done.rootTitle}”/“${done.rootSubtitle}”`,
+      `根卡文字是“${done.rootTitle}”/“${done.rootSubtitle}”，期望“一级 Agent”/“总规划”`,
     );
     // 根要在六道工序上方：卡片长得一样，位置是唯一说得出层级的东西。
-    expect_(
+    check(
       done.rootBox !== null &&
         done.stageTops.length === 6 &&
         done.rootBox.top + done.rootBox.h <= Math.min(...done.stageTops),
@@ -1661,22 +1746,26 @@ async function main() {
       `根卡不在上面：根 ${done.rootBox?.top}~${done.rootBox ? done.rootBox.top + done.rootBox.h : "?"}，工序顶边最小 ${Math.min(...done.stageTops)}`,
     );
     // 根和六道工序之间要有线：一条躯干 + 每个孩子一条横枝。
-    expect_(
+    check(
       done.trunkFromRoot === 1 && done.branchesFromRoot === done.stageCount,
       `根与六道工序之间有连线（1 条躯干 + ${done.branchesFromRoot} 条横枝，每道工序一条）`,
       `根名下的连线不对：躯干 ${done.trunkFromRoot} 条、横枝 ${done.branchesFromRoot} 条（期望 1 条躯干 + ${done.stageCount} 条横枝）`,
     );
-    // 状态来自投影：run.status = done 就该是「已完成」，且不能有脉冲。
-    expect_(
-      done.rootStatus === "done" && done.rootPillText === "已完成" && done.rootPillPulse === "none",
-      `根卡如实显示这条运行的真实状态：${done.rootStatus} · 胶囊「${done.rootPillText}」· 无脉冲`,
-      `根卡显示 ${done.rootStatus} / 「${done.rootPillText}」/ 动画 ${done.rootPillPulse}` +
-        ` —— 这条运行是 done，就该是「已完成」且不动`,
+    // 状态来自投影：run.status = done 就该是“已完成”，且不能有脉冲。
+    check(
+      done.rootStatus === "done" &&
+        done.rootPillText === "已完成" &&
+        done.rootPillPulse === "none",
+      `根卡如实显示这条运行的真实状态：${done.rootStatus} · 胶囊“${done.rootPillText}”· 无脉冲`,
+      `根卡显示 ${done.rootStatus} / “${done.rootPillText}”/ 动画 ${done.rootPillPulse}` +
+        ` —— 这条运行是 done，就该是“已完成”且不动`,
     );
     // 状态色两级证据：调色板里 done 的蓝，和左侧清单同状态那一行的色点同色。
     // 根卡底部的次要文字要跟着档位让位，量的是内层 span 的颜色。
-    const hidden = done.rootStagesColor === "rgba(0, 0, 0, 0)" || done.rootStagesColor === "transparent";
-    expect_(
+    const hidden =
+      done.rootStagesColor === "rgba(0, 0, 0, 0)" ||
+      done.rootStagesColor === "transparent";
+    check(
       done.tier === "all" ? !hidden : hidden,
       `根卡的次要文字跟着档位走（档位 ${done.tier}，底部那行颜色 ${done.rootStagesColor}）`,
       `档位 ${done.tier} 但底部那行的颜色是 ${done.rootStagesColor}` +
@@ -1684,7 +1773,7 @@ async function main() {
     );
 
     const doneDots = dotsOfStatus(done, "done");
-    expect_(
+    check(
       done.rootRgb === "96 165 250" &&
         doneDots.length === 1 &&
         doneDots[0] === asRgb(done.rootRgb),
@@ -1698,7 +1787,9 @@ async function main() {
     // 19.2 换一条还在跑的运行：根的状态和颜色都得跟着变
     // 同一条运行换成 running：状态与颜色都得跟着变，写死的会露馅。
     const runningRun = seedRunningRun(username);
-    info(`造了一条运行 ${runningRun.slice(0, 8)}（status=running，只有一条 phase:spec）`);
+    info(
+      `造了一条运行 ${runningRun.slice(0, 8)}（status=running，只有一条 phase:spec）`,
+    );
 
     await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${runningRun}` });
     await sleep(4200);
@@ -1709,24 +1800,24 @@ async function main() {
         `工序 ${running.stageCount} 个 · 执行点 ${running.chipCount} 个`,
     );
 
-    expect_(
+    check(
       running.rootStatus === "running" &&
         running.rootPillText === "正在跑" &&
         running.rootPillPulse !== "none",
-      `换成还在跑的运行，根卡跟着变成 running「正在跑」且有脉冲（动画 ${running.rootPillPulse}）`,
-      `根卡显示 ${running.rootStatus} /「${running.rootPillText}」/ 动画 ${running.rootPillPulse}` +
-        ` —— 这条运行是 running，根卡该是「正在跑」并带一点脉冲`,
+      `换成还在跑的运行，根卡跟着变成 running“正在跑”且有脉冲（动画 ${running.rootPillPulse}）`,
+      `根卡显示 ${running.rootStatus} /“${running.rootPillText}”/ 动画 ${running.rootPillPulse}` +
+        ` —— 这条运行是 running，根卡该是“正在跑”并带一点脉冲`,
     );
     const runningDots = dotsOfStatus(running, "running");
-    expect_(
+    check(
       running.rootRgb === "74 222 128" &&
         runningDots.length === 1 &&
         runningDots[0] === asRgb(running.rootRgb),
       `根卡状态色 = 绿 rgb(74, 222, 128)（running），和清单里正在跑那一行同色`,
       `根卡色是 ${running.rootRgb}，清单里 running 行的色点是 ${JSON.stringify(runningDots)}`,
     );
-    // 两条运行两种状态、两种颜色放在一起，才排除「碰巧写死成某一档」。
-    expect_(
+    // 两条运行两种状态、两种颜色放在一起，才排除“碰巧写死成某一档”。
+    check(
       done.rootStatus !== running.rootStatus && done.rootRgb !== running.rootRgb,
       `两条运行下根卡的状态与颜色都不同（${done.rootStatus}/${running.rootStatus}，` +
         `${done.rootRgb} vs ${running.rootRgb}）—— 状态确实来自真实投影`,
@@ -1737,7 +1828,7 @@ async function main() {
 
     // 19.3 没有选中运行：回到六根并列
     // 不带 run 时 rootCard 不传，画布要和以前一模一样。
-    // 没有运行就连「这次运行」都还没有，凭空多画一层总规划是在描述不存在的东西。
+    // 没有运行就连“这次运行”都还没有，凭空多画一层总规划是在描述不存在的东西。
     await cdp.send("Page.navigate", { url: `${BASE}/canvas` });
     await sleep(3500);
 
@@ -1746,21 +1837,21 @@ async function main() {
       `没有选中运行：根 ${noRun.rootCount} 个 · 工序 ${noRun.stageCount} 个 · ` +
         `执行点 ${noRun.chipCount} 个`,
     );
-    expect_(
+    check(
       noRun.rootCount === 0,
       "没有选中运行时画布上**没有**一级 Agent 根节点（不凭空造一个总规划）",
       `没有运行却画出了 ${noRun.rootCount} 个根节点 —— 那描述的是一个不存在的东西`,
     );
-    expect_(
+    check(
       noRun.stageCount === 6,
       "没有选中运行时仍然是六道工序并列（rootCard 不传 = 旧样子）",
       `工序卡有 ${noRun.stageCount} 个 —— 不传 rootCard 时画布该和以前一模一样`,
     );
 
-    // 视口策略两件事：「看全」要忽略 0.45 下限把整棵树装进视口；
+    // 视口策略两件事：“看全”要忽略 0.45 下限把整棵树装进视口；
     // 步骤推进要跟过去，但用户动过视口之后就不许再跟，否则是抢镜头。
     // 推进靠改库 + 让页面重新渲染（整页刷新会重挂，挂载本来就不聚焦）。
-    heading("第二十步 · 视口策略：「看全」出口与步骤推进自动聚焦");
+    heading("第二十步 · 视口策略：“看全”出口与步骤推进自动聚焦");
 
     /** 一次读全：画布矩形、倍率、平移、卡片矩形、清单、看全按钮 */
     const READ_VIEWPORT = `(() => {
@@ -1860,7 +1951,7 @@ async function main() {
     /** 倍率 = 网格间距 / 160 */
     const scaleOf = (s: ViewportSnap) => s.gridStep / 160;
 
-    // 落在画布矩形外的节点；容差 2px 给亚像素，不是给「差一点也算」。
+    // 落在画布矩形外的节点；容差 2px 给亚像素，不是给“差一点也算”。
     const outsideCanvas = (s: ViewportSnap, tol = 2) =>
       s.nodeBoxes
         .map((b, i) => ({ id: s.nodeIds[i], b }))
@@ -1893,7 +1984,9 @@ async function main() {
     // 夹具：一条正在跑、带子树的运行，外加一条只用来被删掉的陪跑运行。
     const advRun = seedAdvancingRun(username);
     const bystander = seedBystanderRun(username, "vp");
-    info(`造了一条正在跑的运行 ${advRun.slice(0, 8)}（阶段=构建，带 7 项检查的子节点）`);
+    info(
+      `造了一条正在跑的运行 ${advRun.slice(0, 8)}（阶段=构建，带 7 项检查的子节点）`,
+    );
 
     await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${advRun}` });
     await sleep(4200);
@@ -1901,52 +1994,56 @@ async function main() {
     const mounted = await readViewport();
     const vpW = mounted.stage.w;
     const vpH = mounted.stage.h;
-    const treeW = mounted.worldBounds ? Math.round(mounted.worldBounds.right - mounted.worldBounds.x) : 0;
-    const treeH = mounted.worldBounds ? Math.round(mounted.worldBounds.bottom - mounted.worldBounds.y) : 0;
+    const treeW = mounted.worldBounds
+      ? Math.round(mounted.worldBounds.right - mounted.worldBounds.x)
+      : 0;
+    const treeH = mounted.worldBounds
+      ? Math.round(mounted.worldBounds.bottom - mounted.worldBounds.y)
+      : 0;
     info(
       `画布 ${Math.round(vpW)}×${Math.round(vpH)} · 树 ${treeW}×${treeH}（世界坐标，实测）· ` +
         `打开时倍率 ${mounted.zoomLabel}`,
     );
 
-    // 20.1 「看全」这个按钮本身
+    // 20.1 “看全”这个按钮本身
     // 按钮自己带着 data-canvas-fit-all，查询用的也是它，元素存在即两件事都成立。
-    expect_(
+    check(
       mounted.fitAll !== null && mounted.fitAll.text === "看全",
-      "右下角缩放控件里有「看全」按钮（[data-canvas-fit-all]），文案就是「看全」",
-      `找不到带 data-canvas-fit-all、文案为「看全」的按钮（读到 ${JSON.stringify(mounted.fitAll)}）`,
+      "右下角缩放控件里有“看全”按钮（[data-canvas-fit-all]），文案就是“看全”",
+      `找不到带 data-canvas-fit-all、文案为“看全”的按钮（读到 ${JSON.stringify(mounted.fitAll)}）`,
     );
-    // 提示语要说实话：点下去会很小、读不清，别写成「查看全部」。
-    expect_(
+    // 提示语要说实话：点下去会很小、读不清，别写成“查看全部”。
+    check(
       mounted.fitAll !== null &&
         mounted.fitAll.title.includes("很小") &&
         mounted.fitAll.title.includes("读不清"),
-      `「看全」的提示语说了实话：「${mounted.fitAll?.title}」`,
-      `提示语没说清代价：「${mounted.fitAll?.title}」—— 应当写明会很小、读不清字`,
+      `“看全”的提示语说了实话：“${mounted.fitAll?.title}”`,
+      `提示语没说清代价：“${mounted.fitAll?.title}”—— 应当写明会很小、读不清字`,
     );
 
     // 20.2 打开时是默认视图，而且没有自动聚焦
     // 挂载不许自动聚焦：打开画布就把用户拽到某张卡上，他连这棵树有几层还没看清。
     // 默认视图该装下整棵树，倍率停在下限 0.45 上。
     const mountScale = scaleOf(mounted);
-    expect_(
+    check(
       Math.abs(mountScale - fitFloor("page")) < 0.01,
       `打开时停在默认视口（倍率 ${mounted.zoomLabel} = 下限 ${fitFloor("page")}），没有被自动聚焦拽走`,
       `打开时倍率是 ${mounted.zoomLabel}（期望 ${fitFloor("page")}）—— 挂载时不该自动聚焦`,
     );
 
-    // 默认视图装不下整棵树，这正是「看全」存在的理由。
+    // 默认视图装不下整棵树，这正是“看全”存在的理由。
     const outsideAtDefault = outsideCanvas(mounted);
-    expect_(
+    check(
       outsideAtDefault.length > 0,
       `默认视图确实装不下：${outsideAtDefault.length} 个节点在画布外` +
         `（树 ${treeW}×${treeH} × ${mountScale.toFixed(3)} = ` +
         `${Math.round(treeW * mountScale)}×${Math.round(treeH * mountScale)}，画布 ${Math.round(vpW)}×${Math.round(vpH)}）` +
-        ` —— 这正是「看全」要解决的事`,
-      `默认视图下居然一个节点都没出画布 —— 那「看全」就没有存在的理由了（请检查是不是下限被改掉了）`,
+        ` —— 这正是“看全”要解决的事`,
+      `默认视图下居然一个节点都没出画布 —— 那“看全”就没有存在的理由了（请检查是不是下限被改掉了）`,
     );
 
     // 20.3 步骤推进：视口跟着当前工序走
-    // 顺序要紧：必须在用户动视口之前测跟随，「看全」「回到原点」都算用户动过。
+    // 顺序要紧：必须在用户动视口之前测跟随，“看全”“回到原点”都算用户动过。
     // 推进靠删掉规格化那条事件，再点 chip 走客户端导航重新渲染。
     const beforeAdvance = outlineStages(mounted);
     info(`推进前：清单里六道工序的状态 ${beforeAdvance.join(",")}`);
@@ -1960,7 +2057,7 @@ async function main() {
     info(`推进后：清单里六道工序的状态 ${afterAdvanceOutline.join(",")}`);
 
     // 先证明这次推进真的到了页面上，否则后面的视口断言不算数。
-    expect_(
+    check(
       beforeAdvance[0] === "running" &&
         afterAdvanceOutline[0] === "pending" &&
         afterAdvanceOutline[3] === "running",
@@ -1972,7 +2069,7 @@ async function main() {
     const buildCard = cardInCanvas(afterAdvance, "build");
     const advScale = scaleOf(afterAdvance);
     // 两个证据一起看：倍率涨到 1 以上，且那张卡落在画布水平中线上。
-    expect_(
+    check(
       buildCard !== null && advScale > 1 && Math.abs(buildCard.cx - vpW / 2) < 6,
       `推进到④并行构建：视口聚焦过去（倍率 ${afterAdvance.zoomLabel}，那张卡在画布内 x=${buildCard?.cx}，中线 ${Math.round(vpW / 2)}）`,
       `视口没跟过去：倍率 ${afterAdvance.zoomLabel}（期望 > 1），` +
@@ -1980,13 +2077,13 @@ async function main() {
     );
     // 聚焦的是那一道的子树，别的工序卡这时该已经在画布外。
     const specCard = cardInCanvas(afterAdvance, "spec");
-    expect_(
+    check(
       specCard !== null && (specCard.x + specCard.w < 0 || specCard.x > vpW),
       `聚焦是收进④那一道，不是整棵树：①规格化的卡已经在画布外（画布内 x=${specCard?.x}）`,
       `①规格化的卡还在画布里（x=${specCard?.x}，宽 ${specCard?.w}）—— 这说明视口没有真正收进去`,
     );
 
-    // 20.4 点「看全」：整棵树都要在画布里
+    // 20.4 点“看全”：整棵树都要在画布里
     await cdp.send("Runtime.evaluate", {
       expression: `document.querySelector('[data-canvas-fit-all]').click()`,
     });
@@ -1999,10 +2096,10 @@ async function main() {
         `树在屏幕上 ${Math.round(treeW * fitAllScale)}×${Math.round(treeH * fitAllScale)}`,
     );
 
-    // 「看全」的唯一验收标准：每个节点都落在画布矩形里。
-    expect_(
+    // “看全”的唯一验收标准：每个节点都落在画布矩形里。
+    check(
       outsideAtFitAll.length === 0,
-      `★ 看全之后整棵树都在视口内：${fitAllSnap.nodeBoxes.length} 个节点全部落在画布矩形里（容差 2px）`,
+      `看全之后整棵树都在视口内：${fitAllSnap.nodeBoxes.length} 个节点全部落在画布矩形里（容差 2px）`,
       `看全之后还有 ${outsideAtFitAll.length} 个节点在画布外：` +
         outsideAtFitAll
           .map(
@@ -2013,34 +2110,34 @@ async function main() {
           )
           .join(" "),
     );
-    // 节点数要对得上，否则「全在视口里」在画布空着时也会绿。
-    expect_(
+    // 节点数要对得上，否则“全在视口里”在画布空着时也会绿。
+    check(
       fitAllSnap.nodeIds.filter((id) => id && !id.startsWith("verify:")).length === 7 &&
         fitAllSnap.nodeBoxes.length === 14,
       `看全时画的是一整棵树：1 根 + 6 工序 + 7 执行点 = ${fitAllSnap.nodeBoxes.length} 个节点`,
       `节点数不对：共 ${fitAllSnap.nodeBoxes.length} 个 —— 上面那条"全在视口里"就不算数了`,
     );
-    // 看全必须缩到下限以下；只断言「比之前小」不够，0.449 也会通过。
-    expect_(
+    // 看全必须缩到下限以下；只断言“比之前小”不够，0.449 也会通过。
+    check(
       fitAllScale < 0.4,
       `看全的倍率 ${fitAllSnap.zoomLabel} 明显小于下限 ${fitFloor("page")} —— 确实忽略了下限`,
       `看全只缩到 ${fitAllSnap.zoomLabel}，没有低过 ${fitFloor("page")} —— 下限没被忽略，装不下是必然的`,
     );
 
-    // 20.5 回到默认：「回到原点」仍然守着下限
+    // 20.5 回到默认：“回到原点”仍然守着下限
     await cdp.send("Runtime.evaluate", {
       expression: `document.querySelector('[data-canvas-zoom]').click()`,
     });
     await sleep(500);
     const backHome = await readViewport();
-    expect_(
+    check(
       scaleOf(backHome) >= 0.45 - 1e-6,
-      `「回到原点」回到 ${backHome.zoomLabel}（≥ 下限 0.45 = fitFloor("page")）—— 默认路径仍然守着下限`,
-      `回到原点后倍率是 ${backHome.zoomLabel}，低于下限 0.45 —— 下限被「看全」带坏了`,
+      `“回到原点”回到 ${backHome.zoomLabel}（≥ 下限 0.45 = fitFloor("page")）—— 默认路径仍然守着下限`,
+      `回到原点后倍率是 ${backHome.zoomLabel}，低于下限 0.45 —— 下限被“看全”带坏了`,
     );
 
     // 20.6 不跟用户抢镜头
-    // 先点「看全」= 用户动过视口，再推进一次，视口必须一个像素都不动。
+    // 先点“看全”= 用户动过视口，再推进一次，视口必须一个像素都不动。
     // 重新渲染由删掉陪跑运行触发（服务端动作 → 客户端导航）。
     await cdp.send("Runtime.evaluate", {
       expression: `document.querySelector('[data-canvas-fit-all]').click()`,
@@ -2061,26 +2158,26 @@ async function main() {
     const stealOutline = outlineStages(afterSteal);
     info(`再推进一次之后：清单里六道工序的状态 ${stealOutline.join(",")}`);
 
-    expect_(
+    check(
       stealOutline[3] === "pending" && stealOutline[5] === "running",
       "又推进了一次：当前工序从④并行构建走到⑥验收与交付（清单变了 → 页面确实重新渲染过）",
       `清单没按预期变化：${stealOutline.join(",")} —— 这一条不过，下面"视口没被抢"就不算数`,
     );
     // 倍率和平移一个都不许变：setViewport 写的是确定值，动了就说明自动聚焦发生了。
-    expect_(
+    check(
       afterSteal.gridStep === beforeSteal.gridStep &&
         afterSteal.panX === beforeSteal.panX &&
         afterSteal.panY === beforeSteal.panY,
-      `★ 用户动过视口之后不再自动聚焦：推进到⑥时视口纹丝不动` +
+      `用户动过视口之后不再自动聚焦：推进到⑥时视口纹丝不动` +
         `（倍率 ${afterSteal.zoomLabel}、平移 ${Math.round(afterSteal.panX)},${Math.round(afterSteal.panY)}）`,
       `视口被抢了：${beforeSteal.zoomLabel}(${Math.round(beforeSteal.panX)},${Math.round(beforeSteal.panY)}) → ` +
         `${afterSteal.zoomLabel}(${Math.round(afterSteal.panX)},${Math.round(afterSteal.panY)})` +
         ` —— 用户自己动过视口之后就不该再自动聚焦`,
     );
-    // 推进前后都停在「看全」那个倍率上，说明没被拉回 0.45 或拉到 1.x。
-    expect_(
+    // 推进前后都停在“看全”那个倍率上，说明没被拉回 0.45 或拉到 1.x。
+    check(
       Math.abs(userMovedScale - fitAllScale) < 1e-9 && userMovedScale < 0.4,
-      `推进前后都停在「看全」的倍率上（${beforeSteal.zoomLabel}）`,
+      `推进前后都停在“看全”的倍率上（${beforeSteal.zoomLabel}）`,
       `倍率不是看全那个值：推进前 ${beforeSteal.zoomLabel}，看全时是 ${fitAllSnap.zoomLabel}`,
     );
 
@@ -2223,7 +2320,9 @@ async function main() {
 
     // 21.1 一条带七项检查的运行：三种行同时在清单里
     const outlineRun = seedVerifyRun(username);
-    info(`造了一条运行 ${outlineRun.runId.slice(0, 8)}（status=done，带 ${outlineRun.count} 项检查）`);
+    info(
+      `造了一条运行 ${outlineRun.runId.slice(0, 8)}（status=done，带 ${outlineRun.count} 项检查）`,
+    );
 
     await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${outlineRun.runId}` });
     await sleep(4200);
@@ -2236,12 +2335,12 @@ async function main() {
     );
     info(
       `三种行的 href：` +
-        `一级「${shellDefault.rows.find((r) => r.level === "1")?.href}」· ` +
-        `二级实体「${shellDefault.rows.find((r) => r.level === "2" && !r.placeholder)?.href}」· ` +
-        `占位「${shellDefault.rows.find((r) => r.placeholder)?.href}」`,
+        `一级“${shellDefault.rows.find((r) => r.level === "1")?.href}”· ` +
+        `二级实体“${shellDefault.rows.find((r) => r.level === "2" && !r.placeholder)?.href}”· ` +
+        `占位“${shellDefault.rows.find((r) => r.placeholder)?.href}”`,
     );
 
-    expect_(
+    check(
       shellDefault.level1 === 6 &&
         shellDefault.placeholders === 5 &&
         shellDefault.level2 === outlineRun.count + 5,
@@ -2252,7 +2351,9 @@ async function main() {
 
     // 21.2 可点的行才有 href，而且不许丢掉 ?run=
     const level1Rows = shellDefault.rows.filter((r) => r.level === "1");
-    const realLevel2 = shellDefault.rows.filter((r) => r.level === "2" && !r.placeholder);
+    const realLevel2 = shellDefault.rows.filter(
+      (r) => r.level === "2" && !r.placeholder,
+    );
     const placeholders = shellDefault.rows.filter((r) => r.placeholder);
 
     // 一级行的 href 要同时带 run 和 focus；用行自己的 data-outline-focus 对账。
@@ -2262,7 +2363,7 @@ async function main() {
         !hrefOf(r).includes(`run=${outlineRun.runId}`) ||
         !hrefOf(r).includes(`focus=${r.focusAttr}`),
     );
-    expect_(
+    check(
       level1Rows.length === 6 && level1Bad.length === 0,
       `六个一级行都有 href，且同时带着 ?run=（${outlineRun.runId.slice(0, 8)}…）和 focus=<自己的节点 id>`,
       `${level1Bad.length} 个一级行的 href 不对：` +
@@ -2275,7 +2376,7 @@ async function main() {
         !hrefOf(r).includes(`run=${outlineRun.runId}`) ||
         !hrefOf(r).includes(`focus=${r.focusAttr}`),
     );
-    expect_(
+    check(
       realLevel2.length === outlineRun.count && level2Bad.length === 0,
       `${realLevel2.length} 个二级实体行（画布上有卡片的执行点）也都有 href 且带着 focus=`,
       `${level2Bad.length} 个二级行的 href 不对：` +
@@ -2283,17 +2384,21 @@ async function main() {
     );
 
     // 占位行没有对应节点，必须既无 href 也无 data-outline-focus。
-    // 少了后者，「不可点但看起来能点」照样能通过。
-    const clickablePlaceholders = placeholders.filter((r) => r.href !== null || r.focusAttr !== null);
-    expect_(
+    // 少了后者，“不可点但看起来能点”照样能通过。
+    const clickablePlaceholders = placeholders.filter(
+      (r) => r.href !== null || r.focusAttr !== null,
+    );
+    check(
       placeholders.length === 5 && clickablePlaceholders.length === 0,
       `五个占位行都没有 href、也没有 data-outline-focus（不可点，不是"假装可点"）`,
       `${clickablePlaceholders.length} 个占位行被做成了可点：` +
-        clickablePlaceholders.map((r) => `${r.text}→href=${r.href} focus=${r.focusAttr}`).join(" "),
+        clickablePlaceholders
+          .map((r) => `${r.text}→href=${r.href} focus=${r.focusAttr}`)
+          .join(" "),
     );
-    // 对照：同一份清单里确实有可点的行，否则「所有行都没 href」也会绿。
+    // 对照：同一份清单里确实有可点的行，否则“所有行都没 href”也会绿。
     const hrefCount = shellDefault.rows.filter((r) => r.href !== null).length;
-    expect_(
+    check(
       hrefCount === 6 + outlineRun.count,
       `同一份清单里有 ${6 + outlineRun.count} 行带 href（可点性不是"全都没有"）`,
       `带 href 的行只有 ${hrefCount} 个，期望 ${6 + outlineRun.count}`,
@@ -2307,7 +2412,7 @@ async function main() {
       `点击前：URL ${shellDefault.url} · 倍率 ${viewDefault.zoomLabel} · ` +
         `平移 ${Math.round(viewDefault.panX)},${Math.round(viewDefault.panY)}`,
     );
-    expect_(
+    check(
       Math.abs(defaultScale - fitFloor("page")) < 0.01,
       `点击前停在默认视图（倍率 ${viewDefault.zoomLabel} = 下限 ${fitFloor("page")}）`,
       `点击前倍率是 ${viewDefault.zoomLabel}（期望 ${fitFloor("page")}）—— 打开时该装下整棵树`,
@@ -2317,7 +2422,7 @@ async function main() {
     const targetRow = realLevel2[0];
     const targetId = targetRow.focusAttr as string;
     const targetTitle = targetRow.text;
-    expect_(
+    check(
       targetId === `verify:${targetTitle}`,
       `清单里那一行的 id 就是画布上的节点 id（${targetId}）`,
       `行 id 和检查项名字对不上：focus=${targetId}，行文字=${targetTitle}`,
@@ -2327,7 +2432,7 @@ async function main() {
     const rowHit = await clickReal(rowSelector);
     info(
       rowHit.ok
-        ? `点了二级行「${targetTitle}」（页面坐标 ${rowHit.x}, ${rowHit.y}）`
+        ? `点了二级行“${targetTitle}”（页面坐标 ${rowHit.x}, ${rowHit.y}）`
         : "清单里没有那条链接可点 —— 下面这一组会红",
     );
     await sleep(1600);
@@ -2339,13 +2444,13 @@ async function main() {
         `平移 ${Math.round(viewAfterClick.panX)},${Math.round(viewAfterClick.panY)}`,
     );
 
-    expect_(
+    check(
       decodeURIComponent(shellAfterClick.url).includes(`focus=${targetId}`) &&
         shellAfterClick.url.includes(`run=${outlineRun.runId}`),
       `URL 带上了 focus=${targetId}，而且原来的 ?run= 还在`,
       `URL 是 ${shellAfterClick.url} —— 期望同时含 focus=${targetId} 和 run=${outlineRun.runId}`,
     );
-    expect_(
+    check(
       viewAfterClick.gridStep !== viewDefault.gridStep ||
         viewAfterClick.panX !== viewDefault.panX ||
         viewAfterClick.panY !== viewDefault.panY,
@@ -2373,9 +2478,9 @@ async function main() {
             `(${Math.round(st.left)}, ${Math.round(st.top)}) ${Math.round(st.w)}×${Math.round(st.h)}`
         : `画布上找不到 ${targetId} 这个节点`,
     );
-    expect_(
+    check(
       inside,
-      `★ 聚焦目标落在画布矩形里（${targetId} 四边都在画布内）`,
+      `聚焦目标落在画布矩形里（${targetId} 四边都在画布内）`,
       `目标不在画布内：${targetId} → ` +
         (targetBox
           ? `节点 (${Math.round(targetBox.left)}, ${Math.round(targetBox.top)}, ` +
@@ -2392,7 +2497,7 @@ async function main() {
     const level1Hit = await clickReal(`[data-outline-group="spec"] summary a[href]`);
     info(
       level1Hit.ok
-        ? `点了一级行「规格化」的标题（页面坐标 ${level1Hit.x}, ${level1Hit.y}）`
+        ? `点了一级行“规格化”的标题（页面坐标 ${level1Hit.x}, ${level1Hit.y}）`
         : "一级行的标题不是链接 —— 下面这条会红",
     );
     await sleep(1600);
@@ -2401,10 +2506,10 @@ async function main() {
     const specGroupAfter = shellAfterLevel1.groups.find((g) => g.id === "spec");
     info(
       `点一级行标题之后：URL ${shellAfterLevel1.url} · ` +
-        `「规格化」那一组 open=${specGroupBefore?.open} → ${specGroupAfter?.open}` +
+        `“规格化”那一组 open=${specGroupBefore?.open} → ${specGroupAfter?.open}` +
         `（点标题是跳转还是折叠，实测数据）`,
     );
-    expect_(
+    check(
       decodeURIComponent(shellAfterLevel1.url).includes("focus=spec") &&
         shellAfterLevel1.url.includes(`run=${outlineRun.runId}`),
       `点一级行的标题也能跳（URL 带 focus=spec，原来的 ?run= 还在）`,
@@ -2428,7 +2533,7 @@ async function main() {
         `清单 ${shellBogus.rows.length} 行 · 画布上 ${shellBogus.stages} 道工序`,
     );
 
-    expect_(
+    check(
       shellBogus.hasStage &&
         shellBogus.stages === 6 &&
         shellBogus.rows.length === shellDefault.rows.length &&
@@ -2437,12 +2542,12 @@ async function main() {
       `页面渲染不正常：画布=${shellBogus.hasStage} 工序=${shellBogus.stages} ` +
         `清单行=${shellBogus.rows.length}（正常是 ${shellDefault.rows.length}）`,
     );
-    // 视口要和「打开这条运行、不带 focus」逐值相等：自动适应是确定值，聚焦过就不一样。
-    expect_(
+    // 视口要和“打开这条运行、不带 focus”逐值相等：自动适应是确定值，聚焦过就不一样。
+    check(
       viewBogus.gridStep === viewDefault.gridStep &&
         viewBogus.panX === viewDefault.panX &&
         viewBogus.panY === viewDefault.panY,
-      `★ 视口停在默认视图（倍率 ${viewBogus.zoomLabel}、平移 ` +
+      `视口停在默认视图（倍率 ${viewBogus.zoomLabel}、平移 ` +
         `${Math.round(viewBogus.panX)},${Math.round(viewBogus.panY)}，和不带 focus 时逐值相等）`,
       `视口被一个不存在的 id 带跑了：` +
         `${viewBogus.zoomLabel}(${Math.round(viewBogus.panX)},${Math.round(viewBogus.panY)}) ≠ ` +
@@ -2460,31 +2565,36 @@ async function main() {
     );
 
     // 六个组都该是原生 <details> 且默认 open：默认收起的话首屏只剩六行标题。
-    const notDetails = shellGroups.groups.filter((g) => g.tag !== "details" || !g.hasSummary);
-    expect_(
+    const notDetails = shellGroups.groups.filter(
+      (g) => g.tag !== "details" || !g.hasSummary,
+    );
+    check(
       shellGroups.groups.length === 6 && notDetails.length === 0,
       `六个一级行各是一个原生 <details> + <summary>（服务端可用、零 JS、键盘可达）`,
       `${notDetails.length} 个组不是 <details>+<summary>：` +
         notDetails.map((g) => `${g.id}(${g.tag})`).join(" ") +
         `（组共 ${shellGroups.groups.length} 个，期望 6）`,
     );
-    expect_(
+    check(
       shellGroups.groups.every((g) => g.open && g.openAttr),
       `默认全部展开（${shellGroups.groups.length}/6 个组的 open 都是 true）—— 第一眼看到全貌`,
       `有 ${shellGroups.groups.filter((g) => !g.open).length} 个组默认是收起的：` +
-        shellGroups.groups.filter((g) => !g.open).map((g) => g.id).join(" "),
+        shellGroups.groups
+          .filter((g) => !g.open)
+          .map((g) => g.id)
+          .join(" "),
     );
 
     // summary 里要有状态点、标题、二级点计数：收起后计数是唯一还看得见的线索。
     const verifyGroup = shellGroups.groups.find((g) => g.id === "verify");
     const specGroup = shellGroups.groups.find((g) => g.id === "spec");
-    expect_(
+    check(
       verifyGroup?.countAttr === String(outlineRun.count) &&
         verifyGroup?.kidCount === outlineRun.count &&
         specGroup?.countAttr === "1" &&
         specGroup?.kidCount === 1,
       `summary 里带着"下面有几个二级点"：验收=${verifyGroup?.countAttr}（${outlineRun.count} 项检查）· ` +
-        `规格化=${specGroup?.countAttr}（1 行「待规划」）`,
+        `规格化=${specGroup?.countAttr}（1 行“待规划”）`,
       `计数不对：验收 ${verifyGroup?.countAttr}/${verifyGroup?.kidCount}（期望 ${outlineRun.count}）· ` +
         `规格化 ${specGroup?.countAttr}/${specGroup?.kidCount}（期望 1）`,
     );
@@ -2492,10 +2602,12 @@ async function main() {
     // 21.7 折叠后二级行真的不可见，再点又可见
     // 点的是前面的圆点，不是标题：标题是链接会跳，圆点才是折叠开关。
     // 用真鼠标点，el.click() 会绕过命中测试。
-    const dotHit = await clickReal(`[data-outline-group="verify"] > summary [data-outline-dot]`);
+    const dotHit = await clickReal(
+      `[data-outline-group="verify"] > summary [data-outline-dot]`,
+    );
     info(
       dotHit.ok
-        ? `点了「验收与交付」前面的圆点（页面坐标 ${dotHit.x}, ${dotHit.y}）`
+        ? `点了“验收与交付”前面的圆点（页面坐标 ${dotHit.x}, ${dotHit.y}）`
         : "找不到那个圆点 —— 下面这一组会红",
     );
     await sleep(500);
@@ -2503,7 +2615,7 @@ async function main() {
     const collapsed = await readOutlineShell();
     const verifyCollapsed = collapsed.groups.find((g) => g.id === "verify");
     info(
-      `折叠后：「验收」组 open=${verifyCollapsed?.open} · 组高 ` +
+      `折叠后：“验收”组 open=${verifyCollapsed?.open} · 组高 ` +
         `${verifyGroup?.height} → ${verifyCollapsed?.height}px · ::details-content ` +
         `${verifyGroup?.pseudoContentVisibility} → ${verifyCollapsed?.pseudoContentVisibility} · ` +
         `二级行 ${verifyCollapsed?.kidCount} 个，不可见的 ` +
@@ -2511,7 +2623,7 @@ async function main() {
         `计数还看得见=${verifyCollapsed?.countVisible}（${verifyCollapsed?.countText}）`,
     );
 
-    expect_(
+    check(
       verifyCollapsed?.open === false &&
         verifyCollapsed.kidCount === outlineRun.count &&
         verifyCollapsed.kidsHidden.every(Boolean),
@@ -2523,7 +2635,7 @@ async function main() {
     );
     // 折叠还要真的把地方让出来，否则标题下面是一大片空白。
     // 二级行的几何在折叠后仍然保留，所以判可见性只能看这一组自己的高度。
-    expect_(
+    check(
       verifyCollapsed !== undefined &&
         verifyGroup !== undefined &&
         verifyCollapsed.height <= verifyGroup.height - outlineRun.count * 20,
@@ -2533,14 +2645,16 @@ async function main() {
         `属性改了但内容还占着地方，用户看到的是折叠标题下面一大片空白`,
     );
     // 收起不等于这里什么都没有：计数跟着藏了，用户就没线索判断这一组值不值得展开。
-    expect_(
+    check(
       verifyCollapsed?.countVisible === true &&
         verifyCollapsed?.countText === String(outlineRun.count),
-      `收起之后计数仍然可见（「${verifyCollapsed?.countText}」）—— 还看得出这一组下面有 ${outlineRun.count} 个点`,
+      `收起之后计数仍然可见（“${verifyCollapsed?.countText}”）—— 还看得出这一组下面有 ${outlineRun.count} 个点`,
       `收起之后计数也看不见了（可见=${verifyCollapsed?.countVisible}）—— 那就成了"这一组什么都没有"的样子`,
     );
 
-    const dotHit2 = await clickReal(`[data-outline-group="verify"] > summary [data-outline-dot]`);
+    const dotHit2 = await clickReal(
+      `[data-outline-group="verify"] > summary [data-outline-dot]`,
+    );
     info(
       dotHit2.ok
         ? `又点了一下同一个圆点（页面坐标 ${dotHit2.x}, ${dotHit2.y}）`
@@ -2551,11 +2665,11 @@ async function main() {
     const expanded = await readOutlineShell();
     const verifyExpanded = expanded.groups.find((g) => g.id === "verify");
     info(
-      `再展开后：「验收」组 open=${verifyExpanded?.open} · 组高 ${verifyExpanded?.height}px · ` +
+      `再展开后：“验收”组 open=${verifyExpanded?.open} · 组高 ${verifyExpanded?.height}px · ` +
         `::details-content ${verifyExpanded?.pseudoContentVisibility} · ` +
         `checkVisibility 全为 true 的二级行 ${verifyExpanded?.kidsCheckVisible.filter(Boolean).length}/${outlineRun.count}`,
     );
-    expect_(
+    check(
       verifyExpanded?.open === true &&
         verifyExpanded.kidCount === outlineRun.count &&
         verifyExpanded.kidsHidden.every((h) => !h),
@@ -2564,7 +2678,7 @@ async function main() {
         `${verifyExpanded?.kidsHidden.filter(Boolean).length} 个二级行还是看不见`,
     );
     // 展开时同一判据要给 true，否则一个恒真的判据能让上面三条一起绿。
-    expect_(
+    check(
       verifyExpanded?.kidsCheckVisible.length === outlineRun.count &&
         verifyExpanded.kidsCheckVisible.every(Boolean),
       `展开时同一个判据给出相反的结果（${outlineRun.count}/${outlineRun.count} 个 checkVisibility 为 true）` +
@@ -2577,7 +2691,7 @@ async function main() {
     info("夹具已清理");
 
     // 这一步验三件事：两个页签切的是两种不同事件；旧的块不销毁；没有思考要明说。
-    // 「不销毁」得断言到 DOM 节点本身，页面上「还有两个字」是看不出来的。
+    // “不销毁”得断言到 DOM 节点本身，页面上“还有两个字”是看不出来的。
     // 夹具直接插库，事件逐字段照真实事件写，用完就删。
     heading("第二十二步 · 右侧面板（思考 / 结果）与按步骤分块的过程流");
 
@@ -2689,7 +2803,9 @@ async function main() {
       ["text", stepText("第二行正文\n第三行正文\n第四行正文\n第五行正文")],
       ["usage", stepUsage(0.0345, 1200, 3000, 0)],
     ]);
-    info(`造了一条运行 ${stepsRun.slice(0, 8)}（2 条 phase、2 段思考、5 行正文、2 次记账）`);
+    info(
+      `造了一条运行 ${stepsRun.slice(0, 8)}（2 条 phase、2 段思考、5 行正文、2 次记账）`,
+    );
 
     await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${stepsRun}` });
     await sleep(4200);
@@ -2701,72 +2817,73 @@ async function main() {
     );
     info(
       `右侧面板：页签 ${steps.tabs.map((t) => `${t.label}${t.active ? "(选中)" : ""}`).join(" / ")} · ` +
-        `标题「${steps.panelTitle}」· ${steps.position}`,
+        `标题“${steps.panelTitle}”· ${steps.position}`,
     );
 
-    expect_(
+    check(
       steps.tabs.length === 2 &&
         steps.tabs.map((t) => t.label).join(",") === "思考,结果" &&
         steps.tabs.filter((t) => t.active).length === 1 &&
         steps.activeTab === "reasoning",
-      "右侧面板有两个页签（思考 / 结果），打开时默认选中「思考」，且只有一个选中态",
+      "右侧面板有两个页签（思考 / 结果），打开时默认选中“思考”，且只有一个选中态",
       `页签不对：${JSON.stringify(steps.tabs)}（选中 ${steps.activeTab}）`,
     );
-    expect_(
+    check(
       steps.panelTitle === "正在生成" && steps.position === "第 2 步 / 共 2 步",
-      `面板标题是当前块（最后一条 phase）「${steps.panelTitle}」，位置写着「${steps.position}」`,
-      `面板显示的是「${steps.panelTitle}」/「${steps.position}」—— 期望「正在生成」/「第 2 步 / 共 2 步」`,
+      `面板标题是当前块（最后一条 phase）“${steps.panelTitle}”，位置写着“${steps.position}”`,
+      `面板显示的是“${steps.panelTitle}”/“${steps.position}”—— 期望“正在生成”/“第 2 步 / 共 2 步”`,
     );
-    // 思考页签必须是真思考，且没混进正文；两条一起断言才挡得住「两边都显示正文」。
-    expect_(
+    // 思考页签必须是真思考，且没混进正文；两条一起断言才挡得住“两边都显示正文”。
+    check(
       (steps.bodyText ?? "").includes("先想清楚结构，再动手写") &&
         !(steps.bodyText ?? "").includes("第一行正文"),
-      "「思考」页签显示的是真实 reasoning（两段 delta 按序拼起来），且没有混进正文",
-      `思考页签里读到的是：「${(steps.bodyText ?? "").slice(0, 80)}」`,
+      "“思考”页签显示的是真实 reasoning（两段 delta 按序拼起来），且没有混进正文",
+      `思考页签里读到的是：“${(steps.bodyText ?? "").slice(0, 80)}”`,
     );
-    expect_(
+    check(
       steps.blockIds.length === 2,
       "过程流按两条真实 phase 切成 2 块（没有凭空造步骤）",
       `切出来 ${steps.blockIds.length} 块：${steps.blockIds.join(",")}`,
     );
-    expect_(
-      steps.borderTops[0] === "0px" && steps.borderTops.slice(1).every((w) => w !== "0px"),
+    check(
+      steps.borderTops[0] === "0px" &&
+        steps.borderTops.slice(1).every((w) => w !== "0px"),
       `块之间有分隔线（第 1 块 ${steps.borderTops[0]}、第 2 块 ${steps.borderTops[1]}）`,
       `分隔线不对：${JSON.stringify(steps.borderTops)} —— 期望第一块 0px、其余非 0`,
     );
-    expect_(
+    check(
       steps.currentIds.length === 1 &&
         steps.currentIds[0] === steps.blockIds[steps.blockIds.length - 1],
-      "「当前块」就是最后一块 —— 和右侧面板显示的是同一块（同一个口径）",
+      "“当前块”就是最后一块 —— 和右侧面板显示的是同一块（同一个口径）",
       `当前块是 ${JSON.stringify(steps.currentIds)}，最后一块是 ${steps.blockIds[steps.blockIds.length - 1]}`,
     );
 
-    // 22.2 点「结果」：内容必须真的换掉
+    // 22.2 点“结果”：内容必须真的换掉
     const thoughtBody = steps.bodyText ?? "";
     const resultHit = await clickTab("result");
     info(
       resultHit.ok
-        ? `点了「结果」页签（页面坐标 ${resultHit.x}, ${resultHit.y}）`
-        : "找不到「结果」页签 —— 下面这一组会红",
+        ? `点了“结果”页签（页面坐标 ${resultHit.x}, ${resultHit.y}）`
+        : "找不到“结果”页签 —— 下面这一组会红",
     );
     const result = await readSteps();
     const resultBody = result.bodyText ?? "";
 
-    expect_(
+    check(
       result.activeTab === "result" && result.tabs.filter((t) => t.active).length === 1,
-      "点「结果」之后选中态真的搬过去了（两个页签仍然只有一个选中）",
+      "点“结果”之后选中态真的搬过去了（两个页签仍然只有一个选中）",
       `选中态不对：activeTab=${result.activeTab}，选中数=${result.tabs.filter((t) => t.active).length}`,
     );
-    expect_(
+    check(
       resultBody !== thoughtBody &&
         resultBody.includes("第二行正文") &&
         result.textShown &&
         !resultBody.includes("先想清楚结构"),
-      "★ 点「结果」内容真的换了：思考那一段不见了，换成了正文（含「第二行正文…」）",
-      `内容没换：思考页签「${thoughtBody.slice(0, 40)}」/ 结果页签「${resultBody.slice(0, 40)}」`,
+      "点“结果”内容真的换了：思考那一段不见了，换成了正文（含“第二行正文…”）",
+      `内容没换：思考页签“${thoughtBody.slice(0, 40)}”/ 结果页签“${resultBody.slice(0, 40)}”`,
     );
     // 花费与 token 只能来自这一块自己的 usage 事件：累加别块或张冠李戴都会露馅。
-    expect_(
+    check(
       result.usage !== null &&
         result.usage.cost === "0.0345" &&
         result.usage.input === "1200" &&
@@ -2797,7 +2914,9 @@ async function main() {
       ["phase", stepPhase("checking", "正在检查产物")],
       ["check", stepCheck()],
     ]);
-    info("往同一条运行追加了第 3 步（phase:checking + 一次 check），再点运行 chip 触发服务端重新渲染");
+    info(
+      "往同一条运行追加了第 3 步（phase:checking + 一次 check），再点运行 chip 触发服务端重新渲染",
+    );
 
     await cdp.send("Runtime.evaluate", {
       expression: `document.querySelector('[data-run-chip="${stepsRun}"] a').click()`,
@@ -2832,32 +2951,32 @@ async function main() {
         `仍挂在文档里=${probe.stillConnected} · 内容一字未变=${probe.digestUnchanged}`,
     );
 
-    expect_(
+    check(
       kept.blockIds.length === 3 &&
         kept.blockIds.slice(0, 2).join(",") === steps.blockIds.join(","),
-      `★ 新块追加在下面，旧的块一个不少、顺序不变（${steps.blockIds.join(",")} → ${kept.blockIds.join(",")}）`,
+      `新块追加在下面，旧的块一个不少、顺序不变（${steps.blockIds.join(",")} → ${kept.blockIds.join(",")}）`,
       `块列表不对：${kept.blockIds.join(",")} —— 期望前两块仍是 ${steps.blockIds.join(",")}，末尾多一块`,
     );
-    expect_(
+    check(
       kept.blockIds[0] === firstIdBefore &&
         kept.blockTitles[0] === firstTitleBefore &&
         probe.digestUnchanged,
-      `★ 第 1 个块仍在 DOM 里，标题和内容一字未变（${firstIdBefore} /「${firstTitleBefore}」）`,
+      `第 1 个块仍在 DOM 里，标题和内容一字未变（${firstIdBefore} /“${firstTitleBefore}”）`,
       `第 1 个块变了或被顶掉了：id=${kept.blockIds[0]} 标题=${kept.blockTitles[0]} 内容未变=${probe.digestUnchanged}`,
     );
-    expect_(
+    check(
       probe.stillSameNode && probe.stillConnected,
-      "★ 第 1 个块是**同一个 DOM 节点**（没被销毁重建）—— 这正是「旧的留在上方」的硬证据",
+      "第 1 个块是**同一个 DOM 节点**（没被销毁重建）—— 这正是“旧的留在上方”的硬证据",
       `第 1 个块换了节点（同一个=${probe.stillSameNode} 还在文档里=${probe.stillConnected}）：` +
         `新块一来整列被重建了，"往上滚还能看到历史"就不成立`,
     );
-    expect_(
+    check(
       kept.blockTops.length === 3 &&
         kept.blockTops[1] > kept.blockTops[0] &&
         kept.blockTops[2] > kept.blockTops[1] &&
         kept.lastChildIsBlock === true &&
         kept.currentIds.join(",") === kept.blockIds[kept.blockIds.length - 1],
-      `★ 新块长在最下面（纵坐标 ${kept.blockTops.join(" < ")}），最后一块之下没有别的块，且它就是当前块`,
+      `新块长在最下面（纵坐标 ${kept.blockTops.join(" < ")}），最后一块之下没有别的块，且它就是当前块`,
       `纵向顺序不对：${kept.blockTops.join(",")}；最后一个是块=${kept.lastChildIsBlock}；` +
         `当前块=${kept.currentIds.join(",")}（最后一块是 ${kept.blockIds[kept.blockIds.length - 1]}）`,
     );
@@ -2865,23 +2984,27 @@ async function main() {
     // 面板要跟着走到新那一步，并列出这一块的检查；绿红必须是两个不同的值。
     const checked = await readSteps();
     info(
-      `右侧面板现在停在「${checked.panelTitle}」${checked.position} · ` +
+      `右侧面板现在停在“${checked.panelTitle}”${checked.position} · ` +
         `检查项 ${checked.checks.length} 条（通过 ${checked.checks.filter((c) => c.pass === "1").length}）`,
     );
-    expect_(
+    check(
       checked.panelTitle === "正在检查产物" && checked.position === "第 3 步 / 共 3 步",
-      `面板跟着走到第 3 步「${checked.panelTitle}」（${checked.position}）`,
+      `面板跟着走到第 3 步“${checked.panelTitle}”（${checked.position}）`,
       `面板没跟着走：${checked.panelTitle} / ${checked.position}`,
     );
-    expect_(
+    check(
       checked.checks.length === STEP_CHECKS.length &&
         checked.checks.filter((c) => c.pass === "1").length === 6,
-      `「结果」页签列出了这一块的 ${STEP_CHECKS.length} 项检查（6 通过 / 1 未过）`,
+      `“结果”页签列出了这一块的 ${STEP_CHECKS.length} 项检查（6 通过 / 1 未过）`,
       `检查清单不对：${checked.checks.length} 条，通过 ${checked.checks.filter((c) => c.pass === "1").length} 条`,
     );
-    const passColors = [...new Set(checked.checks.filter((c) => c.pass === "1").map((c) => c.color))];
-    const failColors = [...new Set(checked.checks.filter((c) => c.pass !== "1").map((c) => c.color))];
-    expect_(
+    const passColors = [
+      ...new Set(checked.checks.filter((c) => c.pass === "1").map((c) => c.color)),
+    ];
+    const failColors = [
+      ...new Set(checked.checks.filter((c) => c.pass !== "1").map((c) => c.color)),
+    ];
+    check(
       passColors.length === 1 &&
         passColors[0] === "rgb(74, 222, 128)" &&
         failColors.length === 1 &&
@@ -2891,8 +3014,8 @@ async function main() {
     );
 
     // 22.4 没有思考就明说没有，而且不拿正文顶上
-    // 一条 reasoning 都没有的运行：要明说「没有返回思考内容」，且不拿正文冒充。
-    // 正文本身不能丢，切到「结果」还得看得到。
+    // 一条 reasoning 都没有的运行：要明说“没有返回思考内容”，且不拿正文冒充。
+    // 正文本身不能丢，切到“结果”还得看得到。
     const textOnlyRun = seedStepRun(username, "text", "running", [
       ["phase", stepPhase("spec", "正在把你的需求整理成规格")],
       ["phase", stepPhase("generating", "正在生成")],
@@ -2906,35 +3029,35 @@ async function main() {
     const emptyThink = await readSteps();
     info(
       `思考页签：明说没有=${emptyThink.reasoningEmpty} · ` +
-        `读到的第一句「${(emptyThink.bodyText ?? "").trim().slice(0, 30)}」`,
+        `读到的第一句“${(emptyThink.bodyText ?? "").trim().slice(0, 30)}”`,
     );
 
-    expect_(
+    check(
       emptyThink.reasoningEmpty &&
         (emptyThink.bodyText ?? "").includes("没有返回思考内容"),
-      "★ 这一步没有 reasoning 片段时，面板**明说**：「这一步没有返回思考内容」（不是留白）",
-      `没有明说：标记=${emptyThink.reasoningEmpty}，读到的是「${(emptyThink.bodyText ?? "").slice(0, 60)}」`,
+      "这一步没有 reasoning 片段时，面板**明说**：“这一步没有返回思考内容”（不是留白）",
+      `没有明说：标记=${emptyThink.reasoningEmpty}，读到的是“${(emptyThink.bodyText ?? "").slice(0, 60)}”`,
     );
-    expect_(
+    check(
       !(emptyThink.bodyText ?? "").includes(TEXT_ONLY_BODY),
-      "★ 而且没有拿正文冒充思考（那段正文不在「思考」页签里）",
-      "「思考」页签里出现了正文内容 —— 那是把生成结果说成模型的思考过程",
+      "而且没有拿正文冒充思考（那段正文不在“思考”页签里）",
+      "“思考”页签里出现了正文内容 —— 那是把生成结果说成模型的思考过程",
     );
 
     const onlyResultHit = await clickTab("result");
     const onlyResult = await readSteps();
-    expect_(
+    check(
       onlyResultHit.ok &&
         (onlyResult.bodyText ?? "").includes(TEXT_ONLY_BODY) &&
         onlyResult.textShown,
-      "切到「结果」就能看到那段真正文（正文没丢，只是不在「思考」那一页）",
+      "切到“结果”就能看到那段真正文（正文没丢，只是不在“思考”那一页）",
       `结果页签里没有正文：${(onlyResult.bodyText ?? "").slice(0, 60)}`,
     );
 
     cleanupVerifyRun(stepsRun);
     cleanupVerifyRun(textOnlyRun);
 
-    // 22.5 实时流没被弄坏：点一次「开始生成」，块真的在流里长出来
+    // 22.5 实时流没被弄坏：点一次“开始生成”，块真的在流里长出来
     // 实时流：上面几步验的是落库后切出来的块，这里验事件一边来、块一边长。
     // 用已有成品的幂等回放分支造一条真 SSE，不调模型、不花钱。
     // 用 MutationObserver 抓那一瞬间：流结束后客户端会刷新，sleep 再读就读不到了。
@@ -2948,19 +3071,23 @@ async function main() {
       content:
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>端到端夹具</title></head><body><h1>夹具</h1></body></html>',
     });
-    info(`造了一条"已有成品"的运行 ${liveRun.slice(0, 8)}（点生成走幂等回放：不调模型、不花钱）`);
+    info(
+      `造了一条"已有成品"的运行 ${liveRun.slice(0, 8)}（点生成走幂等回放：不调模型、不花钱）`,
+    );
 
     await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${liveRun}` });
     await sleep(4200);
 
-    // 有成品时工作台默认停在「成品」那一页，先切回「生成过程」
+    // 有成品时工作台默认停在“成品”那一页，先切回“生成过程”
     await cdp.send("Runtime.evaluate", {
       expression: `[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '生成过程').click()`,
     });
     await sleep(700);
 
     const liveBefore = await readSteps();
-    info(`点之前过程流里 ${liveBefore.blockIds.length} 块：${liveBefore.blockIds.join(",")}`);
+    info(
+      `点之前过程流里 ${liveBefore.blockIds.length} 块：${liveBefore.blockIds.join(",")}`,
+    );
 
     await cdp.send("Runtime.evaluate", {
       expression: `(() => {
@@ -3010,9 +3137,11 @@ async function main() {
       label: string;
     };
     if (genAt.missing) {
-      info("页面上找不到「开始生成 / 重新生成」按钮 —— 下面这一组会红");
+      info("页面上找不到“开始生成 / 重新生成”按钮 —— 下面这一组会红");
     } else {
-      info(`点了「${genAt.label}」（页面坐标 ${genAt.x}, ${genAt.y}）—— 走的是幂等回放分支，不会调模型`);
+      info(
+        `点了“${genAt.label}”（页面坐标 ${genAt.x}, ${genAt.y}）—— 走的是幂等回放分支，不会调模型`,
+      );
       await cdp.send("Input.dispatchMouseEvent", {
         type: "mousePressed",
         x: genAt.x,
@@ -3057,29 +3186,29 @@ async function main() {
         `流结束后 ${liveAfter.blockIds.length} 块：${liveAfter.blockIds.join(",")}`,
     );
 
-    expect_(
+    check(
       !genAt.missing && liveProbe.seen.length > 0,
-      `★ 点下去之后块**实时**长出来了（DOM 里出现过 ${liveProbe.seen.length} 个实时块：${liveProbe.seen.join(",")}）`,
+      `点下去之后块**实时**长出来了（DOM 里出现过 ${liveProbe.seen.length} 个实时块：${liveProbe.seen.join(",")}）`,
       "整条流跑完了，DOM 里却从没出现过实时块（step-1000000 号段）—— " +
         "SSE 可能还连着，但块列表没有跟着流走（实时行为被弄坏了）",
     );
-    expect_(
+    check(
       liveProbe.titles.some((t) => t.includes("已有成品，直接回放")),
-      `★ 而且实时块的内容来自真实事件：「${liveProbe.titles[0] ?? ""}」`,
+      `而且实时块的内容来自真实事件：“${liveProbe.titles[0] ?? ""}”`,
       `实时块的标题不是流里那条 phase：${JSON.stringify(liveProbe.titles)}`,
     );
-    expect_(
+    check(
       liveProbe.maxBlocks === liveBefore.blockIds.length + 1,
-      `★ 实时块是**追加**上去的（最多时 ${liveProbe.maxBlocks} 块 = 点之前 ${liveBefore.blockIds.length} + 1），旧块那一刻还在`,
+      `实时块是**追加**上去的（最多时 ${liveProbe.maxBlocks} 块 = 点之前 ${liveBefore.blockIds.length} + 1），旧块那一刻还在`,
       `实时期间块数最多到 ${liveProbe.maxBlocks}，期望 ${liveBefore.blockIds.length + 1} —— ` +
         `块可能被整列换掉了（那就不是"追加在下面"）`,
     );
-    expect_(
+    check(
       liveProbe.firstNodePreserved,
-      "★ 实时那一段过去之后，原来那个块还是**同一个 DOM 节点**（实时追加没有重建整列）",
-      "实时流一来，原来的块就被销毁重建了 —— 那「旧的留在上方」在真实运行里不成立",
+      "实时那一段过去之后，原来那个块还是**同一个 DOM 节点**（实时追加没有重建整列）",
+      "实时流一来，原来的块就被销毁重建了 —— 那“旧的留在上方”在真实运行里不成立",
     );
-    expect_(
+    check(
       liveAfter.blockIds.join(",") === liveBefore.blockIds.join(",") &&
         liveAfter.blockIds.every((id) => !(id ?? "").startsWith("step-1000000")),
       "流结束、服务端数据刷新回来之后，实时块退场、落库块接手（同一批事件不会显示两遍）",
@@ -3092,10 +3221,10 @@ async function main() {
 
     // 面板默认停在最后一个有内容的块：跑完的运行最后一块是收尾 done，没有任何输出。
     // 这样仍然诚实，靠三条断言盯着：显示真实内容、标明第 N / 共 M 步且 N < M、
-    // 不是最后一块时明说「后面还有 N 步没有输出」，反例里那句话不许出现。
+    // 不是最后一块时明说“后面还有 N 步没有输出”，反例里那句话不许出现。
     heading("第二十二步之六 · 面板默认停在最后一个有内容的块（并明说它不是最后一步）");
 
-    /** 读过程流、面板当前块与「不是最后一步」那句小字 */
+    /** 读过程流、面板当前块与“不是最后一步”那句小字 */
     const READ_TAIL_PICK = `(() => {
       const q = (s) => [...document.querySelectorAll(s)];
       const text = (el) => (el ? el.textContent.trim() : '');
@@ -3144,7 +3273,7 @@ async function main() {
       return JSON.parse(r.result!.value!) as TailPickSnap;
     };
 
-    // 抠不出「第 N 步 / 共 M 步」就返回 null：这里不造默认值，否则读数坏了也会绿。
+    // 抠不出“第 N 步 / 共 M 步”就返回 null：这里不造默认值，否则读数坏了也会绿。
     const parsePosition = (s: string): { n: number; m: number } | null => {
       const hit = /^第 (\d+) 步 \/ 共 (\d+) 步$/.exec(s.trim());
       return hit ? { n: Number(hit[1]), m: Number(hit[2]) } : null;
@@ -3159,7 +3288,7 @@ async function main() {
     ]);
     info(
       `造了一条运行 ${pickRun.slice(0, 8)}：有内容的那一步之后，` +
-        `再来一条没有任何输出的 phase:"done"（「${DONE_LABEL}」）`,
+        `再来一条没有任何输出的 phase:"done"（“${DONE_LABEL}”）`,
     );
 
     await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${pickRun}` });
@@ -3173,63 +3302,63 @@ async function main() {
         `最后一块没有输出=${picked.lastBlockEmpty} · 当前块标记=${JSON.stringify(picked.currentIds)}`,
     );
     info(
-      `面板（还没点过任何东西）：标题「${picked.panelTitle}」· ${picked.position} · ` +
+      `面板（还没点过任何东西）：标题“${picked.panelTitle}”· ${picked.position} · ` +
         `"不是最后一步"的提示=${picked.notLastPresent}` +
-        `${picked.notLastPresent ? `「${picked.notLastText}」` : ""}`,
+        `${picked.notLastPresent ? `“${picked.notLastText}”` : ""}`,
     );
 
-    expect_(
+    check(
       picked.blockIds.length === 2 &&
         picked.lastBlockEmpty &&
         picked.blockTitles[1] === DONE_LABEL,
-      `夹具确实是"最后一块没有输出"：第 2 块「${picked.blockTitles[1]}」只有阶段事件、没有内容`,
+      `夹具确实是"最后一块没有输出"：第 2 块“${picked.blockTitles[1]}”只有阶段事件、没有内容`,
       `夹具形状不对：${picked.blockIds.length} 块 ${JSON.stringify(picked.blockTitles)}，` +
-        `最后一块没有输出=${picked.lastBlockEmpty} —— 期望 2 块且最后一块是空的「${DONE_LABEL}」`,
+        `最后一块没有输出=${picked.lastBlockEmpty} —— 期望 2 块且最后一块是空的“${DONE_LABEL}”`,
     );
     // 面板要停在有内容的那一步，第一屏读到的是那一段真实 reasoning。
-    expect_(
+    check(
       picked.panelTitle === "正在生成" &&
         (picked.bodyText ?? "").includes(PICK_THINKING) &&
         !(picked.bodyText ?? "").includes("没有返回"),
-      `★ 面板打开时停在有内容的那一步「${picked.panelTitle}」：` +
+      `面板打开时停在有内容的那一步“${picked.panelTitle}”：` +
         `第一屏就是那一步真实的思考（不是"这一步没有返回思考内容"）`,
-      `面板停错地方了：标题「${picked.panelTitle}」，正文读到的是` +
-        `「${(picked.bodyText ?? "").trim().slice(0, 50)}」`,
+      `面板停错地方了：标题“${picked.panelTitle}”，正文读到的是` +
+        `“${(picked.bodyText ?? "").trim().slice(0, 50)}”`,
     );
     /* 标题写明这是哪一步，而且 N < M */
-    expect_(
+    check(
       pickedPos !== null && pickedPos.m === 2 && pickedPos.n < pickedPos.m,
-      `标题里写明这是哪一步，而且确实是"不是最后一步"：「${picked.position}」（N < M）`,
-      `位置读数不对：「${picked.position}」—— 期望「第 N 步 / 共 M 步」且 N < M（M=2）`,
+      `标题里写明这是哪一步，而且确实是"不是最后一步"：“${picked.position}”（N < M）`,
+      `位置读数不对：“${picked.position}”—— 期望“第 N 步 / 共 M 步”且 N < M（M=2）`,
     );
-    /* 「不是最后一步」这件事要明说 */
-    expect_(
+    /* “不是最后一步”这件事要明说 */
+    check(
       picked.notLastPresent &&
         picked.notLastCount === "1" &&
         picked.notLastText.includes("后面还有 1 步没有输出"),
-      `★ 面板明说它不是最后一步：「${picked.notLastText}」（[data-step-not-last]）`,
+      `面板明说它不是最后一步：“${picked.notLastText}”（[data-step-not-last]）`,
       `没有明说"后面还有 N 步没有输出"：present=${picked.notLastPresent} ` +
-        `count=${picked.notLastCount} 文字「${picked.notLastText}」`,
+        `count=${picked.notLastCount} 文字“${picked.notLastText}”`,
     );
-    // 面板和过程流要指同一块，各指一处就是「标着的和右边读的不是同一步」。
-    expect_(
+    // 面板和过程流要指同一块，各指一处就是“标着的和右边读的不是同一步”。
+    check(
       picked.currentIds.length === 1 && picked.currentIds[0] === picked.blockIds[0],
       `过程流标的当前块也是那一块（${picked.currentIds.join(",")}）—— 和右侧面板指同一块，不是最后一块`,
       `当前块标记不对：${JSON.stringify(picked.currentIds)}，有内容的是 ${picked.blockIds[0]}、` +
         `最后一块是 ${picked.blockIds[picked.blockIds.length - 1]}`,
     );
 
-    /* 切到「结果」：那一步的正文也必须是真实的、看得到的 */
+    /* 切到“结果”：那一步的正文也必须是真实的、看得到的 */
     const pickResultHit = await clickTab("result");
     const pickResult = await readTailPick();
-    expect_(
+    check(
       pickResultHit.ok &&
         pickResult.textShown &&
         (pickResult.bodyText ?? "").includes(PICK_BODY) &&
         !(pickResult.bodyText ?? "").includes("没有返回"),
-      `★ 切到「结果」看得到那一步真正的正文（「${PICK_BODY}」）—— 来自事件流，不是拼出来的`,
-      `「结果」页签里没有那段正文：命中=${pickResultHit.ok} ` +
-        `读到「${(pickResult.bodyText ?? "").slice(0, 60)}」`,
+      `切到“结果”看得到那一步真正的正文（“${PICK_BODY}”）—— 来自事件流，不是拼出来的`,
+      `“结果”页签里没有那段正文：命中=${pickResultHit.ok} ` +
+        `读到“${(pickResult.bodyText ?? "").slice(0, 60)}”`,
     );
 
     // 22.6.2 反例：最后一块自己有内容时，那句提示不许出现
@@ -3250,50 +3379,50 @@ async function main() {
     const lastPos = parsePosition(lastContent.position);
     info(
       `反例：${lastContent.blockIds.length} 块 ${lastContent.blockTitles.join(" · ")} · ` +
-        `最后一块没有输出=${lastContent.lastBlockEmpty} · 面板「${lastContent.panelTitle}」· ` +
+        `最后一块没有输出=${lastContent.lastBlockEmpty} · 面板“${lastContent.panelTitle}”· ` +
         `${lastContent.position} · 提示=${lastContent.notLastPresent}`,
     );
 
-    expect_(
+    check(
       lastContent.blockIds.length === 2 &&
         !lastContent.lastBlockEmpty &&
         lastPos !== null &&
         lastPos.n === 2 &&
         lastPos.m === 2,
       `反例夹具成立：最后一块自己有内容（没有输出=${lastContent.lastBlockEmpty}），` +
-        `面板就停在最后一步「${lastContent.position}」`,
+        `面板就停在最后一步“${lastContent.position}”`,
       `反例夹具形状不对：${lastContent.blockIds.length} 块、最后一块没有输出=` +
-        `${lastContent.lastBlockEmpty}、位置「${lastContent.position}」`,
+        `${lastContent.lastBlockEmpty}、位置“${lastContent.position}”`,
     );
-    expect_(
+    check(
       !lastContent.notLastPresent && lastContent.notLastText === "",
-      `★ 反例：最后一块自己有内容时，[data-step-not-last] **不出现** —— 那句话不是恒真的`,
-      `最后一块自己有内容，面板却还写着「${lastContent.notLastText}」—— ` +
+      `反例：最后一块自己有内容时，[data-step-not-last] **不出现** —— 那句话不是恒真的`,
+      `最后一块自己有内容，面板却还写着“${lastContent.notLastText}”—— ` +
         `那句提示成了恒真的装饰，防不住"以为它就是最后一步"`,
     );
 
     const lastResultHit = await clickTab("result");
     const lastResult = await readTailPick();
-    expect_(
+    check(
       lastResultHit.ok &&
         lastResult.panelTitle === "正在生成" &&
         (lastResult.bodyText ?? "").includes(LAST_STEP_BODY),
-      `反例：面板停在最后一步「${lastResult.panelTitle}」，显示的正是它自己的正文`,
-      `反例里显示的不是最后一步的内容：「${lastResult.panelTitle}」/` +
-        `「${(lastResult.bodyText ?? "").slice(0, 60)}」`,
+      `反例：面板停在最后一步“${lastResult.panelTitle}”，显示的正是它自己的正文`,
+      `反例里显示的不是最后一步的内容：“${lastResult.panelTitle}”/` +
+        `“${(lastResult.bodyText ?? "").slice(0, 60)}”`,
     );
 
     cleanupVerifyRun(pickRun);
     cleanupVerifyRun(lastContentRun);
     info("夹具已清理");
 
-    // 第二道工序接上后，清单里 arch 那道下面该逐个列出模块，而不是「待规划」。
+    // 第二道工序接上后，清单里 arch 那道下面该逐个列出模块，而不是“待规划”。
     // 坏法都不报错：不再投影 arch 事件、id 规则漂了、状态口径漂了。
-    // 另跑一条没有 arch 事件的运行做对照，否则「占位行规则被删掉」也会让它绿。
+    // 另跑一条没有 arch 事件的运行做对照，否则“占位行规则被删掉”也会让它绿。
     heading("第二十三步 · 架构定型：清单里 arch 那道自己长出模块子树");
 
-    // 夹具自身要先成立：三条检查全过，否则下面的「状态是 done」验的是另一档。
-    expect_(
+    // 夹具自身要先成立：三条检查全过，否则下面的“状态是 done”验的是另一档。
+    check(
       ARCH_CHECK.total === 3 && ARCH_CHECK.passed === 3,
       `夹具自身成立：三条本地检查 ${ARCH_CHECK.passed}/${ARCH_CHECK.total} 通过（由真的 inspectArch 现算）`,
       `夹具不成立：三条检查只有 ${ARCH_CHECK.passed}/${ARCH_CHECK.total} 通过 —— 下面的断言会验到另一档状态`,
@@ -3364,32 +3493,37 @@ async function main() {
 
     const archSub = await readArchSub();
     info(
-      `「架构定型」那一组：存在=${archSub.exists} · 组内二级行 ${archSub.kids.length} 个 · ` +
-        `占位 ${archSub.kids.filter((k) => k.placeholder).length} 个 · 计数「${archSub.countText}」`,
+      `“架构定型”那一组：存在=${archSub.exists} · 组内二级行 ${archSub.kids.length} 个 · ` +
+        `占位 ${archSub.kids.filter((k) => k.placeholder).length} 个 · 计数“${archSub.countText}”`,
     );
     info(
       `组里的行：` +
         archSub.kids
-          .map((k) => `${k.focus}[${k.status}]${k.text}${k.placeholder ? "(占位)" : ""}`)
+          .map(
+            (k) => `${k.focus}[${k.status}]${k.text}${k.placeholder ? "(占位)" : ""}`,
+          )
           .join(" · "),
     );
 
     /* 1. arch 那道下面每个模块一行 */
-    expect_(
+    check(
       archSub.exists && archSub.kids.length === ARCH_MODULES.length,
-      `「架构定型」下面有 ${ARCH_MODULES.length} 个二级行（每个模块一行）`,
-      `「架构定型」下面只有 ${archSub.kids.length} 个二级行，期望 ${ARCH_MODULES.length}` +
+      `“架构定型”下面有 ${ARCH_MODULES.length} 个二级行（每个模块一行）`,
+      `“架构定型”下面只有 ${archSub.kids.length} 个二级行，期望 ${ARCH_MODULES.length}` +
         `（那一组存在=${archSub.exists}）—— 架构事件没有投影成任务点？`,
     );
     /* 2. 没有待规划占位行 */
-    expect_(
+    check(
       archSub.kids.length > 0 && archSub.kids.every((k) => !k.placeholder),
-      "这几行里一个「待规划」占位行都没有 —— 那道工序这次真的跑过",
+      "这几行里一个“待规划”占位行都没有 —— 那道工序这次真的跑过",
       `还有 ${archSub.kids.filter((k) => k.placeholder).length} 行占位：` +
-        archSub.kids.filter((k) => k.placeholder).map((k) => k.text).join("、"),
+        archSub.kids
+          .filter((k) => k.placeholder)
+          .map((k) => k.text)
+          .join("、"),
     );
     /* 3. 行 id 形如 arch:* */
-    expect_(
+    check(
       archSub.kids.map((k) => k.focus).join(",") ===
         ARCH_MODULES.map((m) => `arch:${m.id}`).join(","),
       `行 id 形如 arch:*，且顺序就是模块顺序（${archSub.kids.map((k) => k.focus).join(" ")}）`,
@@ -3397,55 +3531,58 @@ async function main() {
         `期望 ${JSON.stringify(ARCH_MODULES.map((m) => `arch:${m.id}`))}`,
     );
     /* 4. 每行的标题就是模块名（人可读的那一列） */
-    expect_(
-      archSub.kids.map((k) => k.text).join(",") === ARCH_MODULES.map((m) => m.name).join(","),
+    check(
+      archSub.kids.map((k) => k.text).join(",") ===
+        ARCH_MODULES.map((m) => m.name).join(","),
       `每行的标题就是模块名（${archSub.kids.map((k) => k.text).join("、")}）`,
       `标题不对：${JSON.stringify(archSub.kids.map((k) => k.text))}`,
     );
     /* 5. 三条检查全过 → done（蓝），绝不是 running */
-    expect_(
+    check(
       archSub.kids.every((k) => k.status === "done") &&
         archSub.kids.every((k) => k.dot === "rgb(96, 165, 250)"),
-      "三条检查全过，所以每个模块行都是 done（蓝色 96 165 250）—— 模块没有被说成「正在跑」",
+      "三条检查全过，所以每个模块行都是 done（蓝色 96 165 250）—— 模块没有被说成“正在跑”",
       `状态不对：${JSON.stringify(archSub.kids.map((k) => `${k.status}/${k.dot}`))}` +
         ` —— 期望全是 done 且色点为 rgb(96, 165, 250)`,
     );
     /* 6. 收起之后还看得见计数，它得等于模块数 */
-    expect_(
+    check(
       archSub.countText === String(ARCH_MODULES.length),
       `summary 上的计数是 ${archSub.countText}（收起时也看得出这一组下面有几个点）`,
-      `计数是「${archSub.countText}」，期望 ${ARCH_MODULES.length}`,
+      `计数是“${archSub.countText}”，期望 ${ARCH_MODULES.length}`,
     );
     // 7. 那一级行自己也是 done：长出子树没把工序自己的状态带偏。
-    expect_(
+    check(
       archSub.level1Status === "done",
-      "「架构定型」那一级行自己是 done（这条运行跑完了，而它确实留下了产物）",
+      "“架构定型”那一级行自己是 done（这条运行跑完了，而它确实留下了产物）",
       `一级行状态是 ${archSub.level1Status}，期望 done`,
     );
 
-    // 对照：没有 arch 事件的运行，那一道仍是「待规划」
+    // 对照：没有 arch 事件的运行，那一道仍是“待规划”
     const noArchRun = seedRunningRun(username);
-    info(`对照：造了一条只有 phase:spec 的运行 ${noArchRun.slice(0, 8)}（没有任何 arch 事件）`);
+    info(
+      `对照：造了一条只有 phase:spec 的运行 ${noArchRun.slice(0, 8)}（没有任何 arch 事件）`,
+    );
 
     await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${noArchRun}` });
     await sleep(4200);
 
     const noArchSub = await readArchSub();
     info(
-      `对照组「架构定型」那一组：二级行 ${noArchSub.kids.length} 个 · ` +
+      `对照组“架构定型”那一组：二级行 ${noArchSub.kids.length} 个 · ` +
         `占位 ${noArchSub.kids.filter((k) => k.placeholder).length} 个 · ` +
         `文字 ${JSON.stringify(noArchSub.kids.map((k) => k.text))}`,
     );
 
-    expect_(
+    check(
       noArchSub.kids.length === 1 && noArchSub.kids[0].placeholder,
-      "★ 对照：没有 arch 事件时，那一道下面是一行「待规划」占位行（子树不是白给的）",
+      "对照：没有 arch 事件时，那一道下面是一行“待规划”占位行（子树不是白给的）",
       `对照组的二级行是 ${JSON.stringify(noArchSub.kids.map((k) => ({ text: k.text, placeholder: k.placeholder })))}` +
         ` —— 期望恰好 1 行占位`,
     );
-    expect_(
+    check(
       noArchSub.kids.every((k) => !(k.focus ?? "").startsWith("arch:")),
-      "对照：一个 arch:* 的点都没有 —— 没有事件就是没有，不是「有计划但没跑」",
+      "对照：一个 arch:* 的点都没有 —— 没有事件就是没有，不是“有计划但没跑”",
       `对照组里出现了模块行：${JSON.stringify(noArchSub.kids.map((k) => k.focus))}`,
     );
 
@@ -3454,18 +3591,18 @@ async function main() {
     info("夹具已清理");
 
     ok(
-      "架构定型（第二道工序）接上之后：清单里「架构定型」那道**自己长出**模块子树 ——" +
+      "架构定型（第二道工序）接上之后：清单里“架构定型”那道**自己长出**模块子树 ——" +
         `这种运行里 ${ARCH_MODULES.length} 个模块各一行、id 形如 arch:*、` +
         "三条本地检查全过所以是 done（不是 running）；" +
-        "而没有 arch 事件的运行那一道仍是「待规划」占位行（对照组验过，不是恒真的）—— 全部通过",
+        "而没有 arch 事件的运行那一道仍是“待规划”占位行（对照组验过，不是恒真的）—— 全部通过",
     );
 
-    // 第三道工序接上后，清单里 ui 那道下面该逐个列出页面，而不是「待规划」。
+    // 第三道工序接上后，清单里 ui 那道下面该逐个列出页面，而不是“待规划”。
     // 与上一步同形：结构、id、状态三件一起钉，另跑一条没有 ui 事件的做对照。
     heading("第二十四步 · 界面设计：清单里 ui 那道自己长出页面子树");
 
-    // 夹具自身要先成立：三条检查全过，否则下面的「状态是 done」验的是另一档。
-    expect_(
+    // 夹具自身要先成立：三条检查全过，否则下面的“状态是 done”验的是另一档。
+    check(
       UI_CHECK.total === 3 && UI_CHECK.passed === 3,
       `夹具自身成立：三条本地检查 ${UI_CHECK.passed}/${UI_CHECK.total} 通过（由真的 inspectUi 现算）`,
       `夹具不成立：三条检查只有 ${UI_CHECK.passed}/${UI_CHECK.total} 通过 —— 下面的断言会验到另一档状态`,
@@ -3512,101 +3649,112 @@ async function main() {
         });
       })()`;
 
-      const r = await cdp.send("Runtime.evaluate", { expression: expr, returnByValue: true });
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: expr,
+        returnByValue: true,
+      });
       return JSON.parse(r.result!.value!) as ArchSubSnap;
     };
 
     const uiSub = await readGroupSub("ui");
     info(
-      `「界面设计」那一组：存在=${uiSub.exists} · 组内二级行 ${uiSub.kids.length} 个 · ` +
-        `占位 ${uiSub.kids.filter((k) => k.placeholder).length} 个 · 计数「${uiSub.countText}」`,
+      `“界面设计”那一组：存在=${uiSub.exists} · 组内二级行 ${uiSub.kids.length} 个 · ` +
+        `占位 ${uiSub.kids.filter((k) => k.placeholder).length} 个 · 计数“${uiSub.countText}”`,
     );
     info(
       `组里的行：` +
         uiSub.kids
-          .map((k) => `${k.focus}[${k.status}]${k.text}${k.placeholder ? "(占位)" : ""}`)
+          .map(
+            (k) => `${k.focus}[${k.status}]${k.text}${k.placeholder ? "(占位)" : ""}`,
+          )
           .join(" · "),
     );
 
     /* 1. ui 那道下面每个页面一行 */
-    expect_(
+    check(
       uiSub.exists && uiSub.kids.length === UI_PAGES.length,
-      `「界面设计」下面有 ${UI_PAGES.length} 个二级行（每个页面一行）`,
-      `「界面设计」下面只有 ${uiSub.kids.length} 个二级行，期望 ${UI_PAGES.length}` +
+      `“界面设计”下面有 ${UI_PAGES.length} 个二级行（每个页面一行）`,
+      `“界面设计”下面只有 ${uiSub.kids.length} 个二级行，期望 ${UI_PAGES.length}` +
         `（那一组存在=${uiSub.exists}）—— ui 事件没有投影成任务点？`,
     );
     /* 2. 没有待规划占位行 */
-    expect_(
+    check(
       uiSub.kids.length > 0 && uiSub.kids.every((k) => !k.placeholder),
-      "这几行里一个「待规划」占位行都没有 —— 那道工序这次真的跑过",
+      "这几行里一个“待规划”占位行都没有 —— 那道工序这次真的跑过",
       `还有 ${uiSub.kids.filter((k) => k.placeholder).length} 行占位：` +
-        uiSub.kids.filter((k) => k.placeholder).map((k) => k.text).join("、"),
+        uiSub.kids
+          .filter((k) => k.placeholder)
+          .map((k) => k.text)
+          .join("、"),
     );
     /* 3. 行 id 形如 ui:* */
-    expect_(
-      uiSub.kids.map((k) => k.focus).join(",") === UI_PAGES.map((p) => `ui:${p.id}`).join(","),
+    check(
+      uiSub.kids.map((k) => k.focus).join(",") ===
+        UI_PAGES.map((p) => `ui:${p.id}`).join(","),
       `行 id 形如 ui:*，且顺序就是页面顺序（${uiSub.kids.map((k) => k.focus).join(" ")}）`,
       `行 id 不对：读到的 ${JSON.stringify(uiSub.kids.map((k) => k.focus))}，` +
         `期望 ${JSON.stringify(UI_PAGES.map((p) => `ui:${p.id}`))}`,
     );
     /* 4. 每行的标题就是页面名（人可读的那一列） */
-    expect_(
+    check(
       uiSub.kids.map((k) => k.text).join(",") === UI_PAGES.map((p) => p.name).join(","),
       `每行的标题就是页面名（${uiSub.kids.map((k) => k.text).join("、")}）`,
       `标题不对：${JSON.stringify(uiSub.kids.map((k) => k.text))}`,
     );
     /* 5. 三条检查全过 → done（蓝），绝不是 running */
-    expect_(
+    check(
       uiSub.kids.every((k) => k.status === "done") &&
         uiSub.kids.every((k) => k.dot === "rgb(96, 165, 250)"),
-      "三条检查全过，所以每个页面行都是 done（蓝色 96 165 250）—— 页面没有被说成「正在跑」",
+      "三条检查全过，所以每个页面行都是 done（蓝色 96 165 250）—— 页面没有被说成“正在跑”",
       `状态不对：${JSON.stringify(uiSub.kids.map((k) => `${k.status}/${k.dot}`))}` +
         ` —— 期望全是 done 且色点为 rgb(96, 165, 250)`,
     );
     /* 6. 收起之后还看得见计数，它得等于页面数 */
-    expect_(
+    check(
       uiSub.countText === String(UI_PAGES.length),
       `summary 上的计数是 ${uiSub.countText}（收起时也看得出这一组下面有几个点）`,
-      `计数是「${uiSub.countText}」，期望 ${UI_PAGES.length}`,
+      `计数是“${uiSub.countText}”，期望 ${UI_PAGES.length}`,
     );
     // 7. 那一级行自己也是 done：长出子树没把工序自己的状态带偏。
-    expect_(
+    check(
       uiSub.level1Status === "done",
-      "「界面设计」那一级行自己是 done（这条运行跑完了，而它确实留下了产物）",
+      "“界面设计”那一级行自己是 done（这条运行跑完了，而它确实留下了产物）",
       `一级行状态是 ${uiSub.level1Status}，期望 done`,
     );
     // 8. 两棵子树同时在：重读 arch 那一组，只加不减。
     const archStillThere = await readGroupSub("arch");
-    expect_(
+    check(
       archStillThere.kids.length === ARCH_MODULES.length &&
         archStillThere.kids.every((k) => !k.placeholder),
-      `同一页上「架构定型」那道仍是 ${ARCH_MODULES.length} 个模块行 —— 新子树没有挤掉老子树`,
-      `「架构定型」那组现在是 ${archStillThere.kids.length} 行（期望 ${ARCH_MODULES.length}）`,
+      `同一页上“架构定型”那道仍是 ${ARCH_MODULES.length} 个模块行 —— 新子树没有挤掉老子树`,
+      `“架构定型”那组现在是 ${archStillThere.kids.length} 行（期望 ${ARCH_MODULES.length}）`,
     );
 
-    // 对照：没有 ui 事件的运行，那一道仍是「待规划」
+    // 对照：没有 ui 事件的运行，那一道仍是“待规划”
     const noUiRun = seedRunningRun(username);
-    info(`对照：造了一条只有 phase:spec 的运行 ${noUiRun.slice(0, 8)}（没有任何 ui 事件）`);
+    info(
+      `对照：造了一条只有 phase:spec 的运行 ${noUiRun.slice(0, 8)}（没有任何 ui 事件）`,
+    );
 
     await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${noUiRun}` });
     await sleep(4200);
 
     const noUiSub = await readGroupSub("ui");
     info(
-      `对照组「界面设计」那一组：二级行 ${noUiSub.kids.length} 个 · ` +
+      `对照组“界面设计”那一组：二级行 ${noUiSub.kids.length} 个 · ` +
         `占位 ${noUiSub.kids.filter((k) => k.placeholder).length} 个 · ` +
         `文字 ${JSON.stringify(noUiSub.kids.map((k) => k.text))}`,
     );
 
-    expect_(
+    check(
       noUiSub.kids.length === 1 && noUiSub.kids[0].placeholder,
-      "★ 对照：没有 ui 事件时，那一道下面是一行「待规划」占位行（子树不是白给的）",
+      "对照：没有 ui 事件时，那一道下面是一行“待规划”占位行（子树不是白给的）",
       `对照组的二级行是 ${JSON.stringify(noUiSub.kids.map((k) => ({ text: k.text, placeholder: k.placeholder })))}` +
         ` —— 期望恰好 1 行占位`,
     );
-    expect_(
+    check(
       noUiSub.kids.every((k) => !(k.focus ?? "").startsWith("ui:")),
-      "对照：一个 ui:* 的点都没有 —— 没有事件就是没有，不是「有计划但没跑」",
+      "对照：一个 ui:* 的点都没有 —— 没有事件就是没有，不是“有计划但没跑”",
       `对照组里出现了页面行：${JSON.stringify(noUiSub.kids.map((k) => k.focus))}`,
     );
 
@@ -3615,19 +3763,19 @@ async function main() {
     info("夹具已清理");
 
     ok(
-      "界面设计（第三道工序）接上之后：清单里「界面设计」那道**自己长出**页面子树 ——" +
+      "界面设计（第三道工序）接上之后：清单里“界面设计”那道**自己长出**页面子树 ——" +
         `这种运行里 ${UI_PAGES.length} 个页面各一行、id 形如 ui:*、` +
         "三条本地检查全过所以是 done（不是 running）、同一页上第二道的模块子树照旧在；" +
-        "而没有 ui 事件的运行那一道仍是「待规划」占位行（对照组验过，不是恒真的）—— 全部通过",
+        "而没有 ui 事件的运行那一道仍是“待规划”占位行（对照组验过，不是恒真的）—— 全部通过",
     );
 
     // 第四道工序接上后，清单里 build 那道下面该逐个列出模块构建结果，含失败的。
-    // 前两次长出来的是「将来要做的活」，这次是「刚做过的活」，所以有 failed 这一档。
+    // 前两次长出来的是“将来要做的活”，这次是“刚做过的活”，所以有 failed 这一档。
     // 只列成功的两个就是粉饰部分失败，所以夹具固定三个、其中一个红。
     heading("第二十五步 · 并行构建：清单里 build 那道自己长出模块构建子树");
 
-    // 夹具自身要先成立：两个成功一个失败，否则下面的「恰好有一个红」验不到。
-    expect_(
+    // 夹具自身要先成立：两个成功一个失败，否则下面的“恰好有一个红”验不到。
+    check(
       MODULES_BATCH.modules.length === 2 && MODULES_BATCH.failed.length === 1,
       "夹具自身成立：三个模块里两个成功、一个失败（不是全绿的假夹具）",
       `夹具不成立：成功 ${MODULES_BATCH.modules.length} 个、失败 ${MODULES_BATCH.failed.length} 个`,
@@ -3646,32 +3794,37 @@ async function main() {
 
     const buildSub = await readGroupSub("build");
     info(
-      `「并行构建」那一组：存在=${buildSub.exists} · 组内二级行 ${buildSub.kids.length} 个 · ` +
-        `占位 ${buildSub.kids.filter((k) => k.placeholder).length} 个 · 计数「${buildSub.countText}」`,
+      `“并行构建”那一组：存在=${buildSub.exists} · 组内二级行 ${buildSub.kids.length} 个 · ` +
+        `占位 ${buildSub.kids.filter((k) => k.placeholder).length} 个 · 计数“${buildSub.countText}”`,
     );
     info(
       `组里的行：` +
         buildSub.kids
-          .map((k) => `${k.focus}[${k.status}]${k.text}${k.placeholder ? "(占位)" : ""}`)
+          .map(
+            (k) => `${k.focus}[${k.status}]${k.text}${k.placeholder ? "(占位)" : ""}`,
+          )
           .join(" · "),
     );
 
     /* 1. build 那道下面每个模块一行，含失败的那个 */
-    expect_(
+    check(
       buildSub.exists && buildSub.kids.length === ARCH_MODULES.length,
-      `「并行构建」下面有 ${ARCH_MODULES.length} 个二级行（每个模块一行，含失败的那个）`,
-      `「并行构建」下面只有 ${buildSub.kids.length} 个二级行，期望 ${ARCH_MODULES.length}` +
+      `“并行构建”下面有 ${ARCH_MODULES.length} 个二级行（每个模块一行，含失败的那个）`,
+      `“并行构建”下面只有 ${buildSub.kids.length} 个二级行，期望 ${ARCH_MODULES.length}` +
         `（那一组存在=${buildSub.exists}）—— modules 事件没有投影成任务点？`,
     );
     /* 2. 没有待规划占位行 */
-    expect_(
+    check(
       buildSub.kids.length > 0 && buildSub.kids.every((k) => !k.placeholder),
-      "这几行里一个「待规划」占位行都没有 —— 那道工序这次真的跑过",
+      "这几行里一个“待规划”占位行都没有 —— 那道工序这次真的跑过",
       `还有 ${buildSub.kids.filter((k) => k.placeholder).length} 行占位：` +
-        buildSub.kids.filter((k) => k.placeholder).map((k) => k.text).join("、"),
+        buildSub.kids
+          .filter((k) => k.placeholder)
+          .map((k) => k.text)
+          .join("、"),
     );
     /* 3. 行 id 形如 build:*，顺序就是架构里的模块顺序 */
-    expect_(
+    check(
       buildSub.kids.map((k) => k.focus).join(",") ===
         ARCH_MODULES.map((m) => `build:${m.id}`).join(","),
       `行 id 形如 build:*，且顺序就是架构里的模块顺序（${buildSub.kids.map((k) => k.focus).join(" ")}）`,
@@ -3679,8 +3832,9 @@ async function main() {
         `期望 ${JSON.stringify(ARCH_MODULES.map((m) => `build:${m.id}`))}`,
     );
     /* 4. 每行的标题就是模块名（人可读的那一列，从 arch 查） */
-    expect_(
-      buildSub.kids.map((k) => k.text).join(",") === ARCH_MODULES.map((m) => m.name).join(","),
+    check(
+      buildSub.kids.map((k) => k.text).join(",") ===
+        ARCH_MODULES.map((m) => m.name).join(","),
       `每行的标题就是模块名（${buildSub.kids.map((k) => k.text).join("、")}）`,
       `标题不对：${JSON.stringify(buildSub.kids.map((k) => k.text))}`,
     );
@@ -3688,14 +3842,14 @@ async function main() {
     const expectedStatus = ARCH_MODULES.map((m) =>
       MODULES_BATCH.failed.some((f) => f.moduleId === m.id) ? "failed" : "done",
     );
-    expect_(
+    check(
       buildSub.kids.map((k) => k.status).join(",") === expectedStatus.join(","),
       `状态按各自的成败走（${buildSub.kids.map((k) => `${k.focus}=${k.status}`).join("、")}）` +
         "—— 部分失败如实呈现，没有被抹平成全绿",
       `状态不对：读到的 ${JSON.stringify(buildSub.kids.map((k) => k.status))}，` +
         `期望 ${JSON.stringify(expectedStatus)}`,
     );
-    expect_(
+    check(
       buildSub.kids.every(
         (k) => k.dot === (k.status === "failed" ? FAILED_DOT : DONE_DOT),
       ) && buildSub.kids.some((k) => k.status === "failed"),
@@ -3703,49 +3857,51 @@ async function main() {
       `色点不对：${JSON.stringify(buildSub.kids.map((k) => `${k.status}/${k.dot}`))}` +
         ` —— 期望失败的红、成功的蓝，且至少有一个失败的`,
     );
-    expect_(
+    check(
       buildSub.kids.every((k) => k.status !== "running"),
       "一个 running 都没有 —— 构建已经结束了，这里没有任何东西还在跑",
       `出现了 running：${JSON.stringify(buildSub.kids.map((k) => k.status))}`,
     );
     /* 6. 收起之后还看得见计数，它得等于模块数 */
-    expect_(
+    check(
       buildSub.countText === String(ARCH_MODULES.length),
       `summary 上的计数是 ${buildSub.countText}（收起时也看得出这一组下面有几个点）`,
-      `计数是「${buildSub.countText}」，期望 ${ARCH_MODULES.length}`,
+      `计数是“${buildSub.countText}”，期望 ${ARCH_MODULES.length}`,
     );
     // 7. 那一级行自己也是 done：长出子树没把工序自己的状态带偏。
-    expect_(
+    check(
       buildSub.level1Status === "done",
-      "「并行构建」那一级行自己是 done（这条运行跑完了，而它确实留下了产物）",
+      "“并行构建”那一级行自己是 done（这条运行跑完了，而它确实留下了产物）",
       `一级行状态是 ${buildSub.level1Status}，期望 done`,
     );
 
-    // 对照：没有 modules 事件的运行，那一道仍是「待规划」
+    // 对照：没有 modules 事件的运行，那一道仍是“待规划”
     const noModulesRun = seedRunningRun(username);
-    info(`对照：造了一条只有 phase:spec 的运行 ${noModulesRun.slice(0, 8)}（没有任何 modules 事件）`);
+    info(
+      `对照：造了一条只有 phase:spec 的运行 ${noModulesRun.slice(0, 8)}（没有任何 modules 事件）`,
+    );
 
     await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${noModulesRun}` });
     await sleep(4200);
 
     const noModulesSub = await readGroupSub("build");
     info(
-      `对照组「并行构建」那一组：二级行 ${noModulesSub.kids.length} 个 · ` +
+      `对照组“并行构建”那一组：二级行 ${noModulesSub.kids.length} 个 · ` +
         `占位 ${noModulesSub.kids.filter((k) => k.placeholder).length} 个 · ` +
         `文字 ${JSON.stringify(noModulesSub.kids.map((k) => k.text))}`,
     );
 
-    expect_(
+    check(
       noModulesSub.kids.length === 1 && noModulesSub.kids[0].placeholder,
-      "★ 对照：没有 modules 事件时，那一道下面是一行「待规划」占位行（子树不是白给的）",
+      "对照：没有 modules 事件时，那一道下面是一行“待规划”占位行（子树不是白给的）",
       `对照组的二级行是 ${JSON.stringify(noModulesSub.kids.map((k) => ({ text: k.text, placeholder: k.placeholder })))}` +
         ` —— 期望恰好 1 行占位`,
     );
-    expect_(
+    check(
       noModulesSub.kids.every((k) => !(k.focus ?? "").startsWith("build:")) &&
         noModulesSub.level1Status === "pending",
       "对照：一个 build:* 的点都没有，而且那一道自己是 pending —— " +
-        "没有事件就是没有，不是「有计划但没跑」",
+        "没有事件就是没有，不是“有计划但没跑”",
       `对照组里出现了模块行或状态不对：` +
         `${JSON.stringify(noModulesSub.kids.map((k) => k.focus))} / level1=${noModulesSub.level1Status}`,
     );
@@ -3755,19 +3911,21 @@ async function main() {
     info("夹具已清理");
 
     ok(
-      "并行构建（第四道工序）接上之后：清单里「并行构建」那道**自己长出**模块构建子树 ——" +
+      "并行构建（第四道工序）接上之后：清单里“并行构建”那道**自己长出**模块构建子树 ——" +
         `这种运行里 ${ARCH_MODULES.length} 个模块各一行、id 形如 build:*、顺序与架构一致、` +
         "成功的 done（蓝）而**失败的是 failed（红）**（部分失败如实呈现，没有被抹平）；" +
-        "而没有 modules 事件的运行那一道仍是「待规划」占位行（对照组验过，不是恒真的）—— 全部通过",
+        "而没有 modules 事件的运行那一道仍是“待规划”占位行（对照组验过，不是恒真的）—— 全部通过",
     );
 
-    // 「集成装配」是 planned（没有沙箱，三条验收标准无法检查），占位行要说清卡在哪：
+    // “集成装配”是 planned（没有沙箱，三条验收标准无法检查），占位行要说清卡在哪：
     // data-outline-blocked-by 与 title 带原因，行尾一个 CSS 生成的 ⓘ。
     // 对照读一条已接入工序的占位行：它必须没有这个属性，否则标注就是恒挂的。
     heading("第二十六步 · 待规划行说清卡在哪（集成装配：需要沙箱）");
 
     const blockedRun = seedRunningRun(username);
-    info(`造了一条运行 ${blockedRun.slice(0, 8)}（只有一条 phase:spec，六道工序下面都是占位行）`);
+    info(
+      `造了一条运行 ${blockedRun.slice(0, 8)}（只有一条 phase:spec，六道工序下面都是占位行）`,
+    );
 
     await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${blockedRun}` });
     await sleep(4200);
@@ -3816,68 +3974,69 @@ async function main() {
     };
 
     info(
-      `占位行 ${blocked.placeholders} 行 · 「集成装配」那行：` +
-        `属性=${blocked.assemble?.hasAttr} 文字「${blocked.assemble?.text}」· ` +
+      `占位行 ${blocked.placeholders} 行 · “集成装配”那行：` +
+        `属性=${blocked.assemble?.hasAttr} 文字“${blocked.assemble?.text}”· ` +
         `行尾标记 ::after=${JSON.stringify(blocked.assemble?.markAfter)}`,
     );
-    info(`那行的 title：「${blocked.assemble?.title}」`);
+    info(`那行的 title：“${blocked.assemble?.title}”`);
     info(
-      `对照「架构定型」那行（已接入、这次没有 arch 事件）：` +
-        `属性=${blocked.arch?.hasAttr} 文字「${blocked.arch?.text}」`,
+      `对照“架构定型”那行（已接入、这次没有 arch 事件）：` +
+        `属性=${blocked.arch?.hasAttr} 文字“${blocked.arch?.text}”`,
     );
 
     /* 1. 前提：这一组确实是占位行 */
-    expect_(
+    check(
       blocked.placeholders === 6 && blocked.assemble !== null && blocked.arch !== null,
-      "夹具成立：六道工序下面各有一行占位行（含「集成装配」与对照用的「架构定型」）",
+      "夹具成立：六道工序下面各有一行占位行（含“集成装配”与对照用的“架构定型”）",
       `夹具形状不对：占位行 ${blocked.placeholders} 行，assemble=${blocked.assemble !== null}、` +
         `arch=${blocked.arch !== null} —— 期望 6 行且两组都在`,
     );
-    /* 2. 「集成装配」那行带着原因，值里有「沙箱」 */
-    expect_(
-      blocked.assemble?.hasAttr === true && (blocked.assemble?.blockedBy ?? "").includes("沙箱"),
-      `「集成装配」的占位行带 data-outline-blocked-by，值里说到了「沙箱」`,
+    /* 2. “集成装配”那行带着原因，值里有“沙箱” */
+    check(
+      blocked.assemble?.hasAttr === true &&
+        (blocked.assemble?.blockedBy ?? "").includes("沙箱"),
+      `“集成装配”的占位行带 data-outline-blocked-by，值里说到了“沙箱”`,
       `那行没有带出原因：hasAttr=${blocked.assemble?.hasAttr}、` +
-        `值=「${blocked.assemble?.blockedBy ?? "(空)"}」`,
+        `值=“${blocked.assemble?.blockedBy ?? "(空)"}”`,
     );
     /* 3. hover 的 title 里也有那句话 */
-    expect_(
+    check(
       (blocked.assemble?.title ?? "").includes("沙箱"),
       `它的 title 里也有这句话 —— 鼠标停一下就能看到卡在哪`,
-      `title 里没有原因：「${blocked.assemble?.title ?? "(空)"}」`,
+      `title 里没有原因：“${blocked.assemble?.title ?? "(空)"}”`,
     );
-    /* 4. 行尾的 ⓘ 渲染出来了，文字仍是「待规划」 */
-    expect_(
+    /* 4. 行尾的 ⓘ 渲染出来了，文字仍是“待规划” */
+    check(
       (blocked.assemble?.markAfter ?? "").includes("ⓘ") &&
         blocked.assemble?.text === "待规划",
       `行尾的 ⓘ 真的渲染出来了（::after=${JSON.stringify(blocked.assemble?.markAfter)}），` +
-        `而文字仍然是「${blocked.assemble?.text}」—— 那三个字一个字都没改`,
+        `而文字仍然是“${blocked.assemble?.text}”—— 那三个字一个字都没改`,
       `标记没渲染或文字被改了：::after=${JSON.stringify(blocked.assemble?.markAfter)}、` +
-        `文字「${blocked.assemble?.text}」`,
+        `文字“${blocked.assemble?.text}”`,
     );
     /* 5. 对照：已接入的工序没有这个属性 */
-    expect_(
+    check(
       blocked.arch?.hasAttr === false &&
         blocked.arch?.blockedBy === null &&
         blocked.arch?.text === "待规划",
-      "★ 对照：已接入的「架构定型」（这次没有 arch 事件）那行**没有**这个属性 —— " +
-        "「卡住了」和「还没轮到」没有被说成同一件事",
+      "对照：已接入的“架构定型”（这次没有 arch 事件）那行**没有**这个属性 —— " +
+        "“卡住了”和“还没轮到”没有被说成同一件事",
       `对照组也带上了属性：hasAttr=${blocked.arch?.hasAttr}、` +
-        `值=「${blocked.arch?.blockedBy ?? "(空)"}」—— 那说明标注不是跟着卡点走的`,
+        `值=“${blocked.arch?.blockedBy ?? "(空)"}”—— 那说明标注不是跟着卡点走的`,
     );
 
     cleanupVerifyRun(blockedRun);
     info("夹具已清理");
 
     ok(
-      "待规划行说清卡在哪：「集成装配」（planned）的占位行带 data-outline-blocked-by 与 title、" +
-        "值里说到「沙箱」、行尾渲染出 ⓘ 而文字仍是「待规划」；" +
-        "而已接入的「架构定型」占位行没有这个属性（对照组验过，不是恒真的）—— 全部通过",
+      "待规划行说清卡在哪：“集成装配”（planned）的占位行带 data-outline-blocked-by 与 title、" +
+        "值里说到“沙箱”、行尾渲染出 ⓘ 而文字仍是“待规划”；" +
+        "而已接入的“架构定型”占位行没有这个属性（对照组验过，不是恒真的）—— 全部通过",
     );
 
     // 第二十七步验的是搬回来之后东西还在不在：清单每一行、画布每个节点、产物、事件。
     // 走页面内的 fetch：会话是 httpOnly Cookie，脚本这边拿不到值，303 也是浏览器真跟的。
-    // 还要看原运行还在、产物没被覆盖：照原 id 写回去也能让「新页面一致」通过。
+    // 还要看原运行还在、产物没被覆盖：照原 id 写回去也能让“新页面一致”通过。
     heading("第二十七步 · 导出成一个文件、再导入回来（清单 / 画布 / 产物 / 事件一致）");
 
     const portable = await seedPortableRun(username);
@@ -3896,7 +4055,7 @@ async function main() {
       roots: number;
     }
 
-    // 清单取每一行的文字而不是行数：某一行写成「待规划」正是要抓的坏。
+    // 清单取每一行的文字而不是行数：某一行写成“待规划”正是要抓的坏。
     // 画布取三层节点数，少一层都说明投影没走通。
     const READ_PORTABLE = `(() => {
       const rows = [...document.querySelectorAll('[data-outline-row]')].map((el) => ({
@@ -3937,8 +4096,11 @@ async function main() {
     );
 
     /* 1. 前提：这条运行有内容，不是一条空运行 */
-    expect_(
-      before.rows.length >= 6 && before.roots === 1 && before.stages === 6 && before.children > 0,
+    check(
+      before.rows.length >= 6 &&
+        before.roots === 1 &&
+        before.stages === 6 &&
+        before.children > 0,
       `前提成立：导入前这条运行是有内容的（清单 ${before.rows.length} 行、根 ${before.roots}、` +
         `工序 ${before.stages}、执行点 ${before.children}）—— 空运行比不出东西来`,
       `夹具形状不对，这一步会变成空转：清单 ${before.rows.length} 行、根 ${before.roots}、` +
@@ -3977,7 +4139,7 @@ async function main() {
     };
 
     /* 3. 导出是一份能存下来的文件，不是一段裸 JSON */
-    expect_(
+    check(
       transfer.exportStatus === 200 &&
         (transfer.contentType ?? "").includes("application/json") &&
         (transfer.disposition ?? "").includes("attachment") &&
@@ -4004,7 +4166,7 @@ async function main() {
       bundle = null;
     }
 
-    expect_(
+    check(
       bundle !== null &&
         bundle.format === "nexus-run" &&
         bundle.version === 1 &&
@@ -4016,14 +4178,14 @@ async function main() {
     );
 
     /* 5. 用户那句话原样保留在文件里 */
-    expect_(
+    check(
       bundle?.run?.prompt === PORTABLE_PROMPT,
-      `run.prompt 原样在文件里：「${bundle?.run?.prompt}」`,
-      `run.prompt 被改写了：文件里是「${bundle?.run?.prompt}」，期望「${PORTABLE_PROMPT}」`,
+      `run.prompt 原样在文件里：“${bundle?.run?.prompt}”`,
+      `run.prompt 被改写了：文件里是“${bundle?.run?.prompt}”，期望“${PORTABLE_PROMPT}”`,
     );
 
     /* 6. 两份产物都在文件里，一份没被跳过 */
-    expect_(
+    check(
       bundle?.artifacts?.length === 2 && bundle?.skipped?.length === 0,
       `两份产物都装进了文件（artifacts ${bundle?.artifacts?.length} 份），skipped 为空 —— 没有悄悄丢东西`,
       `产物没带全：artifacts ${bundle?.artifacts?.length} 份、skipped ${bundle?.skipped?.length} 条 —— ` +
@@ -4032,7 +4194,7 @@ async function main() {
 
     /* 7. 导入之后 303 落在画布上，而且是一条新运行 */
     const newRunId = /[?&]run=([^&]+)/.exec(transfer.finalUrl)?.[1] ?? "";
-    expect_(
+    check(
       transfer.importRedirected === true &&
         newRunId !== "" &&
         transfer.finalUrl.includes("/canvas?run=") &&
@@ -4044,7 +4206,7 @@ async function main() {
 
     /* 8. 新运行与原运行是两条记录：导入是留一份，不是搬过来 */
     const isNewRun = newRunId !== "" && newRunId !== portable;
-    expect_(
+    check(
       isNewRun,
       `新运行（${newRunId.slice(0, 8)}）与原运行（${portable.slice(0, 8)}）是两条记录 —— ` +
         "导入没有覆盖原来那一条",
@@ -4072,13 +4234,13 @@ async function main() {
       (r, i) => JSON.stringify(r) !== JSON.stringify(after.rows[i]),
     );
 
-    expect_(
+    check(
       isNewRun &&
         after.roots === before.roots &&
         after.stages === before.stages &&
         after.children === before.children &&
         JSON.stringify(after.rows) === JSON.stringify(before.rows),
-      `★ 导入回来的运行与导出前**逐项一致**：清单 ${after.rows.length} 行（每行文字与状态都比过）、` +
+      `导入回来的运行与导出前**逐项一致**：清单 ${after.rows.length} 行（每行文字与状态都比过）、` +
         `画布 根 ${after.roots} + 工序 ${after.stages} + 执行点 ${after.children}`,
       `导入前后对不上：清单 ${before.rows.length} → ${after.rows.length} 行、` +
         `根 ${before.roots} → ${after.roots}、工序 ${before.stages} → ${after.stages}、` +
@@ -4097,7 +4259,7 @@ async function main() {
     })()`);
     const origEvents = JSON.parse(origEventsRaw) as { status: number; count: number };
 
-    expect_(
+    check(
       origEvents.status === 200 && origEvents.count === bundle?.events?.length,
       `原运行还在，事件一条不少（${origEvents.count} 条）—— 导入没有动它`,
       `原运行被动了：HTTP ${origEvents.status}、事件 ${origEvents.count} 条，` +
@@ -4110,9 +4272,12 @@ async function main() {
       const t = await r.text();
       return JSON.stringify({ status: r.status, body: t });
     })()`);
-    const origArtifact = JSON.parse(origArtifactRaw) as { status: number; body: string };
+    const origArtifact = JSON.parse(origArtifactRaw) as {
+      status: number;
+      body: string;
+    };
 
-    expect_(
+    check(
       origArtifact.status === 200 && origArtifact.body === PORTABLE_HTML,
       "导出那条运行的产物一个字没变 —— 导入写的是新运行自己的目录",
       `原运行的产物被改了：HTTP ${origArtifact.status}、` +
@@ -4129,7 +4294,7 @@ async function main() {
       : JSON.stringify({ status: 0, body: "" });
     const newArtifact = JSON.parse(newArtifactRaw) as { status: number; body: string };
 
-    expect_(
+    check(
       isNewRun && newArtifact.status === 200 && newArtifact.body === PORTABLE_HTML,
       "新运行自己的产物也读得到，而且内容与原来逐字相同 —— 产物真的搬过来了",
       `新运行的产物不对：HTTP ${newArtifact.status}、` +
@@ -4150,27 +4315,29 @@ async function main() {
 
     cdp.close();
     ok("画布交互、详情、面板、顶栏一致性、缩放让位、退役页面、子树与双击聚焦全部通过");
-    ok("窄屏降级（<1280）：两侧收起为 0 宽、覆盖层 272/352 可开可关、画布全宽且滚轮仍能缩放 —— 全部通过");
+    ok(
+      "窄屏降级（<1280）：两侧收起为 0 宽、覆盖层 272/352 可开可关、画布全宽且滚轮仍能缩放 —— 全部通过",
+    );
     ok(
       "一级 Agent 根节点：三层树 1 根 + 6 工序 + 7 执行点、根在工序上方且有连线、" +
         "状态与颜色随真实投影变化（done/running 两种运行验过）—— 全部通过",
     );
     ok(
       "右侧面板接真实事件：思考 / 结果两个页签切的是两种不同的事件、默认停在思考、" +
-        "没有思考就明说「没有返回思考内容」且不拿正文冒充、花费与 token 原样来自 usage 事件 —— 全部通过",
+        "没有思考就明说“没有返回思考内容”且不拿正文冒充、花费与 token 原样来自 usage 事件 —— 全部通过",
     );
     ok(
       "生成过程按步骤分块：块数 = 真实 phase 数、块间有分隔线、追加新步骤时旧的块" +
         "**仍是同一个 DOM 节点**（不销毁）、新块长在最下面 —— 全部通过",
     );
     ok(
-      "实时流没被弄坏：点一次「开始生成」（幂等回放分支，不花钱），块真的在流里**追加**长出来、" +
+      "实时流没被弄坏：点一次“开始生成”（幂等回放分支，不花钱），块真的在流里**追加**长出来、" +
         "旧块仍是同一个 DOM 节点、流结束后实时块退场由落库块接手 —— 全部通过",
     );
     ok(
-      "面板默认停在最后一个**有内容**的块（收尾的 phase:\"done\" 没有输出，不再挡住第一屏）：" +
+      '面板默认停在最后一个**有内容**的块（收尾的 phase:"done" 没有输出，不再挡住第一屏）：' +
         "第一屏就是那一步真实的思考与正文、标题写明第 N 步 / 共 M 步且 N < M、" +
-        "不是最后一步时明说「后面还有 N 步没有输出」——" +
+        "不是最后一步时明说“后面还有 N 步没有输出”——" +
         "而最后一块自己有内容时那句提示**不出现**（反例验过，不是恒真的）—— 全部通过",
     );
   } finally {
@@ -4189,6 +4356,10 @@ async function main() {
 
 main().catch((err: unknown) => {
   // 把异常也计入失败数，finish 才会以退出码 1 结束；直接 return 的话退出码是 0。
-  expect_(false, "端到端脚本没有异常退出", err instanceof Error ? err.message : String(err));
+  check(
+    false,
+    "端到端脚本没有异常退出",
+    err instanceof Error ? err.message : String(err),
+  );
   finish(Date.now());
 });

@@ -37,14 +37,7 @@ const EMPTY: StageCost = {
  * 那些多是探测脚本这类没有运行归属的调用，混进来会让各阶段对不上总数。
  */
 export function groupCostByStage(records: readonly CostRecord[]): CostByStage {
-  const known = new Set<string>([
-    "spec",
-    "arch",
-    "ui",
-    "build",
-    "assemble",
-    "verify",
-  ]);
+  const known = new Set<string>(["spec", "arch", "ui", "build", "assemble", "verify"]);
 
   const out: CostByStage = {};
 

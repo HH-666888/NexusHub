@@ -18,7 +18,6 @@ import { computeStageStatuses } from "./progress";
 import type { RunProgressInput } from "./progress";
 import { costOf, type CostByStage } from "../domain/stage-cost";
 
-
 export interface PipelineNode {
   /** 直接用阶段 id，少一层映射 */
   id: StageId;
@@ -67,7 +66,7 @@ export interface PipelineEdge {
 export interface PipelineGraph {
   nodes: PipelineNode[];
   edges: PipelineEdge[];
-  /** 图的实际尺寸，供「适应窗口」用 */
+  /** 图的实际尺寸，供“适应窗口”用 */
   width: number;
   height: number;
 }
@@ -112,14 +111,13 @@ export function rowCount(total: number): number {
   return Math.ceil(total / LAYOUT.perRow);
 }
 
-
 export interface BuildGraphInput {
   /** 选中的运行；null 表示还没选中 */
   run: RunProgressInput | null;
   /** 按 stage 归集的成本；直接收 CostByStage，之后加指标不必改签名 */
   costByStage?: CostByStage;
   /**
-   * 运行时门禁覆盖。图上写「要人点头」而实际不停，比没有门禁更糟，
+   * 运行时门禁覆盖。图上写“要人点头”而实际不停，比没有门禁更糟，
    * 所以覆盖也必须在图上看得见。不传即 declared。
    */
   gateOverride?: GateOverride;
@@ -144,7 +142,7 @@ export function buildPipelineGraph(input: BuildGraphInput): PipelineGraph {
       rationale: s.rationale,
       implementation: s.implementation,
       status: statuses[s.id],
-      // 未接入的工序再兜一次底，避免出现「未接入但花了钱」
+      // 未接入的工序再兜一次底，避免出现“未接入但花了钱”
       costCny: s.implementation === "planned" ? 0 : costOf(s.id, costByStage),
 
       /*
@@ -204,7 +202,8 @@ export function buildPipelineGraph(input: BuildGraphInput): PipelineGraph {
 
 // 节点显示文案：纯函数，所以界面上会不会自相矛盾也能测
 
-export type NodeTone = "planned" | "pending" | "running" | "passed" | "failed" | "blocked";
+export type NodeTone =
+  "planned" | "pending" | "running" | "passed" | "failed" | "blocked";
 
 /** planned 优先：没接入就永远是灰的 */
 export function nodeTone(node: PipelineNode): NodeTone {
@@ -241,7 +240,9 @@ export function nodeStatusLabel(node: PipelineNode): string {
 }
 
 /** 只输出真有值的项：没有耗时就不写 0 秒，一排零等于什么都没说 */
-export function nodeMetrics(node: PipelineNode): Array<{ label: string; value: string }> {
+export function nodeMetrics(
+  node: PipelineNode,
+): Array<{ label: string; value: string }> {
   if (node.implementation === "planned") return [];
   const out: Array<{ label: string; value: string }> = [];
   if (node.costCny > 0) {
@@ -272,9 +273,7 @@ export function artifactExists(
 /** 当前唯一会真正调用模型、因而产生花费的工序 */
 export const SPENDING_STAGE: StageId = "build";
 
-export function attributeCost(
-  totalCostCny: number,
-): Partial<Record<StageId, number>> {
+export function attributeCost(totalCostCny: number): Partial<Record<StageId, number>> {
   if (!(totalCostCny > 0)) return {};
   return { [SPENDING_STAGE]: totalCostCny };
 }
@@ -354,7 +353,10 @@ export function tracePath(graph: PipelineGraph, from: StageId): PathTrace {
 }
 
 /** 一句话说清这条链，给节点小结用 */
-export function describeTrace(trace: PathTrace, nameOf: (id: StageId) => string): string {
+export function describeTrace(
+  trace: PathTrace,
+  nameOf: (id: StageId) => string,
+): string {
   const parts: string[] = [];
   if (trace.upstream.length) {
     parts.push(`上游 ${trace.upstream.map(nameOf).join(" → ")}`);
@@ -367,7 +369,7 @@ export function describeTrace(trace: PathTrace, nameOf: (id: StageId) => string)
     parts.push("它是终点，之后没有工序");
   }
   if (trace.fallbackFromMe) {
-    parts.push(`这一道失败会退回「${nameOf(trace.fallbackFromMe)}」`);
+    parts.push(`这一道失败会退回“${nameOf(trace.fallbackFromMe)}”`);
   }
   return parts.join("；");
 }

@@ -50,7 +50,9 @@ describe("画布布局 · 摆放（整页，一行六个）", () => {
   });
 
   it("同一行 —— 六个节点的 y 完全一样", () => {
-    const ys = new Set(Array.from({ length: TOTAL }, (_, i) => nodeRect(i, TOTAL, WIDE).y));
+    const ys = new Set(
+      Array.from({ length: TOTAL }, (_, i) => nodeRect(i, TOTAL, WIDE).y),
+    );
     expect(ys.size, "摆成了两行").toBe(1);
   });
 
@@ -62,7 +64,7 @@ describe("画布布局 · 摆放（整页，一行六个）", () => {
     }
   });
 
-  it("【关键】整条以核心格的 x 居中", () => {
+  it("整条以核心格的 x 居中", () => {
     // 流水线以核心格的 x 居中，打开画布就能看到整条，不需要额外对准逻辑。
     const first = nodeRect(0, TOTAL, WIDE);
     const last = nodeRect(TOTAL - 1, TOTAL, WIDE);
@@ -84,7 +86,7 @@ describe("画布布局 · 摆放（整页，一行六个）", () => {
     }
   });
 
-  it("【关键】包围盒的高度算上了回退边往下绕的那一段", () => {
+  it("包围盒的高度算上了回退边往下绕的那一段", () => {
     // 只算节点的话，缩放到全部之后回退边会被切在屏幕外。
     const b = pipelineBounds(TOTAL, WIDE);
     const r = nodeRect(0, TOTAL, WIDE);
@@ -108,12 +110,14 @@ describe("画布布局 · 换行（面板，三列两行）", () => {
     expect(slotOf(5, PANEL)).toEqual({ col: 2, row: 1 });
   });
 
-  it("【关键】宽度按最宽的那一行算，不是按总数", () => {
+  it("宽度按最宽的那一行算，不是按总数", () => {
     // 最后一行常常没排满，按 total 算会多出空位，整条看起来偏左。
     // 宽度按最宽的那一行算。
     const g4 = { ...PANEL, perRow: 4 };
     expect(pipelineWidth(6, g4)).toBe(4 * g4.nodeW + 3 * g4.gapX);
-    expect(pipelineWidth(6, g4)).toBeLessThan(pipelineWidth(6, { ...PANEL, perRow: 6 }));
+    expect(pipelineWidth(6, g4)).toBeLessThan(
+      pipelineWidth(6, { ...PANEL, perRow: 6 }),
+    );
   });
 
   it("换行之后仍然以核心格居中", () => {
@@ -127,7 +131,7 @@ describe("画布布局 · 换行（面板，三列两行）", () => {
     expect(r1.y - r0.y).toBeCloseTo(PANEL.nodeH + PANEL.gapY, 9);
   });
 
-  it("【关键】行距装得下回退边绕的那一段", () => {
+  it("行距装得下回退边绕的那一段", () => {
     // 装不下的话，上一行的回退弧线会横穿下一行的节点。
     expect(PANEL.gapY).toBeGreaterThanOrEqual(FALLBACK_DROP);
   });
@@ -194,7 +198,7 @@ describe("画布布局 · 回退边（同一行，走下面的弧）", () => {
     });
   }
 
-  it("【关键】从节点下方绕，不穿过中间那几个节点", () => {
+  it("从节点下方绕，不穿过中间那几个节点", () => {
     // 画直线会横穿中间几个节点；判据是路径上每个点的 y 都不小于节点底边。
     const from = nodeRect(5, TOTAL, WIDE);
     const to = nodeRect(0, TOTAL, WIDE);
@@ -203,7 +207,9 @@ describe("画布布局 · 回退边（同一行，走下面的弧）", () => {
 
     const nodeBottom = from.y + from.h;
     for (const pt of pts) {
-      expect(pt.y, `回退边跑到了节点上方（y=${pt.y}）`).toBeGreaterThanOrEqual(nodeBottom);
+      expect(pt.y, `回退边跑到了节点上方（y=${pt.y}）`).toBeGreaterThanOrEqual(
+        nodeBottom,
+      );
     }
   });
 
@@ -216,7 +222,10 @@ describe("画布布局 · 回退边（同一行，走下面的弧）", () => {
   it("弧顶横在两个节点的中间", () => {
     const from = nodeRect(5, TOTAL, WIDE);
     const to = nodeRect(0, TOTAL, WIDE);
-    expect(fallbackLabelAt(from, to).x).toBeCloseTo((bottomOf(from).x + bottomOf(to).x) / 2, 9);
+    expect(fallbackLabelAt(from, to).x).toBeCloseTo(
+      (bottomOf(from).x + bottomOf(to).x) / 2,
+      9,
+    );
   });
 
   it("跨得越远，弧顶越靠左", () => {
@@ -225,7 +234,7 @@ describe("画布布局 · 回退边（同一行，走下面的弧）", () => {
     expect(wide.x).toBeLessThan(narrow.x);
   });
 
-  it("【关键】跨度相同的两条回退边不会重叠成一条", () => {
+  it("跨度相同的两条回退边不会重叠成一条", () => {
     // 折线的直角拐角会叠在一起，弧线的中段自然分开。
     const a = fallbackLabelAt(nodeRect(3, TOTAL, WIDE), nodeRect(1, TOTAL, WIDE));
     const b = fallbackLabelAt(nodeRect(4, TOTAL, WIDE), nodeRect(2, TOTAL, WIDE));
@@ -242,7 +251,7 @@ describe("画布布局 · 回退边（同一行，走下面的弧）", () => {
 });
 
 describe("画布布局 · 回退边（跨行，走左边的空白带）", () => {
-  it("【关键】跨行的回退边走左边，不竖着穿过下一行", () => {
+  it("跨行的回退边走左边，不竖着穿过下一行", () => {
     // 跨行回退若走下面那条弧，回升到第一行时会竖着穿过第二行的节点。
     const from = nodeRect(3, TOTAL, PANEL);
     const to = nodeRect(0, TOTAL, PANEL);
@@ -258,7 +267,9 @@ describe("画布布局 · 回退边（跨行，走左边的空白带）", () => 
     // 中间那两个拐点的 x 相同（都在左边那条竖线上）
     expect(pts[1].x).toBeCloseTo(pts[2].x, 9);
     // 而且那条竖线在整条流水线左边 —— 不能落在任何一个节点上
-    const leftEdge = Math.min(...[0, 1, 2, 3, 4, 5].map((i) => nodeRect(i, TOTAL, PANEL).x));
+    const leftEdge = Math.min(
+      ...[0, 1, 2, 3, 4, 5].map((i) => nodeRect(i, TOTAL, PANEL).x),
+    );
     expect(pts[1].x, "竖线跑到了节点范围里").toBeLessThan(leftEdge);
   });
 
@@ -266,25 +277,45 @@ describe("画布布局 · 回退边（跨行，走左边的空白带）", () => 
     // laneX 必须由外面给同一个值：按节点左边自己算，第二行第二道会偏一个列宽而落进节点。
     // 两条的 y 还要 stagger 岔开，否则中点重合，标签叠成一个。
     const lane = fallbackLaneX(TOTAL, PANEL);
-    const a = fallbackLabelAt(nodeRect(3, TOTAL, PANEL), nodeRect(0, TOTAL, PANEL), lane, 0);
-    const b = fallbackLabelAt(nodeRect(4, TOTAL, PANEL), nodeRect(1, TOTAL, PANEL), lane, 1);
+    const a = fallbackLabelAt(
+      nodeRect(3, TOTAL, PANEL),
+      nodeRect(0, TOTAL, PANEL),
+      lane,
+      0,
+    );
+    const b = fallbackLabelAt(
+      nodeRect(4, TOTAL, PANEL),
+      nodeRect(1, TOTAL, PANEL),
+      lane,
+      1,
+    );
     expect(a.x).toBeCloseTo(b.x, 9);
     expect(Math.abs(a.y - b.y)).toBeGreaterThan(10);
   });
 
-  it("【关键】不错位的话，两条跨行标签会精确重合", () => {
+  it("不错位的话，两条跨行标签会精确重合", () => {
     // 这条钉住为什么需要 stagger 这个理由本身
     // 哪天有人觉得那个参数多余、删掉它，这条会红
     const lane = fallbackLaneX(TOTAL, PANEL);
-    const a = fallbackLabelAt(nodeRect(3, TOTAL, PANEL), nodeRect(0, TOTAL, PANEL), lane);
-    const b = fallbackLabelAt(nodeRect(4, TOTAL, PANEL), nodeRect(1, TOTAL, PANEL), lane);
+    const a = fallbackLabelAt(
+      nodeRect(3, TOTAL, PANEL),
+      nodeRect(0, TOTAL, PANEL),
+      lane,
+    );
+    const b = fallbackLabelAt(
+      nodeRect(4, TOTAL, PANEL),
+      nodeRect(1, TOTAL, PANEL),
+      lane,
+    );
     expect(a.y, "两条跨行标签本来就该重合 —— 所以才要 stagger").toBeCloseTo(b.y, 9);
   });
 
-  it("【关键】两条跨行回退边共用同一根竖线，且都在节点范围之外", () => {
+  it("两条跨行回退边共用同一根竖线，且都在节点范围之外", () => {
     // 各算各的话第二条会偏一个列宽，落进节点里
     const lane = fallbackLaneX(TOTAL, PANEL);
-    const leftEdge = Math.min(...[0, 1, 2, 3, 4, 5].map((i) => nodeRect(i, TOTAL, PANEL).x));
+    const leftEdge = Math.min(
+      ...[0, 1, 2, 3, 4, 5].map((i) => nodeRect(i, TOTAL, PANEL).x),
+    );
     expect(lane, "空白带落进了节点范围").toBeLessThan(leftEdge);
 
     for (const [f, t] of [
@@ -293,9 +324,12 @@ describe("画布布局 · 回退边（跨行，走左边的空白带）", () => 
       [5, 2],
     ]) {
       const xs = [
-        ...fallbackPath(nodeRect(f, TOTAL, PANEL), nodeRect(t, TOTAL, PANEL), PANEL, lane).matchAll(
-          /[ML] ([-\d.]+)/g,
-        ),
+        ...fallbackPath(
+          nodeRect(f, TOTAL, PANEL),
+          nodeRect(t, TOTAL, PANEL),
+          PANEL,
+          lane,
+        ).matchAll(/[ML] ([-\d.]+)/g),
       ].map((m) => Number(m[1]));
       // 中间那两个拐点就是竖线的 x
       expect(xs[1]).toBeCloseTo(lane, 9);
@@ -303,10 +337,17 @@ describe("画布布局 · 回退边（跨行，走左边的空白带）", () => 
     }
   });
 
-  it("【关键】跨行的线整条都在节点范围之外（竖的那一段）", () => {
+  it("跨行的线整条都在节点范围之外（竖的那一段）", () => {
     const lane = fallbackLaneX(TOTAL, PANEL);
-    const leftEdge = Math.min(...[0, 1, 2, 3, 4, 5].map((i) => nodeRect(i, TOTAL, PANEL).x));
-    const p = fallbackPath(nodeRect(4, TOTAL, PANEL), nodeRect(1, TOTAL, PANEL), PANEL, lane);
+    const leftEdge = Math.min(
+      ...[0, 1, 2, 3, 4, 5].map((i) => nodeRect(i, TOTAL, PANEL).x),
+    );
+    const p = fallbackPath(
+      nodeRect(4, TOTAL, PANEL),
+      nodeRect(1, TOTAL, PANEL),
+      PANEL,
+      lane,
+    );
     const pts = [...p.matchAll(/[ML] ([-\d.]+) ([-\d.]+)/g)].map((m) => ({
       x: Number(m[1]),
       y: Number(m[2]),

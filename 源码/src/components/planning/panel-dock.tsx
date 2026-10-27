@@ -14,7 +14,7 @@ import { useState, type ReactNode } from "react";
  *
  * 常驻和覆盖层是同一个节点：宽屏渲染一份、窄屏再渲染一份的话，
  * 窄屏展开时 DOM 里会有两份清单，界面上看不出来，但按属性计数会数到两倍。
- * 所以靠 CSS 在「常驻位」和「覆盖层」之间切换：≥1280 是 display:contents，
+ * 所以靠 CSS 在“常驻位”和“覆盖层”之间切换：≥1280 是 display:contents，
  * 收起是 none，展开是 fixed。xl:contents 两个分支都得有，否则窄屏展开过再把窗口拉宽会卡在覆盖层。
  */
 export function PanelDock({
@@ -23,7 +23,7 @@ export function PanelDock({
   children,
 }: {
   side: "left" | "right";
-  /** 窄屏按钮上的字：「清单」/「内容」 */
+  /** 窄屏按钮上的字：“清单”/“内容” */
   label: string;
   /** 面板本体（服务端组件，原样带过来） */
   children: ReactNode;
@@ -69,7 +69,7 @@ export function PanelDock({
 
       {/*
         窄屏的展开按钮。xl:hidden 保证宽屏上没有这两个按钮 —— 面板已经常驻，
-        再挂一个「展开清单」是给用户添一个没有作用的控件。
+        再挂一个“展开清单”是给用户添一个没有作用的控件。
         z-50 > 覆盖层的 z-40：展开之后按钮还得露在上面，否则关不掉。
       */}
       <button

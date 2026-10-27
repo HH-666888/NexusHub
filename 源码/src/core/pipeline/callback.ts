@@ -54,7 +54,6 @@ export function extractPreviousAttempt(
   };
 }
 
-
 export const CALLBACK_ARTIFACT_NAME = "callback.json";
 
 /** 没有上一次、上一次全过、且无错误时没有可回流的 */

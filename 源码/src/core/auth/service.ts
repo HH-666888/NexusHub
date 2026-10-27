@@ -17,9 +17,7 @@ import { createSessionToken, hashSessionToken } from "./session";
 import type { AuthStore } from "../ports/auth-store";
 
 /** 成功带值，失败带一句可直接显示的中文原因 */
-export type AuthResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; reason: string };
+export type AuthResult<T> = { ok: true; value: T } | { ok: false; reason: string };
 
 export interface AuthContext {
   /** 记录登录设备用 */

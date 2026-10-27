@@ -54,7 +54,7 @@ describe("门禁策略 · 加严永远允许", () => {
 });
 
 describe("门禁策略 · 放松必须说出来", () => {
-  it("【关键】覆盖声明放行时，会留下 overrideNote", () => {
+  it("覆盖声明放行时，会留下 overrideNote", () => {
     const p = resolveGatePolicy("spec", "continue");
     expect(p.declared).toBe(true);
     expect(p.active).toBe(false);
@@ -71,7 +71,7 @@ describe("门禁策略 · 放松必须说出来", () => {
     expect(note).toContain("钱已经花完"); // 三
   });
 
-  it("对本来就不用批的工序，「放行」不算是覆盖", () => {
+  it("对本来就不用批的工序，“放行”不算是覆盖", () => {
     // 声明和实践一致，没什么好说的
     const p = resolveGatePolicy("build", "continue");
     expect(p.declared).toBe(false);
@@ -80,7 +80,7 @@ describe("门禁策略 · 放松必须说出来", () => {
     expect(p.overrideNote).toBeNull();
   });
 
-  it("overrideNote 用 null 而不是空串表示「没有覆盖」", () => {
+  it("overrideNote 用 null 而不是空串表示“没有覆盖”", () => {
     // 空串的话调用方分不清"没有覆盖"和"有覆盖但理由为空"
     for (const o of ["declared", "pause"] as const) {
       expect(resolveGatePolicy("spec", o).overrideNote).toBeNull();
@@ -89,7 +89,7 @@ describe("门禁策略 · 放松必须说出来", () => {
 });
 
 describe("门禁策略 · 三个档位都自洽", () => {
-  it("active 永远等于「声明 or 强制停下」，且被放行时一定标了覆盖", () => {
+  it("active 永远等于“声明 or 强制停下”，且被放行时一定标了覆盖", () => {
     const stages = Object.keys(STAGE_MAP) as Array<keyof typeof STAGE_MAP>;
     for (const id of stages) {
       for (const o of ["declared", "pause", "continue"] as const) {
@@ -116,7 +116,9 @@ describe("门禁策略 · 三个档位都自洽", () => {
       for (const o of ["declared", "pause", "continue"] as const) {
         const p = resolveGatePolicy(id, o);
         if (p.declared && !p.active) {
-          expect(p.overridden, `${id} + ${o}：声明要批、实际没停，却没标覆盖`).toBe(true);
+          expect(p.overridden, `${id} + ${o}：声明要批、实际没停，却没标覆盖`).toBe(
+            true,
+          );
           expect(p.overrideNote, `${id} + ${o}：标了覆盖却不说为什么`).toBeTruthy();
         }
       }

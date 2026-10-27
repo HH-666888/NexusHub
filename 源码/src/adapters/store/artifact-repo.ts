@@ -112,11 +112,7 @@ export const fsArtifactStore: ArtifactStore = {
   },
 
   async removeByRun(runId: string): Promise<number> {
-    const rows = db
-      .select()
-      .from(artifacts)
-      .where(eq(artifacts.runId, runId))
-      .all();
+    const rows = db.select().from(artifacts).where(eq(artifacts.runId, runId)).all();
 
     for (const row of rows) {
       try {

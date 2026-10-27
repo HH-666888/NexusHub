@@ -14,7 +14,6 @@ export const PLANNING_ROOT_ID = "agent-root";
 /** 根节点标题，规则里写死 */
 const PLANNING_ROOT_TITLE = "一级 Agent";
 
-
 export interface PlanningSource {
   /** 六道工序，顺序即一级任务点顺序 */
   stages: readonly { id: string; name: string }[];
@@ -28,8 +27,7 @@ export interface PlanningSource {
 
 /** phase 归属：某道工序，或只是个终局标记 */
 type PhaseOwner =
-  | { kind: "stage"; stageId: string }
-  | { kind: "terminal"; end: "done" | "failed" };
+  { kind: "stage"; stageId: string } | { kind: "terminal"; end: "done" | "failed" };
 
 /**
  * 完整的 Record，不是 Partial：GeneratePhase 多一个值时编译器会在这里报错，
@@ -50,11 +48,11 @@ const PHASE_OWNER: Record<GeneratePhase, PhaseOwner> = {
 
   /*
     awaiting 是规格化的人工门禁，不算新工序：停下来等的正是规格化。
-    留白：TaskPointStatus 有更贴切的 waiting，但本期规则是「有 phase → running」。
+    留白：TaskPointStatus 有更贴切的 waiting，但本期规则是“有 phase → running”。
   */
   awaiting: { kind: "stage", stageId: "spec" },
 
-  /* generating 是并行构建在写代码：service.ts 先登记 stage: build，再喊「正在生成」 */
+  /* generating 是并行构建在写代码：service.ts 先登记 stage: build，再喊“正在生成” */
   generating: { kind: "stage", stageId: "build" },
 
   /* checking 是验收在做七项自检：检查项挂在 verify 下，宣布它的 phase 也归 verify */
@@ -67,7 +65,7 @@ const PHASE_OWNER: Record<GeneratePhase, PhaseOwner> = {
   */
   saving: { kind: "stage", stageId: "build" },
 
-  /* done / failed 是整条运行的终局标记，不属于任何工序；写进表是为了显式回答「这算谁的」 */
+  /* done / failed 是整条运行的终局标记，不属于任何工序；写进表是为了显式回答“这算谁的” */
   done: { kind: "terminal", end: "done" },
   failed: { kind: "terminal", end: "failed" },
 };
@@ -76,7 +74,7 @@ const PHASE_OWNER: Record<GeneratePhase, PhaseOwner> = {
 const SPEC_STAGE_ID = "spec";
 const ARCH_STAGE_ID = "arch";
 const UI_STAGE_ID = "ui";
-/** 第四道「并行构建」；本期起它才有名下的产出事件（modules） */
+/** 第四道“并行构建”；本期起它才有名下的产出事件（modules） */
 const BUILD_STAGE_ID = "build";
 const VERIFY_STAGE_ID = "verify";
 
@@ -113,12 +111,14 @@ function isGeneratePhase(value: string): value is GeneratePhase {
   return Object.prototype.hasOwnProperty.call(PHASE_OWNER, value);
 }
 
-
 /**
  * 七项检查 → 七个执行点。id 用 verify:<名字>，与 forest.ts 共用同一份约定，
- * 画布和清单才对得上同一张卡；状态出生时就定下，检查没有「先出生再跑完」的过程。
+ * 画布和清单才对得上同一张卡；状态出生时就定下，检查没有“先出生再跑完”的过程。
  */
-function checkPoints(payload: Record<string, unknown> | null, seq: number): TaskPoint[] {
+function checkPoints(
+  payload: Record<string, unknown> | null,
+  seq: number,
+): TaskPoint[] {
   const results = payload?.results;
   if (!Array.isArray(results)) return [];
 
@@ -136,7 +136,7 @@ function checkPoints(payload: Record<string, unknown> | null, seq: number): Task
       kind: "exec",
       title: name,
       /*
-        缺 pass 字段按「没通过」：显示成通过会让用户拿着残缺产物去交差。
+        缺 pass 字段按“没通过”：显示成通过会让用户拿着残缺产物去交差。
       */
       status: result?.pass ? "done" : "failed",
       bornAtSeq: seq,
@@ -177,9 +177,9 @@ function specPoints(payload: Record<string, unknown> | null, seq: number): TaskP
 
 /**
  * 架构产物 → 模块任务点。模块就是第四道要并行去做的活儿，所以它该进树：
- * 清单里「架构定型」下列出几个模块，回答的是接下来会并行做几件事。
+ * 清单里“架构定型”下列出几个模块，回答的是接下来会并行做几件事。
  *
- * 状态口径：模块自己没有执行过，所以不给 running（会显示成「正在做」，用户会干等）；
+ * 状态口径：模块自己没有执行过，所以不给 running（会显示成“正在做”，用户会干等）；
  * 三条本地检查全过 → done，有不过的 → failed。
  * 读不到检查结果也按 failed：替来路不明的产物背书比让清单红着更糟。
  */
@@ -263,14 +263,14 @@ function uiPoints(payload: Record<string, unknown> | null, seq: number): TaskPoi
 
 /**
  * 并行构建产物 → 模块构建任务点。有了 modules 事件，这一道下面才会长出
- * N 个 build:<模块id> 的点，每个回答「这个模块这轮做成了没有」。
+ * N 个 build:<模块id> 的点，每个回答“这个模块这轮做成了没有”。
  *
  * 与 arch / ui 刻意不同：这批点出生时事情已经做完了，所以成功 → done、
- * 失败 → failed，绝不给 running。失败必须如实呈现 —— 抹成「没提过」会让
+ * 失败 → failed，绝不给 running。失败必须如实呈现 —— 抹成“没提过”会让
  * 用户以为都做完了，而产物里少了一整块功能。
  *
  * 标题从 arch 查（真相来源），事件里的名字兜底，最后退到 id；
- * 顺序按 arch 排，两处不一致时用户对不上「哪个做完了」。
+ * 顺序按 arch 排，两处不一致时用户对不上“哪个做完了”。
  */
 function modulePoints(
   payload: Record<string, unknown> | null,
@@ -335,7 +335,7 @@ function modulePoints(
   return points;
 }
 
-/** 从 arch 事件收「模块 id → 名字」。按事件顺序收，Map 键序即 arch.modules 顺序 */
+/** 从 arch 事件收“模块 id → 名字”。按事件顺序收，Map 键序即 arch.modules 顺序 */
 function collectArchModuleNames(
   payload: Record<string, unknown> | null,
   into: Map<string, string>,
@@ -350,14 +350,13 @@ function collectArchModuleNames(
   }
 }
 
-
 /**
  * 把真实运行事件投影成规划日志。只认真实存在的事件，绝不编造。
  */
 export function planningFromRun(src: PlanningSource): PlanningEvent[] {
   const stageIds = new Set(src.stages.map((s) => s.id));
 
-  /* 骨架是「计划」不是「产出」：不管跑到哪，六道工序都在 seq 0 一次建出来 ——
+  /* 骨架是“计划”不是“产出”：不管跑到哪，六道工序都在 seq 0 一次建出来 ——
      用户在还没开始跑时就该看见整条流水线，hasOrphans 也靠这一点成立 */
   let log: PlanningEvent[] = [];
 
@@ -389,16 +388,16 @@ export function planningFromRun(src: PlanningSource): PlanningEvent[] {
 
   /*
     先按 seq 升序排：调用方本来就该升序传，但这层不依赖它 ——
-    乱序会让「谁先动的手」算错，而错记到另一道工序头上不会抛异常。
+    乱序会让“谁先动的手”算错，而错记到另一道工序头上不会抛异常。
   */
   const ordered = [...src.events].sort((a, b) => a.seq - b.seq);
 
-  /** 工序最后一次「还在动 / 交了产物」的处理序号；同 seq 的先后只有下标分得开 */
+  /** 工序最后一次“还在动 / 交了产物”的处理序号；同 seq 的先后只有下标分得开 */
   const lastAliveAt = new Map<string, number>();
   /**
-   * 工序最后一次「失败信号」的序号。记序号而不是一锤定音：
+   * 工序最后一次“失败信号”的序号。记序号而不是一锤定音：
    * 本库里 kind:"error" 大量用于可降级场合（解析失败降级、截断提醒、写盘失败），
-   * 之后流水线继续跑并成功产出 —— 见到 error 就判死会把「降级后跑通」误报成失败。
+   * 之后流水线继续跑并成功产出 —— 见到 error 就判死会把“降级后跑通”误报成失败。
    */
   const lastFailAt = new Map<string, number>();
 
@@ -408,7 +407,7 @@ export function planningFromRun(src: PlanningSource): PlanningEvent[] {
   let currentStage: string | null = null;
   /** 终局标记，调用方没传 runStatus 时靠它判断运行结束 */
   let sawTerminal: "done" | "failed" | null = null;
-  /** 最大的 seq，即「现在」 */
+  /** 最大的 seq，即“现在” */
   let lastSeq = 0;
 
   const markAlive = (stageId: string, at: number): void => {
@@ -500,7 +499,7 @@ export function planningFromRun(src: PlanningSource): PlanningEvent[] {
 
     /*
       artifact 事件刻意不造任务点：产物是结果不是活儿，它出现那一刻就已经在那儿了；
-      给产物建点会让清单里多出一串「index.html」这种不是任务点的东西。
+      给产物建点会让清单里多出一串“index.html”这种不是任务点的东西。
     */
   });
 

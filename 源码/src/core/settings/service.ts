@@ -24,9 +24,7 @@ export const SETTINGS_KEYS = {
   modelConfig: "model_config",
 } as const;
 
-export async function loadAppearance(
-  store: SettingsStore,
-): Promise<AppearanceConfig> {
+export async function loadAppearance(store: SettingsStore): Promise<AppearanceConfig> {
   const raw = await store.get(SETTINGS_KEYS.appearance);
   if (!raw) return DEFAULT_APPEARANCE;
 
@@ -44,11 +42,7 @@ export async function saveAppearance(
   userId: number | null,
 ): Promise<AppearanceConfig> {
   const config = normalizeAppearance(input);
-  await store.set(
-    SETTINGS_KEYS.appearance,
-    JSON.stringify(config),
-    userId,
-  );
+  await store.set(SETTINGS_KEYS.appearance, JSON.stringify(config), userId);
   return config;
 }
 
@@ -59,9 +53,7 @@ export async function loadAppearanceVars(
   return appearanceToCssVars(await loadAppearance(store));
 }
 
-export async function loadModelConfig(
-  store: SettingsStore,
-): Promise<ModelConfig> {
+export async function loadModelConfig(store: SettingsStore): Promise<ModelConfig> {
   const raw = await store.get(SETTINGS_KEYS.modelConfig);
   if (!raw) return DEFAULT_MODEL_CONFIG;
 
@@ -95,11 +87,7 @@ export async function saveModelConfig(
     return { config: incoming, check };
   }
 
-  await store.set(
-    SETTINGS_KEYS.modelConfig,
-    JSON.stringify(incoming),
-    userId,
-  );
+  await store.set(SETTINGS_KEYS.modelConfig, JSON.stringify(incoming), userId);
   return { config: incoming, check };
 }
 

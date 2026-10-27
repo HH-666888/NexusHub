@@ -16,7 +16,7 @@ const STATUS_STYLE: Record<Run["status"], string> = {
 };
 
 /**
- * 带展示字段的运行。「多久以前」由服务端算好再传下来，而不是客户端现场算：
+ * 带展示字段的运行。“多久以前”由服务端算好再传下来，而不是客户端现场算：
  * 渲染期间调 Date.now() 会让结果不确定，而且服务端与客户端各算一次可能不一致。
  */
 export interface RunView extends Run {
@@ -25,7 +25,7 @@ export interface RunView extends Run {
 
 /**
  * 空状态里的示例提示词。三句都是真的能跑通的输入，点一下就会被填进上面的输入框。
- * 空状态要给例子而不是写一句「还没有记录」：第一次打开时，最大的障碍是不知道该说什么。
+ * 空状态要给例子而不是写一句“还没有记录”：第一次打开时，最大的障碍是不知道该说什么。
  */
 const SAMPLES = [
   "做一个团队任务看板，能拖拽卡片、能标记完成、刷新后数据还在",
@@ -34,7 +34,7 @@ const SAMPLES = [
 ] as const;
 
 /**
- * 构建记录列表。「我交代完可以走开，回来时东西还在」这句话的物理体现 ——
+ * 构建记录列表。“我交代完可以走开，回来时东西还在”这句话的物理体现 ——
  * 没有这张列表，用户关掉浏览器就什么都不剩了。
  */
 export function RunList({
@@ -50,11 +50,9 @@ export function RunList({
   if (runs.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-[var(--color-border-soft)] p-6">
-        <h4 className="text-sm font-medium text-slate-300">
-          还没有任何构建记录
-        </h4>
+        <h4 className="text-sm font-medium text-slate-300">还没有任何构建记录</h4>
         <p className="mt-1.5 max-w-md text-xs leading-relaxed text-slate-500">
-          在上面输入一句话，点「开始构建」就会出现在这里。
+          在上面输入一句话，点“开始构建”就会出现在这里。
           不确定说什么的话，下面这三句可以直接用 —— 点一下就填进去。
         </p>
 
@@ -96,7 +94,7 @@ export function RunList({
         const stage = STAGE_MAP[run.stage];
         // 工作台在 /studio。列表里的链接必须指到这里 ——
         // 曾经写成 "/?run="，那是工作台还在首页时的旧路径，
-        // 结果点「查看」会跳到首页去，而首页根本不认识 run 参数。
+        // 结果点“查看”会跳到首页去，而首页根本不认识 run 参数。
         const href = `/studio?run=${run.id}`;
         return (
           <li key={run.id}>
@@ -127,23 +125,15 @@ export function RunList({
                 <span className="text-slate-700">|</span>
                 <span>{run.timeLabel}</span>
                 <span className="text-slate-700">|</span>
-                <span className="tabular-nums">
-                  ¥{run.totalCostCny.toFixed(4)}
-                </span>
+                <span className="tabular-nums">¥{run.totalCostCny.toFixed(4)}</span>
 
                 <span className="ml-auto flex items-center gap-2 opacity-0 transition group-hover:opacity-100">
-                  <Link
-                    href={href}
-                    className="text-slate-400 hover:text-slate-200"
-                  >
+                  <Link href={href} className="text-slate-400 hover:text-slate-200">
                     查看
                   </Link>
                   <form action={deleteRunAction}>
                     <input type="hidden" name="runId" value={run.id} />
-                    <button
-                      type="submit"
-                      className="text-slate-500 hover:text-red-400"
-                    >
+                    <button type="submit" className="text-slate-500 hover:text-red-400">
                       删除
                     </button>
                   </form>

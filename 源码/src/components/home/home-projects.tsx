@@ -6,7 +6,7 @@ import type { RunView } from "@/components/cockpit/run-list";
 import { NAV_GUTTER } from "@/components/shell/gutter";
 
 /**
- * 项目卡片行：参考图里「+ 新建项目」后面那一排缩略图，我们放的是用户自己的构建记录，
+ * 项目卡片行：参考图里“+ 新建项目”后面那一排缩略图，我们放的是用户自己的构建记录，
  * 不是模板库也不是示例。
  *
  * 缩略图画的是这条记录的流水线进度（六道工序，跑过的点亮、没接入的灰着），
@@ -21,7 +21,7 @@ export interface HomeProjectsProps {
 const THUMB_TINTS = [0, 1, 2, 3, 4, 5] as const;
 
 export function HomeProjects({ runs }: HomeProjectsProps) {
-  // 只展示最近几条。首页这一行是「快速回到上次」，不是完整列表
+  // 只展示最近几条。首页这一行是“快速回到上次”，不是完整列表
   const shown = runs.slice(0, 3);
 
   return (
@@ -116,7 +116,7 @@ function ProjectCard({ run }: { run: RunView }) {
       <div className="flex items-start gap-2 px-3.5 pt-1 pb-3.5">
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] text-slate-300">{run.prompt}</div>
-          <div className="mt-0.5 truncate text-[11px] tabular-nums text-slate-600">
+          <div className="mt-0.5 truncate text-[11px] text-slate-600 tabular-nums">
             {stageLabel(run.stage)} · {run.timeLabel}
           </div>
         </div>

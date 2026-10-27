@@ -57,7 +57,7 @@ describe("相对时间描述", () => {
   const now = 1_800_000_000_000;
   const min = 60_000;
 
-  it("一分钟内是「刚刚」", () => {
+  it("一分钟内是“刚刚”", () => {
     expect(describeTime(now - 30_000, now)).toBe("刚刚");
   });
 
@@ -66,7 +66,7 @@ describe("相对时间描述", () => {
     expect(describeTime(now - 3 * 60 * min, now)).toBe("3 小时前");
   });
 
-  it("一天左右显示「昨天」", () => {
+  it("一天左右显示“昨天”", () => {
     expect(describeTime(now - 30 * 60 * min, now)).toBe("昨天");
   });
 
@@ -74,7 +74,7 @@ describe("相对时间描述", () => {
     expect(describeTime(now - 5 * 24 * 60 * min, now)).toBe("5 天前");
   });
 
-  it("未来时间不出现负数，按「刚刚」处理", () => {
+  it("未来时间不出现负数，按“刚刚”处理", () => {
     expect(describeTime(now + 10 * min, now)).toBe("刚刚");
   });
 });
@@ -160,7 +160,7 @@ describe("创建运行", () => {
     store = createFakeRunStore();
   });
 
-  it("创建成功，初始状态是「进行中」、停在第一道工序", async () => {
+  it("创建成功，初始状态是“进行中”、停在第一道工序", async () => {
     const r = await createRun(store, {
       userId: 1,
       prompt: "做一个团队任务看板",
@@ -195,8 +195,16 @@ describe("创建运行", () => {
   });
 
   it("不同用户的记录互不干扰", async () => {
-    await createRun(store, { userId: 1, prompt: "用户一的活儿", workflowVersion: "v1" });
-    await createRun(store, { userId: 2, prompt: "用户二的活儿", workflowVersion: "v1" });
+    await createRun(store, {
+      userId: 1,
+      prompt: "用户一的活儿",
+      workflowVersion: "v1",
+    });
+    await createRun(store, {
+      userId: 2,
+      prompt: "用户二的活儿",
+      workflowVersion: "v1",
+    });
 
     const u1 = await listRuns(store, 1);
     const u2 = await listRuns(store, 2);
@@ -264,7 +272,11 @@ describe("构建记录列表", () => {
   it("limit 生效", async () => {
     const store = createFakeRunStore();
     for (let i = 0; i < 5; i++) {
-      await createRun(store, { userId: 1, prompt: `第 ${i} 个活儿`, workflowVersion: "v1" });
+      await createRun(store, {
+        userId: 1,
+        prompt: `第 ${i} 个活儿`,
+        workflowVersion: "v1",
+      });
     }
     expect(await listRuns(store, 1, 2)).toHaveLength(2);
   });

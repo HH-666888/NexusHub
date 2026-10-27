@@ -60,10 +60,7 @@ export default async function SettingsPage() {
       />
 
       <main className="mx-auto w-full max-w-5xl space-y-5 px-6 py-6">
-        <AppearancePanel
-          initial={appearance}
-          updatedAt={appearanceUpdatedAt}
-        />
+        <AppearancePanel initial={appearance} updatedAt={appearanceUpdatedAt} />
 
         <ModelPanel
           initial={toModelConfigView(modelConfig)}

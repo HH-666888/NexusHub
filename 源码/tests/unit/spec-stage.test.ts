@@ -24,9 +24,24 @@ const GOOD_SPEC_JSON = JSON.stringify({
   audience: "小团队",
   scenarios: ["新建任务", "拖动状态", "刷新保留"],
   acceptance: [
-    { id: "ac-1", statement: "能新建任务", verifyBy: "点新建按钮，卡片出现", level: "must" },
-    { id: "ac-2", statement: "能拖动卡片", verifyBy: "拖到另一栏松手，卡片留在那里", level: "must" },
-    { id: "ac-3", statement: "刷新后还在", verifyBy: "按 F5 后卡片位置不变", level: "must" },
+    {
+      id: "ac-1",
+      statement: "能新建任务",
+      verifyBy: "点新建按钮，卡片出现",
+      level: "must",
+    },
+    {
+      id: "ac-2",
+      statement: "能拖动卡片",
+      verifyBy: "拖到另一栏松手，卡片留在那里",
+      level: "must",
+    },
+    {
+      id: "ac-3",
+      statement: "刷新后还在",
+      verifyBy: "按 F5 后卡片位置不变",
+      level: "must",
+    },
     { id: "ac-4", statement: "能删除", verifyBy: "点删除，卡片消失", level: "should" },
   ],
   scope: { inScope: ["看板"], outOfScope: ["多人协作"] },
@@ -155,7 +170,9 @@ async function run(opts: {
 }
 
 const specEvent = (h: Harness) =>
-  h.events.find((e): e is Extract<SpecStageEvent, { kind: "spec" }> => e.kind === "spec");
+  h.events.find(
+    (e): e is Extract<SpecStageEvent, { kind: "spec" }> => e.kind === "spec",
+  );
 
 describe("规格化阶段 · 正常路径", () => {
   it("产出一条 spec 事件，且不是兜底", async () => {
@@ -184,7 +201,10 @@ describe("规格化阶段 · 正常路径", () => {
   it("用了决策级档位，并要求 JSON 输出", async () => {
     // 显式声明参数类型，否则 mock.calls[0] 被推成空元组，取 [0] 会编译不过
     const spy = vi.fn(async (_req: ModelRequest) => makeResult());
-    const model = { complete: spy, stream: async function* () {} } as unknown as ModelPort;
+    const model = {
+      complete: spy,
+      stream: async function* () {},
+    } as unknown as ModelPort;
     const artifacts = {
       save: async (d: never) => d,
       listByRun: async () => [],
@@ -229,7 +249,7 @@ describe("规格化阶段 · 记账", () => {
     expect(h.runUpdates[0].totalCostCny).toBeCloseTo(0.51, 6);
   });
 
-  it("【关键】模型返回不可解析时**照样记账** —— 钱已经花了", async () => {
+  it("模型返回不可解析时**照样记账** —— 钱已经花了", async () => {
     const h = await run({ modelResult: makeResult({ text: "我不想输出 JSON" }) });
     expect(h.costRecords).toHaveLength(1);
     expect(specEvent(h)!.fallback).toBe(true);
@@ -246,7 +266,9 @@ describe("规格化阶段 · 记账", () => {
 
 describe("规格化阶段 · 降级", () => {
   it("模型返回一坨非 JSON：降级为兜底规格，并说明原因", async () => {
-    const h = await run({ modelResult: makeResult({ text: "我觉得这个需求挺清楚的" }) });
+    const h = await run({
+      modelResult: makeResult({ text: "我觉得这个需求挺清楚的" }),
+    });
     const e = specEvent(h)!;
     expect(e.fallback).toBe(true);
     expect(e.spec.acceptance.length).toBeGreaterThan(0);
@@ -258,7 +280,7 @@ describe("规格化阶段 · 降级", () => {
     expect(err!.message).toContain("没法解析");
   });
 
-  it("【关键】降级之后兜底规格本身能过门禁 —— 不能把用户卡死", async () => {
+  it("降级之后兜底规格本身能过门禁 —— 不能把用户卡死", async () => {
     const h = await run({ modelResult: makeResult({ text: "随便说点什么" }) });
     expect(specEvent(h)!.gate.pass).toBe(true);
   });
@@ -291,7 +313,7 @@ describe("规格化阶段 · 降级", () => {
 });
 
 describe("规格化阶段 · 预算闸门", () => {
-  it("【关键】已经超预算时**根本不发起调用** —— 不能花完才说超了", async () => {
+  it("已经超预算时**根本不发起调用** —— 不能花完才说超了", async () => {
     const h = await run({ spentCny: 5, costLimitCny: 5 });
     expect(h.modelCalls).toBe(0);
     expect(h.costRecords).toHaveLength(0);
@@ -343,7 +365,10 @@ describe("规格化阶段 · 事件顺序", () => {
 
   it("收尾的阶段标签里带上规格摘要，用户不用点开就知道结果", async () => {
     const h = await run({});
-    const last = h.events[h.events.length - 1] as Extract<SpecStageEvent, { kind: "phase" }>;
+    const last = h.events[h.events.length - 1] as Extract<
+      SpecStageEvent,
+      { kind: "phase" }
+    >;
     expect(last.label).toContain("验收标准");
   });
 
@@ -363,7 +388,10 @@ describe("规格化阶段 · 事件顺序", () => {
     });
     const h = await run({ modelResult: makeResult({ text: withQuestions }) });
     expect(specEvent(h)!.gate.pass).toBe(false);
-    const last = h.events[h.events.length - 1] as Extract<SpecStageEvent, { kind: "phase" }>;
+    const last = h.events[h.events.length - 1] as Extract<
+      SpecStageEvent,
+      { kind: "phase" }
+    >;
     expect(last.label).toContain("确认");
   });
 });
@@ -375,27 +403,28 @@ describe("规格化阶段 · 思考事件", () => {
 
   const thoughts = (h: Harness) =>
     h.events.filter(
-      (e): e is Extract<SpecStageEvent, { kind: "reasoning" }> => e.kind === "reasoning",
+      (e): e is Extract<SpecStageEvent, { kind: "reasoning" }> =>
+        e.kind === "reasoning",
     );
 
-  it("【关键】complete() 返回的思考要发成 reasoning 事件，内容一字不改", async () => {
+  it("complete() 返回的思考要发成 reasoning 事件，内容一字不改", async () => {
     const h = await run({ modelResult: makeResult({ reasoning: THOUGHT }) });
     const t = thoughts(h);
     expect(t).toHaveLength(1);
     expect(t[0].delta).toBe(THOUGHT);
   });
 
-  it("★ 反例：没有思考时**不发** reasoning 事件 —— 不许拿正文冒充思考", async () => {
+  it("反例：没有思考时**不发** reasoning 事件 —— 不许拿正文冒充思考", async () => {
     const h = await run({ modelResult: makeResult({ reasoning: "" }) });
     expect(thoughts(h)).toHaveLength(0);
   });
 
-  it("★ 反例：只有空白字符也不发 —— 空白思考等于没思考", async () => {
+  it("反例：只有空白字符也不发 —— 空白思考等于没思考", async () => {
     const h = await run({ modelResult: makeResult({ reasoning: "  \n\t " }) });
     expect(thoughts(h)).toHaveLength(0);
   });
 
-  it("顺序：思考排在 spec 事件之前 —— 读起来就是「先想，再给答案」", async () => {
+  it("顺序：思考排在 spec 事件之前 —— 读起来就是“先想，再给答案”", async () => {
     const h = await run({ modelResult: makeResult({ reasoning: THOUGHT }) });
     const thinkAt = h.events.findIndex((e) => e.kind === "reasoning");
     const specAt = h.events.findIndex((e) => e.kind === "spec");
@@ -403,7 +432,7 @@ describe("规格化阶段 · 思考事件", () => {
     expect(thinkAt).toBeLessThan(specAt);
   });
 
-  it("★ 反例：调用模型就失败时**不可能**有思考事件（压根没有 result）", async () => {
+  it("反例：调用模型就失败时**不可能**有思考事件（压根没有 result）", async () => {
     const h = await run({ modelThrows: "网络超时" });
     expect(thoughts(h)).toHaveLength(0);
     // 顺带再钉一次降级的底线：没有思考，但兜底规格照样出
@@ -424,18 +453,22 @@ describe("规格化阶段 · 兜底标签", () => {
   // 旧标签只看 gate.pass，兜底规格没有疑问就写规格已就绪，把兜底说成了就绪。
   const phaseLabels = (h: Harness) =>
     h.events
-      .filter((e): e is Extract<SpecStageEvent, { kind: "phase" }> => e.kind === "phase")
+      .filter(
+        (e): e is Extract<SpecStageEvent, { kind: "phase" }> => e.kind === "phase",
+      )
       .map((e) => e.label);
 
-  it("【关键】降级时收尾标签必须自报家门 —— 否则「兜底」会被说成「已就绪」", async () => {
-    const h = await run({ modelResult: makeResult({ text: "我觉得这个需求挺清楚的" }) });
+  it("降级时收尾标签必须自报家门 —— 否则“兜底”会被说成“已就绪”", async () => {
+    const h = await run({
+      modelResult: makeResult({ text: "我觉得这个需求挺清楚的" }),
+    });
     expect(specEvent(h)!.fallback).toBe(true);
     const labels = phaseLabels(h);
     expect(labels[labels.length - 1]).toContain("（兜底）");
     expect(labels[labels.length - 1]).toContain("规格已就绪");
   });
 
-  it("★ 反例：正常规格的标签里**不许**出现「（兜底）」—— 防恒真", async () => {
+  it("反例：正常规格的标签里**不许**出现“（兜底）”—— 防恒真", async () => {
     const h = await run({});
     expect(specEvent(h)!.fallback).toBe(false);
     expect(phaseLabels(h).some((l) => l.includes("（兜底）"))).toBe(false);
@@ -472,7 +505,7 @@ describe("规格化阶段 · 按回答重出一版", () => {
     return typeof user?.content === "string" ? user.content : "";
   };
 
-  it("【关键】提示词里带上了上一版规格与用户的回答", async () => {
+  it("提示词里带上了上一版规格与用户的回答", async () => {
     const h = await run({ revision: { previous: PREVIOUS, answers: ANSWERS } });
     const msg = userMessage(h);
 
@@ -482,13 +515,13 @@ describe("规格化阶段 · 按回答重出一版", () => {
     expect(msg).toContain("要，用系统提示音就行");
   });
 
-  it("【关键】明确要求「已经回答过的问题不要再问第二遍」", async () => {
+  it("明确要求“已经回答过的问题不要再问第二遍”", async () => {
     // 他刚逐条答完，再问第二遍就是"答了又问" —— 那正是续跑那条路踩过的坑
     const h = await run({ revision: { previous: PREVIOUS, answers: ANSWERS } });
     expect(userMessage(h)).toContain("已经回答过的问题不要再问第二遍");
   });
 
-  it("★ 反例：没点重出时，提示词里**不许**出现上一版与回答（行为一个字没变）", async () => {
+  it("反例：没点重出时，提示词里**不许**出现上一版与回答（行为一个字没变）", async () => {
     const h = await run({});
     const msg = userMessage(h);
     expect(msg).not.toContain("上一版规格");
@@ -496,10 +529,12 @@ describe("规格化阶段 · 按回答重出一版", () => {
     expect(msg).not.toContain("已经回答过的问题不要再问第二遍");
   });
 
-  it("阶段标签写的是「正在按你的回答重出一版规格」", async () => {
+  it("阶段标签写的是“正在按你的回答重出一版规格”", async () => {
     const h = await run({ revision: { previous: PREVIOUS, answers: ANSWERS } });
     const labels = h.events
-      .filter((e): e is Extract<SpecStageEvent, { kind: "phase" }> => e.kind === "phase")
+      .filter(
+        (e): e is Extract<SpecStageEvent, { kind: "phase" }> => e.kind === "phase",
+      )
       .map((e) => e.label);
     expect(labels.some((l) => l.includes("按你的回答重出一版"))).toBe(true);
   });

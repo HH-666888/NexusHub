@@ -1,5 +1,5 @@
 /**
- * 端到端脚本的共用检查器：ok / fail / expect_ / heading / finish。
+ * 端到端脚本的共用检查器：ok / fail / check / heading / finish。
  * 有失败时以退出码 1 结束，CI 与 npm run 只看退出码。
  */
 
@@ -30,7 +30,7 @@ export function heading(title: string): void {
 }
 
 // 返回布尔值，调用方可据此提前返回
-export function expect_(cond: boolean, passMsg: string, failMsg: string): boolean {
+export function check(cond: boolean, passMsg: string, failMsg: string): boolean {
   if (cond) ok(passMsg);
   else fail(failMsg);
   return cond;
@@ -51,7 +51,7 @@ export function finish(startedAt: number): never {
   }
   console.log("");
   console.log("  失败项已在上方逐条列出。脚本以退出码 1 结束 ——");
-  console.log("  只看「有没有报错」的自动化流程也能发现这次没过。");
+  console.log("  只看“有没有报错”的自动化流程也能发现这次没过。");
   process.exit(1);
 }
 
@@ -60,7 +60,10 @@ export function finish(startedAt: number): never {
 
 // 只取 name 以 $ 开头的隐藏字段，它们是 Next.js 定位服务端动作的载荷。
 // value 组必须紧贴标签结束，否则正则会跳过可选组、拿到空值。
-export function extractFormFields(html: string, contains: string): Record<string, string> {
+export function extractFormFields(
+  html: string,
+  contains: string,
+): Record<string, string> {
   const chunks = html.split(/<form\b/).slice(1);
   for (const chunk of chunks) {
     const end = chunk.indexOf("</form>");
@@ -68,7 +71,8 @@ export function extractFormFields(html: string, contains: string): Record<string
     if (!body.includes(contains)) continue;
 
     const fields: Record<string, string> = {};
-    const inputRe = /<input\s+type="hidden"\s+name="(\$[^"]+)"(?:\s+value="([^"]*)")?\s*\/?>/g;
+    const inputRe =
+      /<input\s+type="hidden"\s+name="(\$[^"]+)"(?:\s+value="([^"]*)")?\s*\/?>/g;
     let m: RegExpExecArray | null;
     while ((m = inputRe.exec(body)) !== null) {
       fields[m[1]] = decodeEntities(m[2] ?? "");

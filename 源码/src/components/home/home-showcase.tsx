@@ -2,8 +2,8 @@ import Link from "next/link";
 import { NAV_GUTTER } from "@/components/shell/gutter";
 
 /**
- * 能力展示。参考图下半部分是「最近上新」的一排作品图，我们没有作品图可放：
- * 产物是 HTML，要出图得每一条都渲染一遍。所以换成讲「我们怎么工作」——
+ * 能力展示。参考图下半部分是“最近上新”的一排作品图，我们没有作品图可放：
+ * 产物是 HTML，要出图得每一条都渲染一遍。所以换成讲“我们怎么工作”——
  * 这个产品的差异点全在过程上：依赖看得见、过程能回放、每一分钱花在哪一步。
  *
  * 三张卡各对应一个已经做出来的界面，点进去就能看到实物。
@@ -25,7 +25,7 @@ interface Capability {
     时间轴回放 → 渲染在 GenerationConsole 里，它挂在 /canvas 下半区
     成本明细 → StageDetail 面板里的分阶段花费，点画布上任一工序就能看到
 
-  哪天搬走了一件，这里必须跟着改 ——「点了看不到」比「没有入口」更让人怀疑整个产品。
+  哪天搬走了一件，这里必须跟着改 ——“点了看不到”比“没有入口”更让人怀疑整个产品。
 */
 const CAPS: Capability[] = [
   {
@@ -79,9 +79,13 @@ export function HomeShowcase() {
                   className="inline-block h-1.5 w-1.5 rounded-full"
                   style={{ background: `rgb(var(${c.tint}))` }}
                 />
-                <span className="text-[14px] font-medium text-slate-100">{c.title}</span>
+                <span className="text-[14px] font-medium text-slate-100">
+                  {c.title}
+                </span>
               </div>
-              <p className="mt-1.5 text-[12px] leading-relaxed text-slate-500">{c.desc}</p>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-slate-500">
+                {c.desc}
+              </p>
             </div>
           </Link>
         ))}
@@ -101,7 +105,14 @@ function Art({ kind, tint }: { kind: Capability["art"]; tint: string }) {
 
 /** 任务图：六个小方块与连线，画的是流水线本身的结构 */
 function GraphArt() {
-  const tints = ["--tint-1", "--tint-2", "--tint-3", "--tint-4", "--tint-5", "--tint-6"];
+  const tints = [
+    "--tint-1",
+    "--tint-2",
+    "--tint-3",
+    "--tint-4",
+    "--tint-5",
+    "--tint-6",
+  ];
   return (
     <div className="w-full">
       <div className="grid grid-cols-3 gap-2.5">
@@ -132,7 +143,7 @@ function GraphArt() {
   );
 }
 
-/** 时间轴：一条带滑块的进度条，画的是「可以拖回任意一刻」 */
+/** 时间轴：一条带滑块的进度条，画的是“可以拖回任意一刻” */
 function TimelineArt({ tint }: { tint: string }) {
   return (
     <div className="w-full">
@@ -155,7 +166,7 @@ function TimelineArt({ tint }: { tint: string }) {
             style={{ left: "62%", background: "var(--ink-1)" }}
           />
         </div>
-        <span className="flex-none font-mono text-[9px] tabular-nums text-slate-600">
+        <span className="flex-none font-mono text-[9px] text-slate-600 tabular-nums">
           8.2s
         </span>
       </div>
@@ -171,7 +182,7 @@ function TimelineArt({ tint }: { tint: string }) {
   );
 }
 
-/** 成本：几条横条，画的是「按阶段分开记账」 */
+/** 成本：几条横条，画的是“按阶段分开记账” */
 function CostArt({ tint }: { tint: string }) {
   const rows = [
     { label: "规格化", pct: 18, t: "--tint-3" },
@@ -191,7 +202,7 @@ function CostArt({ tint }: { tint: string }) {
           </div>
         </div>
       ))}
-      <div className="pt-1 text-right font-mono text-[10px] tabular-nums text-slate-600">
+      <div className="pt-1 text-right font-mono text-[10px] text-slate-600 tabular-nums">
         合计 ¥0.0256
       </div>
     </div>

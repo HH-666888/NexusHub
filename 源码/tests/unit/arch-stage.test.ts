@@ -177,10 +177,14 @@ async function run(opts: {
 }
 
 const archEvent = (h: Harness) =>
-  h.events.find((e): e is Extract<ArchStageEvent, { kind: "arch" }> => e.kind === "arch");
+  h.events.find(
+    (e): e is Extract<ArchStageEvent, { kind: "arch" }> => e.kind === "arch",
+  );
 
 const errorEvents = (h: Harness) =>
-  h.events.filter((e): e is Extract<ArchStageEvent, { kind: "error" }> => e.kind === "error");
+  h.events.filter(
+    (e): e is Extract<ArchStageEvent, { kind: "error" }> => e.kind === "error",
+  );
 
 describe("架构定型阶段 · 正常路径", () => {
   it("产出一条 arch 事件，且不是兜底", async () => {
@@ -213,7 +217,10 @@ describe("架构定型阶段 · 正常路径", () => {
   it("用了决策级档位，并要求 JSON 输出、带上架构的输出上限", async () => {
     // 显式声明参数类型，否则 mock.calls[0] 被推成空元组，取 [0] 会编译不过
     const spy = vi.fn(async (_req: ModelRequest) => makeResult());
-    const model = { complete: spy, stream: async function* () {} } as unknown as ModelPort;
+    const model = {
+      complete: spy,
+      stream: async function* () {},
+    } as unknown as ModelPort;
     const artifacts = {
       save: async (d: never) => d,
       listByRun: async () => [],
@@ -242,7 +249,9 @@ describe("架构定型阶段 · 正常路径", () => {
     expect(req.maxOutputTokens).toBe(ARCH_MAX_OUTPUT_TOKENS);
     // 规格必须真的进了提示词 —— 架构要建立在真规格上
     const userMsg = req.messages.find((m) => m.role === "user")!;
-    expect(typeof userMsg.content === "string" ? userMsg.content : "").toContain("ac-1");
+    expect(typeof userMsg.content === "string" ? userMsg.content : "").toContain(
+      "ac-1",
+    );
   });
 
   it("phase 事件报的是第二道工序自己的 id：arch", async () => {
@@ -286,8 +295,10 @@ describe("架构定型阶段 · 记账与用量", () => {
     expect(h.runUpdates[0].totalCostCny).toBeCloseTo(0.52, 8);
   });
 
-  it("【关键】模型返回不可解析时**照样记账** —— 钱已经花了", async () => {
-    const h = await run({ modelResult: makeResult({ text: "我觉得这个架构挺合理的" }) });
+  it("模型返回不可解析时**照样记账** —— 钱已经花了", async () => {
+    const h = await run({
+      modelResult: makeResult({ text: "我觉得这个架构挺合理的" }),
+    });
     expect(h.costRecords).toHaveLength(1);
     expect(archEvent(h)!.fallback).toBe(true);
   });
@@ -301,7 +312,7 @@ describe("架构定型阶段 · 记账与用量", () => {
 });
 
 describe("架构定型阶段 · 降级", () => {
-  it("【关键】调用模型本身失败：产出兜底架构（fallback=true）而且**照样落盘**", async () => {
+  it("调用模型本身失败：产出兜底架构（fallback=true）而且**照样落盘**", async () => {
     const h = await run({ modelThrows: "网络超时" });
     const e = archEvent(h)!;
 
@@ -314,7 +325,7 @@ describe("架构定型阶段 · 降级", () => {
     expect(errorEvents(h)[0].message).toContain("调用模型失败");
   });
 
-  it("【关键】返回一坨不是 JSON 的东西：降级为兜底架构，说明原因，并落盘", async () => {
+  it("返回一坨不是 JSON 的东西：降级为兜底架构，说明原因，并落盘", async () => {
     const h = await run({ modelResult: makeResult({ text: "总之先分三个模块吧" }) });
     const e = archEvent(h)!;
 
@@ -362,7 +373,7 @@ describe("架构定型阶段 · 降级", () => {
 });
 
 describe("架构定型阶段 · 预算闸门", () => {
-  it("【关键】已经超预算时**一次模型调用都不发**，只发一条 error", async () => {
+  it("已经超预算时**一次模型调用都不发**，只发一条 error", async () => {
     // 闸门必须排在调用之前，否则超预算这句话会在钱花完之后才说出来。
     const h = await run({ spentCny: 5, costLimitCny: 5 });
 
@@ -372,9 +383,9 @@ describe("架构定型阶段 · 预算闸门", () => {
     // 只有一条事件，而且就是那条 error —— 连 phase 都不该发
     expect(h.events).toHaveLength(1);
     expect(h.events[0].kind).toBe("error");
-    expect((h.events[0] as Extract<ArchStageEvent, { kind: "error" }>).message).toContain(
-      "达到上限",
-    );
+    expect(
+      (h.events[0] as Extract<ArchStageEvent, { kind: "error" }>).message,
+    ).toContain("达到上限");
   });
 
   it("没超预算时正常调用一次", async () => {
@@ -416,12 +427,15 @@ describe("架构定型阶段 · 事件顺序", () => {
 
   it("收尾的阶段标签里带上架构摘要，用户不用点开就知道结果", async () => {
     const h = await run({});
-    const last = h.events[h.events.length - 1] as Extract<ArchStageEvent, { kind: "phase" }>;
+    const last = h.events[h.events.length - 1] as Extract<
+      ArchStageEvent,
+      { kind: "phase" }
+    >;
     expect(last.label).toContain("2 个模块");
     expect(last.label).toContain("架构已定型");
   });
 
-  it("检查没过时，收尾标签说的是哪一条没过，而不是含糊的「已定型」", async () => {
+  it("检查没过时，收尾标签说的是哪一条没过，而不是含糊的“已定型”", async () => {
     // 这份架构引用了不存在的模块，第三条检查会红；
     // 收尾标签必须说出哪一条没过，只写架构已产出会让人以为三条都过了。
     const bad = JSON.stringify({
@@ -441,7 +455,10 @@ describe("架构定型阶段 · 事件顺序", () => {
     expect(e.fallback).toBe(false);
     expect(e.check.passed).toBe(2);
 
-    const last = h.events[h.events.length - 1] as Extract<ArchStageEvent, { kind: "phase" }>;
+    const last = h.events[h.events.length - 1] as Extract<
+      ArchStageEvent,
+      { kind: "phase" }
+    >;
     expect(last.label).toContain("2/3");
     expect(last.label).toContain("无环");
   });
@@ -465,27 +482,28 @@ describe("架构定型阶段 · 思考事件", () => {
 
   const thoughts = (h: Harness) =>
     h.events.filter(
-      (e): e is Extract<ArchStageEvent, { kind: "reasoning" }> => e.kind === "reasoning",
+      (e): e is Extract<ArchStageEvent, { kind: "reasoning" }> =>
+        e.kind === "reasoning",
     );
 
-  it("【关键】complete() 返回的思考要发成 reasoning 事件，内容一字不改", async () => {
+  it("complete() 返回的思考要发成 reasoning 事件，内容一字不改", async () => {
     const h = await run({ modelResult: makeResult({ reasoning: THOUGHT }) });
     const t = thoughts(h);
     expect(t).toHaveLength(1);
     expect(t[0].delta).toBe(THOUGHT);
   });
 
-  it("★ 反例：没有思考时**不发** reasoning 事件 —— 不许拿正文冒充思考", async () => {
+  it("反例：没有思考时**不发** reasoning 事件 —— 不许拿正文冒充思考", async () => {
     const h = await run({ modelResult: makeResult({ reasoning: "" }) });
     expect(thoughts(h)).toHaveLength(0);
   });
 
-  it("★ 反例：只有空白字符也不发 —— 空白思考等于没思考", async () => {
+  it("反例：只有空白字符也不发 —— 空白思考等于没思考", async () => {
     const h = await run({ modelResult: makeResult({ reasoning: " \n " }) });
     expect(thoughts(h)).toHaveLength(0);
   });
 
-  it("顺序：思考排在 arch 事件之前 —— 读起来就是「先想，再给答案」", async () => {
+  it("顺序：思考排在 arch 事件之前 —— 读起来就是“先想，再给答案”", async () => {
     const h = await run({ modelResult: makeResult({ reasoning: THOUGHT }) });
     const thinkAt = h.events.findIndex((e) => e.kind === "reasoning");
     const archAt = h.events.findIndex((e) => e.kind === "arch");
@@ -493,7 +511,7 @@ describe("架构定型阶段 · 思考事件", () => {
     expect(thinkAt).toBeLessThan(archAt);
   });
 
-  it("★ 反例：调用模型就失败时**不可能**有思考事件（压根没有 result）", async () => {
+  it("反例：调用模型就失败时**不可能**有思考事件（压根没有 result）", async () => {
     const h = await run({ modelThrows: "网络超时" });
     expect(thoughts(h)).toHaveLength(0);
     expect(archEvent(h)!.fallback).toBe(true);
@@ -514,18 +532,22 @@ describe("架构定型阶段 · 兜底标签", () => {
   // 这一版其实没有切过模块，标签要自报家门。
   const phaseLabels = (h: Harness) =>
     h.events
-      .filter((e): e is Extract<ArchStageEvent, { kind: "phase" }> => e.kind === "phase")
+      .filter(
+        (e): e is Extract<ArchStageEvent, { kind: "phase" }> => e.kind === "phase",
+      )
       .map((e) => e.label);
 
-  it("【关键】降级时收尾标签必须自报家门 —— 否则「没切过模块」会被说成「已定型」", async () => {
-    const h = await run({ modelResult: makeResult({ text: "我觉得这样切模块挺好的" }) });
+  it("降级时收尾标签必须自报家门 —— 否则“没切过模块”会被说成“已定型”", async () => {
+    const h = await run({
+      modelResult: makeResult({ text: "我觉得这样切模块挺好的" }),
+    });
     expect(archEvent(h)!.fallback).toBe(true);
     const labels = phaseLabels(h);
     expect(labels[labels.length - 1]).toContain("（兜底）");
     expect(labels[labels.length - 1]).toContain("架构已定型");
   });
 
-  it("★ 反例：正常架构的标签里**不许**出现「（兜底）」—— 防恒真", async () => {
+  it("反例：正常架构的标签里**不许**出现“（兜底）”—— 防恒真", async () => {
     const h = await run({});
     expect(archEvent(h)!.fallback).toBe(false);
     expect(phaseLabels(h).some((l) => l.includes("（兜底）"))).toBe(false);

@@ -1,6 +1,6 @@
 /**
  * 架构的本地检查：孤儿需求、包名语法、依赖成环，不调模型。
- * 包名那条只能验证语法，name 与 detail 必须写明「未联网核实是否真实存在」。
+ * 包名那条只能验证语法，name 与 detail 必须写明“未联网核实是否真实存在”。
  */
 
 import type { ArchSpec } from "../domain/arch";
@@ -17,7 +17,6 @@ export interface ArchCheck {
   passed: number;
   total: number;
 }
-
 
 function checkNoOrphans(arch: ArchSpec, spec: AppSpec): ArchCheckItem {
   const name = "规格里每条功能都能映射到至少一个模块（无孤儿需求）";
@@ -64,7 +63,6 @@ function checkNoOrphans(arch: ArchSpec, spec: AppSpec): ArchCheckItem {
   };
 }
 
-
 /**
  * npm 包名语法：全小写，可含 - _ .，可带 @scope/ 前缀，首字符为字母或数字。
  * 只做离线可判的部分，长度上限、保留名、是否被占用都不查。
@@ -76,10 +74,10 @@ export function isValidPackageName(name: string): boolean {
 }
 
 function checkPackageNames(arch: ArchSpec): ArchCheckItem {
-  // 这句就是检查名字，必须带「未联网核实」—— 有单测用 toContain 钉着
+  // 这句就是检查名字，必须带“未联网核实”—— 有单测用 toContain 钉着
   const name = "依赖包名合法（未联网核实是否真实存在）";
 
-  const notChecked = "⚠️ 未联网核实这些包是否真实存在，只做了包名语法检查";
+  const notChecked = "未联网核实这些包是否真实存在，只做了包名语法检查";
 
   if (arch.packages.length === 0) {
     // 空清单即通过，但 detail 要写明没有可查的
@@ -98,29 +96,24 @@ function checkPackageNames(arch: ArchSpec): ArchCheckItem {
       pass: false,
       detail:
         `${bad.length} 个包名不符合 npm 包名语法（全小写、可含 - _ .、可带 @scope/）：` +
-        `${bad.map((p) => `「${p.name}」`).join("、")}。${notChecked}`,
+        `${bad.map((p) => `“${p.name}”`).join("、")}。${notChecked}`,
     };
   }
 
   return {
     name,
     pass: true,
-    detail:
-      `${arch.packages.length} 个包名都符合 npm 包名语法（${arch.packages
-        .map((p) => p.name)
-        .join("、")}）。${notChecked}`,
+    detail: `${arch.packages.length} 个包名都符合 npm 包名语法（${arch.packages
+      .map((p) => p.name)
+      .join("、")}）。${notChecked}`,
   };
 }
-
 
 /**
  * 从 start 出发找一条回到自己的路径，找不到返回 null；返回路径是为了 detail 能写出 a → b → a。
  * 用三色标记而非 visited 集合：只有灰节点代表环，走完的再遇到不算（菱形依赖不误报）。
  */
-function findCycle(
-  graph: Map<string, string[]>,
-  start: string,
-): string[] | null {
+function findCycle(graph: Map<string, string[]>, start: string): string[] | null {
   const WHITE = 0;
   const GRAY = 1;
   const BLACK = 2;
@@ -200,7 +193,6 @@ function checkNoCycle(arch: ArchSpec): ArchCheckItem {
     detail: `${arch.modules.length} 个模块、${edges} 条依赖，没有任何环`,
   };
 }
-
 
 /** 三条本地检查，顺序与 stages.ts 的 acceptance 一致，界面可逐行核对 */
 export function inspectArch(arch: ArchSpec, spec: AppSpec): ArchCheck {

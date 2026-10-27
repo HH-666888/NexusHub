@@ -56,7 +56,10 @@ export async function GET(
     const content = await fsArtifactStore.readContent(a);
     if (content === null) {
       // 登记还在但文件没了，属数据不一致，明确记录而不是当作没有这个产物
-      skipped.push({ path: a.path, reason: "文件读不到（登记还在，磁盘上已经没有这个文件）" });
+      skipped.push({
+        path: a.path,
+        reason: "文件读不到（登记还在，磁盘上已经没有这个文件）",
+      });
       continue;
     }
 

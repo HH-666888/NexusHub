@@ -74,7 +74,7 @@ describe("事件记录器 · 转发", () => {
 });
 
 describe("事件记录器 · 顺序", () => {
-  it("【关键】非片段事件之前必须先冲刷缓冲区", async () => {
+  it("非片段事件之前必须先冲刷缓冲区", async () => {
     // usage 若比它前面的正文先落库，回放到那一刻就是钱已经花了、字还没出来。
     const events: GenerateEvent[] = [
       text("先写的字"),
@@ -137,7 +137,10 @@ describe("事件记录器 · 健壮性", () => {
         return 0;
       },
     };
-    const events: GenerateEvent[] = [text("a"), { kind: "phase", phase: "done", label: "完" }];
+    const events: GenerateEvent[] = [
+      text("a"),
+      { kind: "phase", phase: "done", label: "完" },
+    ];
     const seen: GenerateEvent[] = [];
     for await (const e of recordRunEvents(from(events), broken, "r")) {
       seen.push(e);
@@ -217,7 +220,7 @@ describe("回放 · frameAt", () => {
     expect(f.phaseLabel).toBe("模型正在写");
   });
 
-  it("【关键】没有花费时不显示 0 —— 0 是「花了零元」，null 是「还不知道」", () => {
+  it("没有花费时不显示 0 —— 0 是“花了零元”，null 是“还不知道”", () => {
     expect(frameAt(events, 150).costCny).toBeNull();
     expect(frameAt(events, 600).costCny).toBeCloseTo(0.0256, 6);
   });
@@ -271,7 +274,7 @@ describe("回放 · 时长与定位", () => {
 
 describe("事件序列化", () => {
   it("存进去再读出来，内容不变", () => {
-    const original: GenerateEvent = text("含换行\n和引号\"的文本");
+    const original: GenerateEvent = text('含换行\n和引号"的文本');
     const restored = parseRunEvent({
       id: 1,
       runId: "r",

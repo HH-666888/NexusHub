@@ -102,9 +102,15 @@ export const UI_SYSTEM_PROMPT = `你是一位界面设计师。用户会用一�
 5. pages 至少 1 个、至多 6 个；components 至少 1 个、至多 12 个`;
 
 /** 用户消息：原话 + 规格 + 架构 */
-export function buildUiPrompt(userInput: string, spec: AppSpec, arch: ArchSpec): string {
+export function buildUiPrompt(
+  userInput: string,
+  spec: AppSpec,
+  arch: ArchSpec,
+): string {
   const acceptance = spec.acceptance
-    .map((a) => `  · ${a.id}｜${a.statement}（${a.level === "must" ? "必需" : "期望"}）`)
+    .map(
+      (a) => `  · ${a.id}｜${a.statement}（${a.level === "must" ? "必需" : "期望"}）`,
+    )
     .join("\n");
 
   /*
@@ -139,8 +145,7 @@ export function buildUiPrompt(userInput: string, spec: AppSpec, arch: ArchSpec):
 // 只做结构校验，不做质量判断；三条检查过不过由 generate/ui-check.ts 判
 
 export type UiParseResult =
-  | { ok: true; ui: UiSpec }
-  | { ok: false; reason: string; raw: string };
+  { ok: true; ui: UiSpec } | { ok: false; reason: string; raw: string };
 
 /**
  * 页面 / 组件 id 的规矩与架构模块逐字符一致，所以直接复用它的实现。

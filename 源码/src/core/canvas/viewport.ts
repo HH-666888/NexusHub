@@ -15,7 +15,7 @@ export interface Viewport {
 export const CELL = 160;
 
 /**
- * 「核心格」：第 3 列第 2 行（从 1 数起）。
+ * “核心格”：第 3 列第 2 行（从 1 数起）。
  * 流水线从上往下长，所以起点偏上居中，右边和下边都留空。
  */
 export const HOME_COL = 3;
@@ -26,7 +26,6 @@ export const HOME_WORLD = {
   x: (HOME_COL - 0.5) * CELL,
   y: (HOME_ROW - 0.5) * CELL,
 } as const;
-
 
 export const MIN_SCALE = 0.2;
 export const MAX_SCALE = 4;
@@ -55,7 +54,6 @@ export function clampPan(v: number): number {
   if (v === -Infinity) return -PAN_LIMIT;
   return Math.min(PAN_LIMIT, Math.max(-PAN_LIMIT, v));
 }
-
 
 export function worldToScreen(vp: Viewport, wx: number, wy: number) {
   return { x: wx * vp.scale + vp.panX, y: wy * vp.scale + vp.panY };
@@ -115,8 +113,12 @@ export function viewportCenteredOn(
 /** 打开画布时核心格落在视口纵向 0.34 处。放正中会让下半屏立刻不够用，加三四层都得挪 */
 export const HOME_SCREEN_Y_RATIO = 0.34;
 
-/** 回到核心格。对应界面上那个「回到原点」 */
-export function homeViewport(viewportW: number, viewportH: number, scale = 1): Viewport {
+/** 回到核心格。对应界面上那个“回到原点” */
+export function homeViewport(
+  viewportW: number,
+  viewportH: number,
+  scale = 1,
+): Viewport {
   const s = clampScale(scale);
   return {
     scale: s,
@@ -137,7 +139,7 @@ export function fitViewport(
   padding = 56,
   /**
    * 缩放下限。面板 808×371 算出来是 48%，字 7 像素读不清：
-   * 「全都看见」与「看得清」矛盾时，宁可让用户平移，也不把字缩到读不出来。
+   * “全都看见”与“看得清”矛盾时，宁可让用户平移，也不把字缩到读不出来。
    */
   minScale = 0,
 ): Viewport {
@@ -162,17 +164,17 @@ export function fitViewport(
   return {
     scale: s,
     panX: clampPan(viewportW / 2 - cx * s),
-    panY: clampPan(fits ? viewportH * HOME_SCREEN_Y_RATIO - cy * s : padding - bounds.y * s),
+    panY: clampPan(
+      fits ? viewportH * HOME_SCREEN_Y_RATIO - cy * s : padding - bounds.y * s,
+    ),
   };
 }
 
-
-/** 倍率显示成百分比。整数不带小数点，省得写「100.0%」 */
+/** 倍率显示成百分比。整数不带小数点，省得写“100.0%” */
 export function formatScale(scale: number): string {
   const pct = scale * 100;
   return `${Number.isInteger(pct) ? pct : pct.toFixed(0)}%`;
 }
-
 
 /** 次要文字保留到多少倍率：0.62 × 10.5px ≈ 6.5px，再小就是一层灰糊 */
 export const LABEL_MINOR_SCALE = 0.62;
@@ -185,7 +187,7 @@ export type LabelTier = "all" | "major" | "none";
 
 /**
  * 按倍率决定文字显示档位。藏的是字不是信息：色块、边框、状态色都留着，
- * 6 像素的字不是「小一号的信息」，是噪点。
+ * 6 像素的字不是“小一号的信息”，是噪点。
  * 实现用 color: transparent 而非 display: none，屏幕阅读器用户不经历缩放。
  */
 export function labelTier(scale: number): LabelTier {
@@ -196,7 +198,7 @@ export function labelTier(scale: number): LabelTier {
 
 /**
  * 自动适应的缩放下限按档位给，两档与 labelTier 的阈值故意绑在一起：
- * 下限一旦落到档位之下，自动适应就会把「字全没了」的画面当成合适的初始视口。
+ * 下限一旦落到档位之下，自动适应就会把“字全没了”的画面当成合适的初始视口。
  * page 取 0.45：取 0.62 要切掉近 300px，最后两道得平移才看得见。
  */
 export function fitFloor(variant: "page" | "panel"): number {
@@ -204,7 +206,7 @@ export function fitFloor(variant: "page" | "panel"): number {
 }
 
 /**
- * 网格一格在屏幕上占多少像素。不做「缩小时换更粗的格」那套 LOD：
+ * 网格一格在屏幕上占多少像素。不做“缩小时换更粗的格”那套 LOD：
  * 最小倍率 0.2 × CELL = 32px 本来就够清楚，而 LOD 会让间距在 [T, 2T) 里来回跳。
  */
 export function gridStepScreen(scale: number): number {

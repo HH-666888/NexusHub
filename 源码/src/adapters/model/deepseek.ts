@@ -191,7 +191,7 @@ function assertConfigured(endpoint: ModelEndpoint) {
   if (!endpoint.apiKey) {
     throw new Error(
       "缺少模型密钥。请复制 源码/.env.example 为 源码/.env.local 并填入 DEEPSEEK_API_KEY，" +
-        "或到「设置 → 模型接入」里配置自己的密钥。",
+        "或到“设置 → 模型接入”里配置自己的密钥。",
     );
   }
 }
@@ -274,7 +274,7 @@ async function* stream(
     buffer += decoder.decode(chunk as Uint8Array, { stream: true });
 
     // SSE 以空行分隔事件；只处理完整行，残行留在缓冲区等下一块。
-  // 流式响应的用量只在最后一个数据块里出现。
+    // 流式响应的用量只在最后一个数据块里出现。
     const lines = buffer.split("\n");
     buffer = lines.pop() ?? "";
 

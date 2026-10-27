@@ -3,12 +3,17 @@
 import { tintVarAt } from "@/core/domain/appearance";
 import { explainAuthority } from "@/core/pipeline/authority";
 import type { PipelineNode } from "@/core/pipeline/graph";
-import { describeTrace, nodeMetrics, nodeStatusLabel, type PathTrace } from "@/core/pipeline/graph";
+import {
+  describeTrace,
+  nodeMetrics,
+  nodeStatusLabel,
+  type PathTrace,
+} from "@/core/pipeline/graph";
 import { STAGE_MAP, type StageId } from "@/core/pipeline/stages";
 
 /**
  * 工序详情：点画布上的一道工序，这里展开它。
- * 画布只能表达状态和关系，「这一道为什么存在」是句子，只能写出来。
+ * 画布只能表达状态和关系，“这一道为什么存在”是句子，只能写出来。
  */
 
 export interface StageDetailProps {
@@ -28,14 +33,17 @@ export function StageDetail({ node, trace, onClose }: StageDetailProps) {
     <div
       data-stage-detail
       // 画布外层挂着拖拽的指针事件，面板要收回事件 ——
-        // 否则在面板上按下会开始平移画布，关闭按钮也点不准。
+      // 否则在面板上按下会开始平移画布，关闭按钮也点不准。
       className="pointer-events-auto absolute bottom-4 left-4 w-80 rounded-xl border bg-[var(--color-surface)]/95 p-3.5 backdrop-blur"
       style={{ borderColor: `rgb(${tint} / 0.4)` }}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className="font-mono text-[10.5px] font-semibold" style={{ color: `rgb(${tint})` }}>
+            <span
+              className="font-mono text-[10.5px] font-semibold"
+              style={{ color: `rgb(${tint})` }}
+            >
               {String(node.order).padStart(2, "0")}
             </span>
             <span className="text-[14px] font-medium text-slate-100">{node.name}</span>
@@ -46,7 +54,9 @@ export function StageDetail({ node, trace, onClose }: StageDetailProps) {
               {nodeStatusLabel(node)}
             </span>
           </div>
-          <div className="mt-1 font-mono text-[10.5px] text-slate-500">{node.artifact}</div>
+          <div className="mt-1 font-mono text-[10.5px] text-slate-500">
+            {node.artifact}
+          </div>
         </div>
         <button
           type="button"
@@ -59,7 +69,9 @@ export function StageDetail({ node, trace, onClose }: StageDetailProps) {
       </div>
 
       {/* 原理：这一道为什么存在 */}
-      <p className="mt-2.5 text-[11.5px] leading-relaxed text-slate-400">{node.rationale}</p>
+      <p className="mt-2.5 text-[11.5px] leading-relaxed text-slate-400">
+        {node.rationale}
+      </p>
 
       {/* 权限 */}
       <div className="mt-2.5 border-t border-[var(--color-border-soft)] pt-2.5">
@@ -75,7 +87,7 @@ export function StageDetail({ node, trace, onClose }: StageDetailProps) {
           >
             {node.gateActive
               ? "这一步会停下来问人，答完才继续。"
-              : "⚠️ 这一步声明了要人点头，但当前设置是先放行 —— 模型会替你猜，错了要到验收才发现。"}
+              : "这一步声明了要人点头，但当前设置是先放行 —— 模型会替你猜，错了要到验收才发现。"}
           </div>
         )}
       </div>

@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { closeTempDb, migrateTempDb, seedUser, setupTempEnv } from "../adapters/fixture";
+import {
+  closeTempDb,
+  migrateTempDb,
+  seedUser,
+  setupTempEnv,
+} from "../adapters/fixture";
 
 /**
  * 保护按文件名读 json 产物：answers.json 比 spec.json 新时，读规格仍要拿到规格。
@@ -46,10 +51,13 @@ const saveRaw = (name: string, content: string) =>
   fsArtifactStore.save({ runId, kind: "json", path: `${runId}/${name}`, content });
 
 describe("按文件名读 json 产物", () => {
-  it("【关键】answers.json 比 spec.json 新时，读 spec.json 仍然拿到**规格**", async () => {
+  it("answers.json 比 spec.json 新时，读 spec.json 仍然拿到**规格**", async () => {
     await save("spec.json", { goal: "番茄钟", questions: ["要不要提示音？"] });
     await new Promise((r) => setTimeout(r, 3)); // 让 answers.json 的 createdAt 更大
-    await save("answers.json", { runId, answers: [{ question: "要不要提示音？", answer: "要" }] });
+    await save("answers.json", {
+      runId,
+      answers: [{ question: "要不要提示音？", answer: "要" }],
+    });
 
     const spec = await readJsonArtifact<Spec>(runId, "spec.json");
     expect(spec).not.toBeNull();
@@ -59,7 +67,7 @@ describe("按文件名读 json 产物", () => {
     expect(spec as unknown as { answers?: unknown }).not.toHaveProperty("answers");
   });
 
-  it("★ 反例：直接 findLatest 会拿到答案那份 —— 这正是当初那个 bug", async () => {
+  it("反例：直接 findLatest 会拿到答案那份 —— 这正是当初那个 bug", async () => {
     // 把坑本身钉在测试里：将来有人想换回 findLatest，这里告诉他为什么不能。
     const latest = await fsArtifactStore.findLatest(runId, "json");
     expect(latest).not.toBeNull();
@@ -91,7 +99,7 @@ describe("需要区分失败原因时（loadJsonArtifact）", () => {
     expect(r).toEqual({ ok: false, reason: "missing" });
   });
 
-  it("文件在但内容坏了 → bad-json（接口据此回 500，而不是说「没有规格」）", async () => {
+  it("文件在但内容坏了 → bad-json（接口据此回 500，而不是说“没有规格”）", async () => {
     await saveRaw("bad.json", "{{{");
     const r = await loadJsonArtifact<Spec>(runId, "bad.json");
     expect(r).toEqual({ ok: false, reason: "bad-json" });

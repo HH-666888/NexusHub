@@ -104,7 +104,7 @@ describe("一级行：永远实体，永远在最上面", () => {
   });
 });
 
-describe("占位行：让用户看出「这里将来会有东西」", () => {
+describe("占位行：让用户看出“这里将来会有东西”", () => {
   it("一级下面还没有二级子节点时，必须补一行 placeholder", () => {
     const rows = toOutline([AGENT]);
     expect(rows).toHaveLength(2);
@@ -134,7 +134,7 @@ describe("占位行：让用户看出「这里将来会有东西」", () => {
     expect(rows[1].id).not.toBe(AGENT.id);
   });
 
-  it("到点语义在清单上的样子：seq 5 是「一级 + 占位」，seq 15 变成「一级 + 规格化」", () => {
+  it("到点语义在清单上的样子：seq 5 是“一级 + 占位”，seq 15 变成“一级 + 规格化”", () => {
     // 画布与清单同步：卡片没冒出来时清单是虚线行，出生后替换成真行。
     const log = stageLog();
     expect(ids(toOutline(projectAt(log, 5)))).toEqual(["agent-1", "agent-1__pending"]);
@@ -298,7 +298,7 @@ function checkEvent(seq: number, failNames: readonly string[] = []): RawEvent {
   };
 }
 
-describe("★ 修 bug：叶子二级行显示自己的状态", () => {
+describe("修 bug：叶子二级行显示自己的状态", () => {
   it("叶子（没有下级）用自身状态：done / failed / running 各造一个", () => {
     // 这就是 bug 原样：三个点自身状态各不相同、都没有下级，旧实现一律汇总成 pending。
     const leafDone = point("leaf-done", "agent-1", 2, "done", 10);
@@ -351,7 +351,7 @@ describe("★ 修 bug：叶子二级行显示自己的状态", () => {
     expect(findRow(rows, "mix-rolled").status).toBe("running");
   });
 
-  it("★ 端到端：只有 spec + check 事件的日志，七个检查项在清单上不再是 pending", () => {
+  it("端到端：只有 spec + check 事件的日志，七个检查项在清单上不再是 pending", () => {
     // 端到端一次走通，中间不手搓任务点：planningFromRun → projectAt → toOutline。
     // check 里 pass:false 的那项出生即 failed；修复前七项会被一律显示成 pending。
     const failing = REAL_CHECK_NAMES[2];
@@ -412,7 +412,7 @@ describe("纯函数", () => {
 // 三件会安静错掉的事：实体行缺 id、占位行给了 id、两边 id 规则漂开。
 // 第三种最坏：有反应，但跳到错的节点上。
 
-describe("★ canvasNodeId：实体行给自己的 id，占位行给 null", () => {
+describe("canvasNodeId：实体行给自己的 id，占位行给 null", () => {
   it("一级行 / 二级实体行的 canvasNodeId 就是它自己的 id", () => {
     const rows = toOutline(projectAt(richLog(), 100));
     for (const row of rows) {
@@ -451,7 +451,7 @@ describe("★ canvasNodeId：实体行给自己的 id，占位行给 null", () =
     expect(rows.filter((r) => !r.placeholder).length).toBeGreaterThan(0);
   });
 
-  it("★ 与画布对账：七个检查项在清单里的 canvasNodeId，就是画布上那七个方块的 id", () => {
+  it("与画布对账：七个检查项在清单里的 canvasNodeId，就是画布上那七个方块的 id", () => {
     // 清单与画布的 id 来自两条代码路径，这里逐字对账，防止只改一边。
     // 用法也是产品代码那一步：checksToChildren(check 事件的 results)。
     const results: CheckResult[] = REAL_CHECK_NAMES.map((name) => ({
@@ -462,7 +462,11 @@ describe("★ canvasNodeId：实体行给自己的 id，占位行给 null", () =
     const log = planningFromRun({
       stages: STAGE_INPUT,
       events: [
-        { seq: 20, kind: "check", payload: { kind: "check", results, summary: summarizeChecks(results) } },
+        {
+          seq: 20,
+          kind: "check",
+          payload: { kind: "check", results, summary: summarizeChecks(results) },
+        },
       ],
     });
 

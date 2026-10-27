@@ -3,12 +3,7 @@
  * 未接入的工序恒为 pending，不能因为排在当前阶段之前就显示成已通过。
  */
 
-import {
-  STAGES,
-  STAGE_MAP,
-  type StageId,
-  type StageStatus,
-} from "./stages";
+import { STAGES, STAGE_MAP, type StageId, type StageStatus } from "./stages";
 
 export interface RunProgressInput {
   stage: StageId;

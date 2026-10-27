@@ -226,11 +226,7 @@ body {
 /* 更弱的一档：只染边和一点点底色，不抢内容 */
 .tint-soft {
   border-color: rgb(var(--tint) / 0.22) !important;
-  background-image: linear-gradient(
-    180deg,
-    rgb(var(--tint) / 0.07),
-    transparent
-  );
+  background-image: linear-gradient(180deg, rgb(var(--tint) / 0.07), transparent);
 }
 
 /* 彩色文字 */
@@ -322,16 +318,8 @@ body {
   display: block;
   /* repeating-linear-gradient 画网格：无图片请求，纯计算出的图案 */
   background-image:
-    repeating-linear-gradient(
-      to right,
-      var(--grid-line) 0 1px,
-      transparent 1px 48px
-    ),
-    repeating-linear-gradient(
-      to bottom,
-      var(--grid-line) 0 1px,
-      transparent 1px 48px
-    );
+    repeating-linear-gradient(to right, var(--grid-line) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(to bottom, var(--grid-line) 0 1px, transparent 1px 48px);
 }
 
 /* 光晕强度随主题衰减。浅色底上一个满强度的光斑会糊成一片白 */
@@ -366,7 +354,7 @@ body {
 }
 
 /* 流水线：节点依次点亮，循环成波 */
-  /* 把点亮做成覆盖层的 opacity 变化，
+/* 把点亮做成覆盖层的 opacity 变化，
      而不是改 background-color 或 box-shadow，后者每帧重绘。 */
 @keyframes node-on {
   0% {

@@ -33,7 +33,13 @@ const usage = (
   input: number,
   output: number,
   reasoning: number,
-): { inputTokens: number; outputTokens: number; reasoningTokens: number; cacheHitTokens: number; cacheMissTokens: number } => ({
+): {
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cacheHitTokens: number;
+  cacheMissTokens: number;
+} => ({
   inputTokens: input,
   outputTokens: output,
   reasoningTokens: reasoning,
@@ -60,7 +66,9 @@ describe("运行记录 · 基本读写", () => {
   });
 
   it("读不存在的 id → null（而不是抛错）", async () => {
-    expect(await sqliteRunStore.findById("00000000-0000-0000-0000-000000000000")).toBeNull();
+    expect(
+      await sqliteRunStore.findById("00000000-0000-0000-0000-000000000000"),
+    ).toBeNull();
   });
 
   it("listByUser 只列自己的，且按创建时间倒序", async () => {
@@ -86,8 +94,8 @@ describe("运行记录 · 基本读写", () => {
   });
 });
 
-describe("运行记录 · 用量是累加的（★ 这条挡过一次真实故障）", () => {
-  it("【关键】连续两次 update，用量是**两次之和**", async () => {
+describe("运行记录 · 用量是累加的（这条挡过一次真实故障）", () => {
+  it("连续两次 update，用量是**两次之和**", async () => {
     const id = await newRun("累加");
     await sqliteRunStore.update(id, { usage: usage(100, 200, 50) });
     await sqliteRunStore.update(id, { usage: usage(300, 400, 150) });
@@ -98,7 +106,7 @@ describe("运行记录 · 用量是累加的（★ 这条挡过一次真实故�
     expect(run!.usage.reasoningTokens).toBe(200);
   });
 
-  it("★ 反例：只更新一次时**不许**被放大（累加不能变成翻倍）", async () => {
+  it("反例：只更新一次时**不许**被放大（累加不能变成翻倍）", async () => {
     const id = await newRun("一次");
     await sqliteRunStore.update(id, { usage: usage(7, 8, 9) });
 
@@ -106,7 +114,7 @@ describe("运行记录 · 用量是累加的（★ 这条挡过一次真实故�
     expect(run!.usage).toEqual(usage(7, 8, 9));
   });
 
-  it("★ 反例：不带 usage 的更新（只改状态）不许动用量", async () => {
+  it("反例：不带 usage 的更新（只改状态）不许动用量", async () => {
     const id = await newRun("只改状态");
     await sqliteRunStore.update(id, { usage: usage(5, 6, 7) });
     await sqliteRunStore.update(id, { status: "done" });
@@ -116,7 +124,7 @@ describe("运行记录 · 用量是累加的（★ 这条挡过一次真实故�
     expect(run!.status).toBe("done");
   });
 
-  it("【关键】totalCostCny 反而是**覆盖** —— 调用方给的就是累计值", async () => {
+  it("totalCostCny 反而是**覆盖** —— 调用方给的就是累计值", async () => {
     const id = await newRun("金额");
     await sqliteRunStore.update(id, { totalCostCny: 0.1 });
     await sqliteRunStore.update(id, { totalCostCny: 0.25 });
@@ -136,7 +144,13 @@ describe("运行记录 · 归属", () => {
   it("本人删除成功，且级联删掉它的会话/事件（外键真的生效）", async () => {
     const id = await newRun("删得掉");
     await sqliteEventStore.appendMany([
-      { runId: id, seq: 1, at: 1, kind: "phase", payload: { kind: "phase", phase: "spec", label: "x" } },
+      {
+        runId: id,
+        seq: 1,
+        at: 1,
+        kind: "phase",
+        payload: { kind: "phase", phase: "spec", label: "x" },
+      },
     ]);
     expect(await sqliteEventStore.countByRun(id)).toBe(1);
 
@@ -219,21 +233,41 @@ describe("运行事件", () => {
   it("appendMany 落库、listByRun 按 seq 回放，deleteByRun 清空", async () => {
     const id = await newRun("事件");
     await sqliteEventStore.appendMany([
-      { runId: id, seq: 1, at: 10, kind: "phase", payload: { kind: "phase", phase: "spec", label: "第一步" } },
-      { runId: id, seq: 2, at: 20, kind: "reasoning", payload: { kind: "reasoning", delta: "想了" } },
-      { runId: id, seq: 3, at: 30, kind: "text", payload: { kind: "text", delta: "写了" } },
+      {
+        runId: id,
+        seq: 1,
+        at: 10,
+        kind: "phase",
+        payload: { kind: "phase", phase: "spec", label: "第一步" },
+      },
+      {
+        runId: id,
+        seq: 2,
+        at: 20,
+        kind: "reasoning",
+        payload: { kind: "reasoning", delta: "想了" },
+      },
+      {
+        runId: id,
+        seq: 3,
+        at: 30,
+        kind: "text",
+        payload: { kind: "text", delta: "写了" },
+      },
     ]);
 
     const rows = await sqliteEventStore.listByRun(id);
     expect(rows.map((r) => r.kind)).toEqual(["phase", "reasoning", "text"]);
-    expect(rows.map((r) => r.seq)).toEqual([...rows.map((r) => r.seq)].sort((a, b) => a - b));
+    expect(rows.map((r) => r.seq)).toEqual(
+      [...rows.map((r) => r.seq)].sort((a, b) => a - b),
+    );
     expect(rows[1].payload).toEqual({ kind: "reasoning", delta: "想了" });
 
     expect(await sqliteEventStore.deleteByRun(id)).toBe(3);
     expect(await sqliteEventStore.countByRun(id)).toBe(0);
   });
 
-  it("★ 反例：只属于这条运行的事件才读得到（别人的事件不许串进来）", async () => {
+  it("反例：只属于这条运行的事件才读得到（别人的事件不许串进来）", async () => {
     const mine = await newRun("我的事件");
     const theirs = await sqliteRunStore.create({
       userId: otherId,
@@ -241,10 +275,22 @@ describe("运行事件", () => {
       workflowVersion: "v1",
     });
     await sqliteEventStore.appendMany([
-      { runId: mine, seq: 1, at: 1, kind: "phase", payload: { kind: "phase", phase: "spec", label: "我的" } },
+      {
+        runId: mine,
+        seq: 1,
+        at: 1,
+        kind: "phase",
+        payload: { kind: "phase", phase: "spec", label: "我的" },
+      },
     ]);
     await sqliteEventStore.appendMany([
-      { runId: theirs.id, seq: 1, at: 1, kind: "phase", payload: { kind: "phase", phase: "spec", label: "别人的" } },
+      {
+        runId: theirs.id,
+        seq: 1,
+        at: 1,
+        kind: "phase",
+        payload: { kind: "phase", phase: "spec", label: "别人的" },
+      },
     ]);
 
     const rows = await sqliteEventStore.listByRun(mine);

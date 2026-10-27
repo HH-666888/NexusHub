@@ -176,10 +176,7 @@ export function parseExport(raw: unknown): NexusExport | null {
       exportedAt 缺失时从 run.createdAt 推，而不是写 1970：
       推出来的那个值至少是真的发生过的时间。
     */
-    exportedAt: str(
-      raw.exportedAt,
-      new Date(num(rawRun.createdAt, 0)).toISOString(),
-    ),
+    exportedAt: str(raw.exportedAt, new Date(num(rawRun.createdAt, 0)).toISOString()),
     run: {
       id: runId,
       prompt: runPrompt,

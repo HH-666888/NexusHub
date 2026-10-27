@@ -86,7 +86,7 @@ describe("不传 levels 时与以前逐字段相同", () => {
     expect(after.bounds).toEqual(before.bounds);
   });
 
-  it("不传 levels 时 levelAt 就是「depth 0 用 root，其余用 child」", () => {
+  it("不传 levels 时 levelAt 就是“depth 0 用 root，其余用 child”", () => {
     expect(levelAt(FOREST_GEOMETRY, 0)).toEqual({
       ...FOREST_GEOMETRY.root,
       // root 上没有 gapY，它只能来自 child
@@ -109,7 +109,7 @@ describe("三层树的几何：第 1 层用主卡尺寸", () => {
     expect(LAID.roots).toHaveLength(1);
   });
 
-  it("★ 六道工序每个都是 240×156 —— 这是这次改动的核心目的", () => {
+  it("六道工序每个都是 240×156 —— 这是这次改动的核心目的", () => {
     // 改之前 depth>=1 一律取 child，六张工序卡被画成执行点那么大；
     // 这条钉住第 1 层回到主卡尺寸，层级感不再消失。
     for (const id of SIX) {
@@ -144,14 +144,16 @@ describe("三层树的几何：第 1 层用主卡尺寸", () => {
     }
   });
 
-  it("★ 三层树里任意两个方块都不重叠", () => {
+  it("三层树里任意两个方块都不重叠", () => {
     // 尺寸一改，measure 与 place 最容易对不上，表现是方块叠在一起；
     // 这里查所有两两组合，不挑层级。
     const all = LAID.nodes;
     expect(all).toHaveLength(16); // 1 + 6 + 9，先把节点数钉住
     for (let i = 0; i < all.length; i++) {
       for (let j = i + 1; j < all.length; j++) {
-        expect(overlaps(all[i], all[j]), `${all[i].id} 和 ${all[j].id} 叠了`).toBe(false);
+        expect(overlaps(all[i], all[j]), `${all[i].id} 和 ${all[j].id} 叠了`).toBe(
+          false,
+        );
       }
     }
   });
@@ -174,10 +176,9 @@ describe("六道工序排成一行", () => {
 
     expect([...stages].sort((a, b) => a.x - b.x).map((n) => n.id)).toEqual(SIX);
     for (let i = 1; i < stages.length; i++) {
-      expect(
-        stages[i].x,
-        `${stages[i].id} 没有排在前一道的右边`,
-      ).toBeGreaterThan(stages[i - 1].x);
+      expect(stages[i].x, `${stages[i].id} 没有排在前一道的右边`).toBeGreaterThan(
+        stages[i - 1].x,
+      );
     }
   });
 
@@ -189,7 +190,7 @@ describe("六道工序排成一行", () => {
     expect((left + right) / 2).toBeCloseTo(root.x + root.w / 2, 6);
   });
 
-  it("不传 levels 时同一棵树会折成 3 行 —— 「一行 6 个」是 levels 给的", () => {
+  it("不传 levels 时同一棵树会折成 3 行 —— “一行 6 个”是 levels 给的", () => {
     const flat = layoutForest(TREE, FOREST_GEOMETRY);
     expect(new Set(SIX.map((id) => flat.byId.get(id)!.y)).size).toBe(3);
   });
@@ -239,15 +240,21 @@ describe("TREE_LEVELS：画布真正用到的那份三层几何", () => {
 
     expect(laid.roots).toHaveLength(1);
     const root = laid.byId.get("agent-1")!;
-    expect({ w: root.w, h: root.h, depth: root.depth }).toEqual({ w: 240, h: 156, depth: 0 });
+    expect({ w: root.w, h: root.h, depth: root.depth }).toEqual({
+      w: 240,
+      h: 156,
+      depth: 0,
+    });
 
     const stages = SIX.map((id) => laid.byId.get(id)!);
-    for (const n of stages) expect({ id: n.id, w: n.w, h: n.h }).toEqual({ id: n.id, w: 240, h: 156 });
+    for (const n of stages)
+      expect({ id: n.id, w: n.w, h: n.h }).toEqual({ id: n.id, w: 240, h: 156 });
     expect(new Set(stages.map((n) => n.y)).size, "六道工序被折成了多行").toBe(1);
 
     const kids = SIX.flatMap((s) => byStage[s] ?? []).map((k) => laid.byId.get(k.id)!);
     expect(kids.length).toBe(9);
-    for (const n of kids) expect({ id: n.id, w: n.w, h: n.h }).toEqual({ id: n.id, w: 232, h: 112 });
+    for (const n of kids)
+      expect({ id: n.id, w: n.w, h: n.h }).toEqual({ id: n.id, w: 232, h: 112 });
 
     // 六道工序自己那一行是 6x240 + 5x28，没有子节点时量最干净。
     // 有子树之后 measure 会按子树宽把兄弟撑开，见下一条。
@@ -256,9 +263,10 @@ describe("TREE_LEVELS：画布真正用到的那份三层几何", () => {
       levels: TREE_LEVELS,
     });
     const bareStages = SIX.map((id) => bare.byId.get(id)!);
-    expect(Math.max(...bareStages.map((n) => n.x + n.w)) - Math.min(...bareStages.map((n) => n.x))).toBe(
-      1580,
-    );
+    expect(
+      Math.max(...bareStages.map((n) => n.x + n.w)) -
+        Math.min(...bareStages.map((n) => n.x)),
+    ).toBe(1580);
     expect(bare.bounds.w).toBe(1580);
 
     // 带上子树后这一行会被各自的子树宽撑开；这里钉的是不失控（总宽 <= 2450），
@@ -291,7 +299,10 @@ describe("levelAt 解析规则", () => {
   });
 
   it("深度不在 levels 里时整层退回 root / child", () => {
-    const g: ForestGeometry = { ...FOREST_GEOMETRY, levels: { 1: { w: 999, perRow: 6 } } };
+    const g: ForestGeometry = {
+      ...FOREST_GEOMETRY,
+      levels: { 1: { w: 999, perRow: 6 } },
+    };
 
     expect(levelAt(g, 0)).toEqual({
       ...FOREST_GEOMETRY.root,

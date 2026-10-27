@@ -1,5 +1,5 @@
 /**
- * 规划日志：树是一段只许追加的事件历史，「某一刻的树」是它到 seq 的投影。
+ * 规划日志：树是一段只许追加的事件历史，“某一刻的树”是它到 seq 的投影。
  * 只增不改，任何时刻的画面都能由 (日志, seq) 重放；本层不落盘。
  */
 
@@ -85,7 +85,7 @@ export function projectAt(log: readonly PlanningEvent[], seq: number): TaskPoint
   return out;
 }
 
-/** 日志里最大的 seq，空日志返回 0，即「现在」的哨兵值 */
+/** 日志里最大的 seq，空日志返回 0，即“现在”的哨兵值 */
 export function maxSeq(log: readonly PlanningEvent[]): number {
   let max = 0;
   for (const ev of log) {

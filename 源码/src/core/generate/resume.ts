@@ -43,7 +43,10 @@ export function planModuleResume(
       continue;
     }
     // 有文件但哈希对不上：如实报原因，用户会看到钱又花了一次
-    rejected.push({ moduleId: id, reason: "产出文件的内容与登记里的哈希对不上（可能被改过或写了一半）" });
+    rejected.push({
+      moduleId: id,
+      reason: "产出文件的内容与登记里的哈希对不上（可能被改过或写了一半）",
+    });
     build.push(id);
   }
 

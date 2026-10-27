@@ -106,7 +106,9 @@ export async function POST(req: Request): Promise<Response> {
   try {
     raw = JSON.parse(text);
   } catch (err) {
-    return reject(`不是合法的 JSON：${err instanceof Error ? err.message : String(err)}`);
+    return reject(
+      `不是合法的 JSON：${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   const bundle = parseExport(raw);
@@ -115,17 +117,17 @@ export async function POST(req: Request): Promise<Response> {
   // stage/status 需额外复核：parseExport 只补缺失值，未知值会画出不存在的工序树。
   // 明确拒绝比画出一棵假树强。
   if (!isStageId(bundle.run.stage)) {
-    return reject(`导出文件里的 stage 不是合法工序：「${bundle.run.stage}」`);
+    return reject(`导出文件里的 stage 不是合法工序：“${bundle.run.stage}”`);
   }
   if (!Object.prototype.hasOwnProperty.call(RUN_STATUS_LABEL, bundle.run.status)) {
-    return reject(`导出文件里的 status 不是合法状态：「${bundle.run.status}」`);
+    return reject(`导出文件里的 status 不是合法状态：“${bundle.run.status}”`);
   }
   const status = bundle.run.status as RunStatus;
 
   const artifactKinds: ArtifactKind[] = [];
   for (const a of bundle.artifacts) {
     if (!ARTIFACT_KINDS.has(a.kind)) {
-      return reject(`产物的 kind 不认识：「${a.kind}」（只认识 html / json / text）`);
+      return reject(`产物的 kind 不认识：“${a.kind}”（只认识 html / json / text）`);
     }
     artifactKinds.push(a.kind as ArtifactKind);
   }

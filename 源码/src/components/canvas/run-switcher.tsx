@@ -70,10 +70,13 @@ export function RunSwitcher({
     return (
       <div className="flex items-center gap-2 border-b border-[var(--color-border-soft)] px-4 py-2 text-[11.5px] text-slate-500">
         <span>还没有任何构建记录。</span>
-        <Link href="/" className="text-slate-400 underline-offset-2 hover:text-slate-200 hover:underline">
+        <Link
+          href="/"
+          className="text-slate-400 underline-offset-2 hover:text-slate-200 hover:underline"
+        >
           在上面输入一句话
         </Link>
-        <span>点「↑」就开始。</span>
+        <span>点“↑”就开始。</span>
         {/* 空状态里也要有导入：换一台电脑打开就是这个样子，那时最需要它 */}
         <ImportForm align="inline" />
       </div>

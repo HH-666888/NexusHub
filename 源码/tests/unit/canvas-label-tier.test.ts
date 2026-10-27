@@ -22,7 +22,7 @@ describe("labelTier", () => {
     expect(labelTier(MAX_SCALE)).toBe("all");
   });
 
-  it("阈值本身就是「全都显示」那一档 —— 边界取闭区间", () => {
+  it("阈值本身就是“全都显示”那一档 —— 边界取闭区间", () => {
     // 边界写成开区间时，正好 0.62 会突然没字，而工作台面板适应后正是 0.62。
     expect(labelTier(LABEL_MINOR_SCALE)).toBe("all");
     expect(labelTier(LABEL_MAJOR_SCALE)).toBe("major");
@@ -61,12 +61,12 @@ describe("labelTier", () => {
 // 下限决定自动适应停在哪一档：没有它，1440 屏四分布局会缩到字全没。
 // 最后两条用真实几何与真实屏宽算一遍，改了面板宽度或几何就会红。
 describe("fitFloor", () => {
-  it("面板档留到「次要文字」那一档，整页档留到「工序名」那一档", () => {
+  it("面板档留到“次要文字”那一档，整页档留到“工序名”那一档", () => {
     expect(fitFloor("panel")).toBe(LABEL_MINOR_SCALE);
     expect(fitFloor("page")).toBe(LABEL_MAJOR_SCALE);
   });
 
-  it("下限本身不会落进「字全没了」那一档", () => {
+  it("下限本身不会落进“字全没了”那一档", () => {
     // 下限若落在档位下方，自动适应会把一个没有字的画面当成合适视口。
     expect(labelTier(fitFloor("panel"))).toBe("all");
     expect(labelTier(fitFloor("page"))).toBe("major");
@@ -97,7 +97,7 @@ describe("fitFloor", () => {
     expect(drawnW - canvasW).toBeLessThan(120);
   });
 
-  it("宽屏上不该被下限碰到 —— 1920 屏仍然是「装下整条 + 字全在」", () => {
+  it("宽屏上不该被下限碰到 —— 1920 屏仍然是“装下整条 + 字全在”", () => {
     const bounds = pipelineBounds(STAGES.length, WIDE_GEOMETRY);
     const canvasW = 1920 - 272 - 352;
     const vp = fitViewport(bounds, canvasW, 900, 56, fitFloor("page"));
@@ -140,9 +140,15 @@ describe("看全 vs 默认：同一条下限的两个出口", () => {
     expect(tree.w * byDefault.scale).toBeGreaterThan(canvasW);
   });
 
-  it("看全不会缩到「看不见」那一档以下 —— MIN_SCALE 仍然兜着底", () => {
+  it("看全不会缩到“看不见”那一档以下 —— MIN_SCALE 仍然兜着底", () => {
     // 下限传 0 不等于无限制：clampScale 的 0.2 全局夹紧仍在，防点了看全后一片空白。
-    const tiny = fitViewport({ x: 0, y: 0, w: 20000, h: 20000 }, canvasW, canvasH, 56, 0);
+    const tiny = fitViewport(
+      { x: 0, y: 0, w: 20000, h: 20000 },
+      canvasW,
+      canvasH,
+      56,
+      0,
+    );
     expect(tiny.scale).toBeGreaterThanOrEqual(MIN_SCALE);
   });
 });

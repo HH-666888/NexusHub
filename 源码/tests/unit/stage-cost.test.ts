@@ -62,7 +62,7 @@ describe("分阶段花费 · 归集", () => {
     expect(by.build?.outputTokens).toBe(700);
   });
 
-  it("不同阶段分开记 —— 这才是「钱花在哪一步」", () => {
+  it("不同阶段分开记 —— 这才是“钱花在哪一步”", () => {
     const by = groupCostByStage([
       rec({ stage: "spec", costCny: 0.005 }),
       rec({ stage: "build", costCny: 0.02 }),
@@ -77,7 +77,7 @@ describe("分阶段花费 · 归集", () => {
     expect(by.build).toBeUndefined();
   });
 
-  it("认不出的阶段名丢掉，不塞进「其它」桶", () => {
+  it("认不出的阶段名丢掉，不塞进“其它”桶", () => {
     // 探测脚本这类没有运行归属的调用会带奇怪或空的 stage。
     // 混进来会让各阶段之和对不上总数，账对不上比少几个数字更麻烦。
     const by = groupCostByStage([
@@ -90,7 +90,7 @@ describe("分阶段花费 · 归集", () => {
     expect(Object.keys(by)).toEqual(["build"]);
   });
 
-  it("累计耗时也归集 —— 用来解释「为什么这一步慢」", () => {
+  it("累计耗时也归集 —— 用来解释“为什么这一步慢”", () => {
     const by = groupCostByStage([
       rec({ stage: "build", latencyMs: 1000 }),
       rec({ stage: "build", latencyMs: 2500 }),
@@ -124,8 +124,8 @@ describe("分阶段花费 · 对账", () => {
 });
 
 describe("分阶段花费 · 显示", () => {
-  it("【关键】没花过钱时返回 null，不返回 ¥0.0000", () => {
-  // 没花过钱返回 null，而不是 ¥0.0000：前者是事实，后者是编的。
+  it("没花过钱时返回 null，不返回 ¥0.0000", () => {
+    // 没花过钱返回 null，而不是 ¥0.0000：前者是事实，后者是编的。
     expect(describeStageCost({}, "build")).toBeNull();
     const zero = groupCostByStage([rec({ stage: "build", costCny: 0 })]);
     expect(describeStageCost(zero, "build")).toBeNull();

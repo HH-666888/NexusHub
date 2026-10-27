@@ -24,14 +24,13 @@ describe("流水线进度推算", () => {
 
   it("每道工序都有实现状态，且取值合法", () => {
     for (const s of STAGES) {
-      expect(
-        ["wired", "direct", "planned"],
-        `工序 ${s.id} 的实现状态不合法`,
-      ).toContain(s.implementation);
+      expect(["wired", "direct", "planned"], `工序 ${s.id} 的实现状态不合法`).toContain(
+        s.implementation,
+      );
     }
   });
 
-  it("【关键】未接入的工序永远不能显示成「已通过」", () => {
+  it("未接入的工序永远不能显示成“已通过”", () => {
     const planned = STAGES.filter((s) => s.implementation === "planned");
     expect(planned.length).toBeGreaterThan(0); // 当前确实还有没接入的
 
@@ -51,7 +50,7 @@ describe("流水线进度推算", () => {
     }
   });
 
-  it("运行完成时，已接入且已跑过的工序才显示「已通过」", () => {
+  it("运行完成时，已接入且已跑过的工序才显示“已通过”", () => {
     const done = computeStageStatuses({ stage: "verify", status: "done" });
 
     // 规格化、构建、验收都已接入，应当显示已通过。
@@ -72,7 +71,7 @@ describe("流水线进度推算", () => {
     expect(done.assemble).toBe("pending");
   });
 
-  it("【兜底断言】凡是标为未接入的工序，无论跑到哪一步都必须是 pending", () => {
+  it("兜底断言凡是标为未接入的工序，无论跑到哪一步都必须是 pending", () => {
     // 上一条写死了具体工序，会随实现推进过期。
     // 这一条按 implementation 动态取：没接入的工序永远不能显示成已通过。
     const planned = STAGES.filter((s) => s.implementation === "planned");
@@ -112,7 +111,7 @@ describe("流水线进度推算", () => {
     expect(failed.verify).toBe("pending");
   });
 
-  it("需要人工介入时显示为「需人工」而不是失败", () => {
+  it("需要人工介入时显示为“需人工”而不是失败", () => {
     const paused = computeStageStatuses({ stage: "build", status: "paused" });
     expect(paused.build).toBe("blocked");
   });
@@ -152,7 +151,7 @@ describe("六阶段流水线定义", () => {
     });
   });
 
-  it("每个阶段都写明了「存在的理由」，且理由足够具体", () => {
+  it("每个阶段都写明了“存在的理由”，且理由足够具体", () => {
     for (const stage of STAGES) {
       expect(stage.rationale.length).toBeGreaterThan(15);
     }
@@ -173,7 +172,7 @@ describe("六阶段流水线定义", () => {
     }
   });
 
-  it("验收标准不得包含不可判定的措辞 —— 这是「可机器判定」的实质要求", () => {
+  it("验收标准不得包含不可判定的措辞 —— 这是“可机器判定”的实质要求", () => {
     // 界面美观、尽量流畅这类说法无法判定，一旦出现，第⑥阶段的自动验收就无从谈起
     const vague = [
       "尽量",
@@ -229,7 +228,7 @@ describe("回退回路（这是它不是瀑布模型的证据）", () => {
 });
 
 describe("人工门禁", () => {
-  it("全流程只有第一个阶段设人工门禁 —— 确认「什么算做完了」之后全自动", () => {
+  it("全流程只有第一个阶段设人工门禁 —— 确认“什么算做完了”之后全自动", () => {
     const gated = STAGES.filter((s) => s.humanGate).map((s) => s.id);
     expect(gated).toEqual(["spec"]);
   });
@@ -244,7 +243,7 @@ describe("失败归因四分类", () => {
     }
   });
 
-  it("四类失败都有各自的处置动作，且互不相同 —— 这是「分流」而非「无差别重试」", () => {
+  it("四类失败都有各自的处置动作，且互不相同 —— 这是“分流”而非“无差别重试”", () => {
     const actions = faults.map((f) => FAULT_ACTION[f]);
     for (const action of actions) {
       expect(action.length).toBeGreaterThan(5);
@@ -252,7 +251,7 @@ describe("失败归因四分类", () => {
     expect(new Set(actions).size).toBe(faults.length);
   });
 
-  it("环境错的处置动作明确要求「不调用模型」—— 这是省 token 的真正来源", () => {
+  it("环境错的处置动作明确要求“不调用模型”—— 这是省 token 的真正来源", () => {
     expect(FAULT_ACTION.environment).toContain("不调用模型");
   });
 
@@ -308,8 +307,8 @@ describe("isStageId", () => {
 // assemble 的三条验收标准要求真的把应用跑起来，而产物是单文件 HTML、没有沙箱。
 // 所以这一道如实标成 planned，并把原因写在 blockedBy 上。
 // 下面三条守语义边界：planned 必须说得出卡点，已接入的不许挂着过期原因。
-describe("★ blockedBy：未接入的工序必须说清卡在哪", () => {
-  it("所有 implementation === \"planned\" 的工序，blockedBy 必须存在且非空", () => {
+describe("blockedBy：未接入的工序必须说清卡在哪", () => {
+  it('所有 implementation === "planned" 的工序，blockedBy 必须存在且非空', () => {
     const planned = STAGES.filter((s) => s.implementation === "planned");
     // 前提：当前确实还有没接入的工序。都为 wired 时这组用例就成了空转
     expect(planned.length).toBeGreaterThan(0);
@@ -317,7 +316,7 @@ describe("★ blockedBy：未接入的工序必须说清卡在哪", () => {
     for (const s of planned) {
       expect(
         s.blockedBy,
-        `工序 ${s.id} 标着未接入，却没说卡在哪 —— 界面上只会剩一句「待规划」`,
+        `工序 ${s.id} 标着未接入，却没说卡在哪 —— 界面上只会剩一句“待规划”`,
       ).toBeTruthy();
       expect(
         (s.blockedBy ?? "").trim().length,
@@ -339,7 +338,7 @@ describe("★ blockedBy：未接入的工序必须说清卡在哪", () => {
     }
   });
 
-  it("assemble 的 blockedBy 里必须出现「沙箱」—— 卡点是它，就得说到它", () => {
+  it("assemble 的 blockedBy 里必须出现“沙箱”—— 卡点是它，就得说到它", () => {
     // toContain 而不是全等：那句话的措辞可以改，但"卡在哪"这件事不许被改掉
     expect(STAGE_MAP.assemble.blockedBy).toContain("沙箱");
   });

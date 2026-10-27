@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  byteLength,
-  hashContent,
-  isSafePathSegment,
-} from "@/core/domain/artifact";
+import { byteLength, hashContent, isSafePathSegment } from "@/core/domain/artifact";
 import { summarizeChecks, type CheckResult } from "@/core/domain/check";
 import { extractHtml, inspectArtifact } from "@/core/generate/prompt";
 
@@ -13,7 +9,8 @@ import { extractHtml, inspectArtifact } from "@/core/generate/prompt";
  */
 describe("提取 HTML", () => {
   it("标准的 ```html 代码块", () => {
-    const text = "好的，这是代码：\n```html\n<!DOCTYPE html>\n<html><body>hi</body></html>\n```\n希望有用！";
+    const text =
+      "好的，这是代码：\n```html\n<!DOCTYPE html>\n<html><body>hi</body></html>\n```\n希望有用！";
     const html = extractHtml(text);
     expect(html.startsWith("<!DOCTYPE html>")).toBe(true);
     expect(html.endsWith("</html>")).toBe(true);

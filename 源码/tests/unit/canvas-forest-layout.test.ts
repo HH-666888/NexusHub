@@ -43,7 +43,10 @@ describe("没有子树时与旧布局一致", () => {
     for (let i = 0; i < total; i++) {
       const old = nodeRect(i, total, WIDE_GEOMETRY);
       const now = laid.byId.get(SIX[i])!;
-      expect({ x: now.x, y: now.y, w: now.w, h: now.h }, `第 ${i + 1} 个节点变了`).toEqual(old);
+      expect(
+        { x: now.x, y: now.y, w: now.w, h: now.h },
+        `第 ${i + 1} 个节点变了`,
+      ).toEqual(old);
     }
   });
 
@@ -91,7 +94,9 @@ describe("一棵子树", () => {
     const parent = laid.byId.get("spec")!;
     for (const id of ["s1", "s2", "s3"]) {
       const kid = laid.byId.get(id)!;
-      expect(kid.y, `${id} 没有在父节点下面`).toBeGreaterThanOrEqual(parent.y + parent.h);
+      expect(kid.y, `${id} 没有在父节点下面`).toBeGreaterThanOrEqual(
+        parent.y + parent.h,
+      );
       expect(kid.depth).toBe(1);
       expect(kid.parentId).toBe("spec");
     }
@@ -142,7 +147,8 @@ describe("自动扩展", () => {
 
     const gapBefore =
       before.byId.get("c")!.x - (before.byId.get("b")!.x + before.byId.get("b")!.w);
-    const gapAfter = after.byId.get("c")!.x - (after.byId.get("b")!.x + after.byId.get("b")!.w);
+    const gapAfter =
+      after.byId.get("c")!.x - (after.byId.get("b")!.x + after.byId.get("b")!.w);
 
     expect(gapAfter, "兄弟没有被撑开 —— 子树会压到它身上").toBeGreaterThan(gapBefore);
   });
@@ -155,7 +161,9 @@ describe("自动扩展", () => {
       ],
       G,
     );
-    expect(overlaps(laid.byId.get("a")!.subtree, laid.byId.get("b")!.subtree)).toBe(false);
+    expect(overlaps(laid.byId.get("a")!.subtree, laid.byId.get("b")!.subtree)).toBe(
+      false,
+    );
   });
 
   it("六道工序都长出子树时，任意两棵都不重叠", () => {
@@ -169,7 +177,9 @@ describe("自动扩展", () => {
     const subs = laid.roots.map((r) => r.subtree);
     for (let i = 0; i < subs.length; i++) {
       for (let j = i + 1; j < subs.length; j++) {
-        expect(overlaps(subs[i], subs[j]), `第 ${i + 1} 棵和第 ${j + 1} 棵叠了`).toBe(false);
+        expect(overlaps(subs[i], subs[j]), `第 ${i + 1} 棵和第 ${j + 1} 棵叠了`).toBe(
+          false,
+        );
       }
     }
   });
@@ -187,7 +197,10 @@ describe("自动扩展", () => {
 
 describe("两层以上", () => {
   const deep: LayoutNode[] = [
-    { id: "spec", children: [{ id: "a", children: [{ id: "a1" }, { id: "a2" }] }, { id: "b" }] },
+    {
+      id: "spec",
+      children: [{ id: "a", children: [{ id: "a1" }, { id: "a2" }] }, { id: "b" }],
+    },
   ];
 
   it("孙节点在子节点下面，不是并排", () => {
@@ -230,13 +243,17 @@ describe("根节点换行", () => {
       SIX.map((id, i) => ({
         id,
         children:
-          i < 3 ? Array.from({ length: 5 }, (_, k) => ({ id: `${id}-${k}` })) : undefined,
+          i < 3
+            ? Array.from({ length: 5 }, (_, k) => ({ id: `${id}-${k}` }))
+            : undefined,
       })),
       panel,
     );
     const firstTop = laid.roots[0].y;
     const firstRow = laid.roots.filter((r) => r.y === firstTop);
-    const secondTop = Math.min(...laid.roots.filter((r) => r.y !== firstTop).map((r) => r.y));
+    const secondTop = Math.min(
+      ...laid.roots.filter((r) => r.y !== firstTop).map((r) => r.y),
+    );
     const firstBottom = Math.max(...firstRow.map((r) => r.subtree.y + r.subtree.h));
 
     expect(secondTop, "第二行压在第一行的子树上").toBeGreaterThanOrEqual(firstBottom);
@@ -325,7 +342,7 @@ describe("treeLinks 父子连线", () => {
     }
   });
 
-  it("★ 脊线不穿过任何一个孩子（第 2/3/4 行的线不会被方块盖住）", () => {
+  it("脊线不穿过任何一个孩子（第 2/3/4 行的线不会被方块盖住）", () => {
     // 第一版每个孩子各画一条线，多行时会从上一行方块底下穿过。
     // 改成脊线后必须保证它在每一行都落在两个方块的间隙里；4/5/7 个孩子各试一遍。
     for (const n of [1, 2, 3, 4, 5, 7]) {
@@ -440,7 +457,7 @@ describe("lerpLayout 两套布局之间插值", () => {
     expect(a0.x).not.toBeCloseTo(a1.x, 3); // 前提：它真的动了
   });
 
-  it("★ 新节点从父节点那儿长出来，不是凭空出现", () => {
+  it("新节点从父节点那儿长出来，不是凭空出现", () => {
     const prev = forest(); // 还没有子节点
     const next = forest(["verify"]);
     const parentPrev = prev.find((n) => n.id === "verify")!;

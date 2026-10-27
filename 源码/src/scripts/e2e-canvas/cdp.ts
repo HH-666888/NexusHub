@@ -35,7 +35,10 @@ export async function waitForTarget() {
 }
 
 export interface Cdp {
-  send(method: string, params?: Record<string, unknown>): Promise<{ result?: { value?: string } }>;
+  send(
+    method: string,
+    params?: Record<string, unknown>,
+  ): Promise<{ result?: { value?: string } }>;
   close(): void;
 }
 
@@ -43,7 +46,10 @@ export function connect(wsUrl: string): Promise<Cdp> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
     let nextId = 1;
-    const pending = new Map<number, { res: (v: never) => void; rej: (e: Error) => void }>();
+    const pending = new Map<
+      number,
+      { res: (v: never) => void; rej: (e: Error) => void }
+    >();
 
     ws.addEventListener("message", (ev) => {
       let m: { id?: number; error?: { message: string }; result?: never };
@@ -108,11 +114,11 @@ export const READ = `(() => {
   const posParts = cs.backgroundPosition.split(' ');
 
   /*
-    ⚠️ 原点标记的屏幕位置要**量**（getBoundingClientRect），不能读 style.left。
+    原点标记的屏幕位置要**量**（getBoundingClientRect），不能读 style.left。
 
     以前它在屏幕上绝对定位，style.left 就是屏幕坐标，读它没问题。
     现在它在世界坐标层里 —— style.left 是固定的世界坐标（400），
-    永远不变。于是「拖动后原点跟着动」那条断言永远红，
+    永远不变。于是“拖动后原点跟着动”那条断言永远红，
     而画面其实动得好好的。
 
     量出来的才是屏幕上真实的位置。减掉 stage 的 rect 得到相对视口的坐标，
@@ -140,9 +146,11 @@ export const READ = `(() => {
 })()`;
 
 export async function read(cdp: Cdp): Promise<CanvasState> {
-  const r = await cdp.send("Runtime.evaluate", { expression: READ, returnByValue: true });
+  const r = await cdp.send("Runtime.evaluate", {
+    expression: READ,
+    returnByValue: true,
+  });
   return JSON.parse(r.result!.value!) as CanvasState;
 }
 
 // 主流程
-

@@ -63,7 +63,8 @@ export function ProcessBlocks({
   const onScroll = () => {
     const el = boxRef.current;
     if (!el) return;
-    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD_PX;
+    stickRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD_PX;
   };
 
   /** 每块的摘要。算一次存下来，别在渲染里边算边拼 */
@@ -82,85 +83,93 @@ export function ProcessBlocks({
       {blocks.length === 0 ? (
         /*
           空态说人话：这次运行还没有产生任何过程事件。
-          不说「加载中」（那会永远转下去），也不留白（空白会被读成「跑完了什么都没有」）。
+          不说“加载中”（那会永远转下去），也不留白（空白会被读成“跑完了什么都没有”）。
         */
         <p data-process-blocks-empty className="px-4 py-3 text-[11px] text-slate-600">
           这次运行还没有产生任何过程事件。
-          {running ? "模型刚开工，第一段内容马上就到。" : "点「开始生成」，这里会按步骤实时记下每一段。"}
+          {running
+            ? "模型刚开工，第一段内容马上就到。"
+            : "点“开始生成”，这里会按步骤实时记下每一段。"}
         </p>
       ) : (
         blocks.map((block, i) => {
           const digest = digests[i];
           return (
-          <section
-            key={block.id}
-            data-process-block={block.id}
-            data-process-tone={block.tone}
-            /*
-              「当前块」是给界面和端到端用的把手：它就是右侧面板正在显示的那一步。
-              它不一定是最后一块 —— 默认停在最后一个有内容的块，
-              收尾的 done 常常是最后一块却没有输出。下面那句「全文在右侧」标的正是这一块。
-            */
-            data-process-block-current={block.id === currentBlockId ? "1" : undefined}
-            /*
-              块间横线只加在第二个及以后：第一块上面已经有工作台的标签条了。
-              分隔线是「这两块是两件事」的唯一视觉证据。
-            */
-            className={`px-4 py-2.5 ${
-              i > 0 ? "border-t border-[var(--color-border-soft)]" : ""
-            }`}
-          >
-            <header className="flex flex-wrap items-center gap-2">
-              <span
-                data-process-block-index
-                className="flex-none rounded border border-[var(--color-border-soft)] px-1.5 py-px text-[10px] text-slate-500 tabular-nums"
-              >
-                第 {i + 1} 步
-              </span>
-              <span
-                data-process-block-title
-                className="text-[11.5px] font-medium"
-                /* 颜色按 tone 走：error 红 / ok 绿 / normal 中性 */
-                style={{ color: TONE_COLOR[block.tone] }}
-              >
-                {block.title}
-              </span>
-              {block.tone !== "normal" && (
-                <span className="text-[10px]" style={{ color: TONE_COLOR[block.tone] }}>
-                  {TONE_LABEL[block.tone]}
-                </span>
-              )}
-              {running && i === blocks.length - 1 && (
-                <span className="text-[10px] text-slate-500">· 正在输出</span>
-              )}
-            </header>
-
-            {digest ? (
-              <>
-                <pre
-                  data-process-block-digest
-                  className="mt-1.5 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap text-slate-400"
-                >
-                  {digest.lines.join("\n")}
-                </pre>
-                <p className="mt-1 text-[10px] text-slate-600">
-                  {digest.label}摘要 · 共 {digest.total} 行
-                  {digest.total > digest.lines.length
-                    ? `，这里只显示前 ${digest.lines.length} 行`
-                    : ""}
-                  {block.id === currentBlockId ? " · 全文在右侧「这一步的内容」" : ""}
-                </p>
-              </>
-            ) : (
+            <section
+              key={block.id}
+              data-process-block={block.id}
+              data-process-tone={block.tone}
               /*
+              “当前块”是给界面和端到端用的把手：它就是右侧面板正在显示的那一步。
+              它不一定是最后一块 —— 默认停在最后一个有内容的块，
+              收尾的 done 常常是最后一块却没有输出。下面那句“全文在右侧”标的正是这一块。
+            */
+              data-process-block-current={block.id === currentBlockId ? "1" : undefined}
+              /*
+              块间横线只加在第二个及以后：第一块上面已经有工作台的标签条了。
+              分隔线是“这两块是两件事”的唯一视觉证据。
+            */
+              className={`px-4 py-2.5 ${
+                i > 0 ? "border-t border-[var(--color-border-soft)]" : ""
+              }`}
+            >
+              <header className="flex flex-wrap items-center gap-2">
+                <span
+                  data-process-block-index
+                  className="flex-none rounded border border-[var(--color-border-soft)] px-1.5 py-px text-[10px] text-slate-500 tabular-nums"
+                >
+                  第 {i + 1} 步
+                </span>
+                <span
+                  data-process-block-title
+                  className="text-[11.5px] font-medium"
+                  /* 颜色按 tone 走：error 红 / ok 绿 / normal 中性 */
+                  style={{ color: TONE_COLOR[block.tone] }}
+                >
+                  {block.title}
+                </span>
+                {block.tone !== "normal" && (
+                  <span
+                    className="text-[10px]"
+                    style={{ color: TONE_COLOR[block.tone] }}
+                  >
+                    {TONE_LABEL[block.tone]}
+                  </span>
+                )}
+                {running && i === blocks.length - 1 && (
+                  <span className="text-[10px] text-slate-500">· 正在输出</span>
+                )}
+              </header>
+
+              {digest ? (
+                <>
+                  <pre
+                    data-process-block-digest
+                    className="mt-1.5 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap text-slate-400"
+                  >
+                    {digest.lines.join("\n")}
+                  </pre>
+                  <p className="mt-1 text-[10px] text-slate-600">
+                    {digest.label}摘要 · 共 {digest.total} 行
+                    {digest.total > digest.lines.length
+                      ? `，这里只显示前 ${digest.lines.length} 行`
+                      : ""}
+                    {block.id === currentBlockId ? " · 全文在右侧“这一步的内容”" : ""}
+                  </p>
+                </>
+              ) : (
+                /*
                 空块：这一步确实开跑了，只是什么都没输出。
                 明说"没有输出"，而不是留一片空白 —— 空白会被读成"界面漏了"。
               */
-              <p data-process-block-empty className="mt-1 text-[10.5px] text-slate-600">
-                这一步没有任何输出（只有阶段事件，没有正文也没有思考）。
-              </p>
-            )}
-          </section>
+                <p
+                  data-process-block-empty
+                  className="mt-1 text-[10.5px] text-slate-600"
+                >
+                  这一步没有任何输出（只有阶段事件，没有正文也没有思考）。
+                </p>
+              )}
+            </section>
           );
         })
       )}
@@ -180,7 +189,13 @@ function digestOf(
   const secondary = prefer === "text" ? block.reasoning : block.text;
 
   const source: "text" | "reasoning" | null =
-    primary.trim().length > 0 ? prefer : secondary.trim().length > 0 ? (prefer === "text" ? "reasoning" : "text") : null;
+    primary.trim().length > 0
+      ? prefer
+      : secondary.trim().length > 0
+        ? prefer === "text"
+          ? "reasoning"
+          : "text"
+        : null;
   if (source === null) return null;
 
   const raw = source === "text" ? block.text : block.reasoning;
@@ -189,9 +204,11 @@ function digestOf(
     模型写的正文常常以 \n 收尾，算成两行会让"共 N 行"多报一行。
   */
   const all = raw.replace(/\n$/, "").split("\n");
-  const lines = all.slice(0, DIGEST_LINES).map((line) =>
-    line.length > DIGEST_LINE_CHARS ? `${line.slice(0, DIGEST_LINE_CHARS)}…` : line,
-  );
+  const lines = all
+    .slice(0, DIGEST_LINES)
+    .map((line) =>
+      line.length > DIGEST_LINE_CHARS ? `${line.slice(0, DIGEST_LINE_CHARS)}…` : line,
+    );
   return {
     label: source === "text" ? "正文" : "思考",
     lines,

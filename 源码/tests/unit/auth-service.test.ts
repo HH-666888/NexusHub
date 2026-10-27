@@ -111,9 +111,7 @@ describe("注册", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.user.passwordHash).not.toContain(VALID.password);
-    expect(await verifyPassword(VALID.password, r.value.user.passwordHash)).toBe(
-      true,
-    );
+    expect(await verifyPassword(VALID.password, r.value.user.passwordHash)).toBe(true);
   });
 
   it("会话入库的是令牌哈希，不是令牌本身", async () => {

@@ -30,8 +30,7 @@ export async function readJsonArtifact<T>(
 export type JsonArtifactFailure = "missing" | "unreadable" | "bad-json";
 
 export type JsonArtifactResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; reason: JsonArtifactFailure };
+  { ok: true; value: T } | { ok: false; reason: JsonArtifactFailure };
 
 /** 需要区分失败原因时用这个，例如决定接口回 409 还是 500 */
 export async function loadJsonArtifact<T>(

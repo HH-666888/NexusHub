@@ -3,13 +3,13 @@
  * 界面、生成、校验三处都要用，所以只留一份。
  */
 
-/** 谁在做这件事。回答的是「谁」，能不能改由 access 表示 */
+/** 谁在做这件事。回答的是“谁”，能不能改由 access 表示 */
 export type ActorKind = "human" | "ai" | "program";
 
 /** 能不能改东西 */
 export type AccessMode = "read" | "write";
 
-/** 碰什么。「写代码」与「上线发布」都是 ai + write，风险差一个量级 */
+/** 碰什么。“写代码”与“上线发布”都是 ai + write，风险差一个量级 */
 export type ActionScope = "observe" | "internal" | "outward";
 
 /** 谁必须点头 */
@@ -26,7 +26,6 @@ export interface AccessSubject {
   scope?: ActionScope;
 }
 
-
 /**
  * 定出这一步的范围，缺省往严的一边倒：只读 → observe，
  * 写但没说范围 → outward，人做的事 → internal。
@@ -41,7 +40,6 @@ export function resolveScope(step: AccessSubject): ActionScope {
   // 没写模式的程序也往严的一边倒
   return step.actor === "program" ? "observe" : "outward";
 }
-
 
 /**
  * 三条规则：只看不改 → 不批；在自己这边改（可回滚）→ 不批；
@@ -73,10 +71,9 @@ export function explainAuthority(step: AccessSubject): string {
 export function actorBadge(step: { actor: ActorKind; access?: AccessMode }): string {
   if (step.actor === "human") return "人";
   if (step.actor === "program") return "程序自动";
-  // 漏填按「干活」显示，否则「看数」和「上线」会显示成同一个徽章
+  // 漏填按“干活”显示，否则“看数”和“上线”会显示成同一个徽章
   return step.access === "read" ? "AI · 只读" : "AI · 干活";
 }
-
 
 /** 只要能报出 id 与名字就够，工序、步骤都满足 */
 export interface AccessItem extends AccessSubject {
@@ -138,7 +135,7 @@ function buildVerdict(n: {
 }): string {
   if (n.total === 0) return "还没有工序";
 
-    if (n.unguarded > 0) {
+  if (n.unguarded > 0) {
     // 不软化这句话：这是这套方法论里唯一不能让步的一条
     return `有 ${n.unguarded} 处会对外产生后果，但整套流程里没有任何一环是人做的`;
   }
@@ -146,5 +143,7 @@ function buildVerdict(n: {
   const parts: string[] = [];
   if (n.observe > 0) parts.push(`${n.observe} 处只看不改`);
   if (n.gated > 0) parts.push(`${n.gated} 处要人点头`);
-  return parts.length > 0 ? `${parts.join("，")}，其余在自己这边做` : "全部在自己这边做";
+  return parts.length > 0
+    ? `${parts.join("，")}，其余在自己这边做`
+    : "全部在自己这边做";
 }

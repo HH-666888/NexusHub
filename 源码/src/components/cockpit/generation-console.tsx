@@ -11,7 +11,7 @@ import { RunTimeline } from "./run-timeline";
  * 实时生成控制台：连 SSE，把模型的输出、成本、检查结果摊开在用户面前。
  *
  * 收到 done / failed 后主动关连接：EventSource 在服务端正常关闭后会自动重连，
- * 不关就成了「生成完 → 重连 → 服务端说已有成品 → 关闭」的死循环。
+ * 不关就成了“生成完 → 重连 → 服务端说已有成品 → 关闭”的死循环。
  * 流式内容按帧批量写 state：一次生成推来三千多个片段，逐块 setState 是三千多次渲染。
  */
 
@@ -35,7 +35,7 @@ const PHASE_LABEL: Record<GeneratePhase, string> = {
 
 const PHASE_TONE: Record<GeneratePhase, string> = {
   spec: "border-violet-700 bg-violet-950/40 text-violet-300",
-  // 与规格化同色调：两者都是 AI 在写决策级产物，色调分的是「谁在做」不是序号
+  // 与规格化同色调：两者都是 AI 在写决策级产物，色调分的是“谁在做”不是序号
   arch: "border-violet-700 bg-violet-950/40 text-violet-300",
   // 同为决策级：这里定的变量表是第四段所有并行单元的共同口径
   ui: "border-violet-700 bg-violet-950/40 text-violet-300",
@@ -79,17 +79,22 @@ export function GenerationConsole({
   const [running, setRunning] = useState(false);
   /*
     每跑完一次加一，让时间轴重新拉事件 —— 刚跑完那一刻事件才写进库，
-    不重新拉的话时间轴还是空的，用户会以为「录像没录上」。
+    不重新拉的话时间轴还是空的，用户会以为“录像没录上”。
   */
   const [refreshKey, setRefreshKey] = useState(0);
   /*
-    规格化阶段的产出。用户要看的是「它把我的需求理解成了什么」，
-    而不是「规格已就绪」。
+    规格化阶段的产出。用户要看的是“它把我的需求理解成了什么”，
+    而不是“规格已就绪”。
   */
   const [spec, setSpec] = useState<{
     goal: string;
     audience: string;
-    acceptance: Array<{ id: string; statement: string; verifyBy: string; level: string }>;
+    acceptance: Array<{
+      id: string;
+      statement: string;
+      verifyBy: string;
+      level: string;
+    }>;
     outOfScope: string[];
     questions: string[];
     fallback: boolean;
@@ -97,16 +102,16 @@ export function GenerationConsole({
 
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  /** 「知悉并继续」提交中 */
+  /** “知悉并继续”提交中 */
   const [acknowledging, setAcknowledging] = useState(false);
   const [gateMsg, setGateMsg] = useState<string | null>(null);
 
   /**
    * 刷新之后把门禁补回来。spec 原来只由实时 SSE 填：用户一刷新、
-   * 或从列表点进那条停在门禁上的运行，就只剩下「有 3 个疑问待确认」的提示，
+   * 或从列表点进那条停在门禁上的运行，就只剩下“有 3 个疑问待确认”的提示，
    * 没有任何地方能回答。
    *
-   * /gate 给的是「现在到底还差哪几条」，与 decideGate 同源，所以答过的不再问第二遍。
+   * /gate 给的是“现在到底还差哪几条”，与 decideGate 同源，所以答过的不再问第二遍。
    * 只在还没拿到规格时补（s ?? …），正在实时跑的时候不许被这次请求覆盖。
    */
   useEffect(() => {
@@ -120,7 +125,12 @@ export function GenerationConsole({
           spec?: {
             goal: string;
             audience: string;
-            acceptance: Array<{ id: string; statement: string; verifyBy: string; level: string }>;
+            acceptance: Array<{
+              id: string;
+              statement: string;
+              verifyBy: string;
+              level: string;
+            }>;
             outOfScope: string[];
             questions: string[];
           } | null;
@@ -128,16 +138,17 @@ export function GenerationConsole({
         };
         if (cancelled || !json.hasSpec || !json.spec) return;
         const pending = json.gate?.pending ?? [];
-        setSpec((s) =>
-          s ?? {
-            goal: json.spec!.goal,
-            audience: json.spec!.audience,
-            acceptance: json.spec!.acceptance,
-            outOfScope: json.spec!.outOfScope,
-            // 只放"还没答的"：答过的再问一遍，用户会以为自己没提交成功
-            questions: pending,
-            fallback: json.gate?.fallback ?? false,
-          },
+        setSpec(
+          (s) =>
+            s ?? {
+              goal: json.spec!.goal,
+              audience: json.spec!.audience,
+              acceptance: json.spec!.acceptance,
+              outOfScope: json.spec!.outOfScope,
+              // 只放"还没答的"：答过的再问一遍，用户会以为自己没提交成功
+              questions: pending,
+              fallback: json.gate?.fallback ?? false,
+            },
         );
         if (pending.length > 0 && json.gate?.reason) setGateMsg(json.gate.reason);
       } catch {
@@ -164,7 +175,10 @@ export function GenerationConsole({
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            answers: spec.questions.map((q) => ({ question: q, answer: draft[q] ?? "" })),
+            answers: spec.questions.map((q) => ({
+              question: q,
+              answer: draft[q] ?? "",
+            })),
             revise,
           }),
         });
@@ -185,8 +199,8 @@ export function GenerationConsole({
         if (json.issues?.length) parts.push(json.issues.join("；"));
         parts.push(
           revise
-            ? "现在点「开始生成」—— 它会带着你的回答重出一版规格（这一趟多花一次调用）"
-            : "现在点「开始生成」继续",
+            ? "现在点“开始生成”—— 它会带着你的回答重出一版规格（这一趟多花一次调用）"
+            : "现在点“开始生成”继续",
         );
         setGateMsg(parts.join(" · "));
       } catch (e) {
@@ -199,8 +213,8 @@ export function GenerationConsole({
   );
 
   /**
-   * 「知悉并继续」：我看了这些问题，但不回答 —— 这次你替我决定。
-   * 与「留空提交」的区别是它不要求逐条看完，问题一多那更像在收集噪声。
+   * “知悉并继续”：我看了这些问题，但不回答 —— 这次你替我决定。
+   * 与“留空提交”的区别是它不要求逐条看完，问题一多那更像在收集噪声。
    * 代价必须写在按钮旁边：模型会替他猜，猜错了要到验收那一步才暴露。
    */
   const acknowledge = useCallback(async () => {
@@ -209,14 +223,18 @@ export function GenerationConsole({
     setGateMsg(null);
     try {
       const res = await fetch(`/api/runs/${runId}/acknowledge`, { method: "POST" });
-      const json = (await res.json()) as { ok?: boolean; error?: string; acknowledged?: number };
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        acknowledged?: number;
+      };
       if (!res.ok || !json.ok) {
         setGateMsg(json.error ?? `提交失败（HTTP ${res.status}）`);
         return;
       }
       setSpec((s) => (s ? { ...s, questions: [] } : s));
       setGateMsg(
-        `已知悉 ${json.acknowledged ?? 0} 条没答的疑问 —— 现在点「开始生成」继续，模型会替你决定`,
+        `已知悉 ${json.acknowledged ?? 0} 条没答的疑问 —— 现在点“开始生成”继续，模型会替你决定`,
       );
     } catch (e) {
       setGateMsg(e instanceof Error ? e.message : String(e));
@@ -228,14 +246,16 @@ export function GenerationConsole({
   const [phaseLabel, setPhaseLabel] = useState("");
   /**
    * 回流（07）那句提示，单独留一份：phaseLabel 会被后面一串 phase 事件顶掉，
-   * 而「这一次带上了上一轮的问题」需要留在界面上。空串表示这一轮没有回流。
+   * 而“这一次带上了上一轮的问题”需要留在界面上。空串表示这一轮没有回流。
    */
   const [callbackNote, setCallbackNote] = useState("");
   const [text, setText] = useState("");
   const [reasoning, setReasoning] = useState("");
   const [cost, setCost] = useState<number | null>(null);
   const [latency, setLatency] = useState<number | null>(null);
-  const [usage, setUsage] = useState<{ in: number; out: number; think: number } | null>(null);
+  const [usage, setUsage] = useState<{ in: number; out: number; think: number } | null>(
+    null,
+  );
   const [checks, setChecks] = useState<CheckResult[] | null>(null);
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
@@ -250,7 +270,7 @@ export function GenerationConsole({
 
   /*
     运行中实时攒出来的步骤块。服务端那份 blocks 是已落库事件切的，生成过程中静止，
-    而「看着它一步步往下走」正是这一栏存在的理由 ——
+    而“看着它一步步往下走”正是这一栏存在的理由 ——
     所以运行期间另攒一份，喂给同一个切块函数，实时与落库后是同一套规则。
 
     服务端那份 blocks 换成新的一份（说明这一轮已落库、页面刷新过）时，实时块退场，
@@ -339,7 +359,7 @@ export function GenerationConsole({
     pendingRef.current = { text: "", reasoning: "" };
     /*
       实时块从零开始，服务端那份 blocks 原样留着并排在前面 ——
-      于是「旧的留在上方、新的追加在下方」在重新生成时同样成立。
+      于是“旧的留在上方、新的追加在下方”在重新生成时同样成立。
     */
     liveEventsRef.current = [];
     liveSeqRef.current = 0;
@@ -359,7 +379,7 @@ export function GenerationConsole({
 
       /*
         每条事件都进实时缓冲，正文与思考的片段也进：切块要看的是
-        「这一步里所有 delta 按顺序拼起来是什么」。界面要的是逐字的实时感，不在这里合并。
+        “这一步里所有 delta 按顺序拼起来是什么”。界面要的是逐字的实时感，不在这里合并。
       */
       liveEventsRef.current.push({
         seq: LIVE_SEQ_BASE + liveSeqRef.current++,
@@ -372,7 +392,7 @@ export function GenerationConsole({
           setPhase(event.phase);
           /*
             回流（07）单独留一份：phaseLabel 会被后面一串 phase 事件顶掉，
-            而「回流真的发生了」这件事需要留在固定的地方。
+            而“回流真的发生了”这件事需要留在固定的地方。
           */
           if (event.note === "callback") setCallbackNote(event.label);
           else setPhaseLabel(event.label);
@@ -500,18 +520,16 @@ export function GenerationConsole({
         )}
 
         {running && (
-          <span className="tabular-nums text-slate-500">
+          <span className="text-slate-500 tabular-nums">
             {(elapsed / 1000).toFixed(1)} 秒
           </span>
         )}
 
         {cost !== null && (
-          <span className="tabular-nums text-slate-400">
-            本次 ¥{cost.toFixed(4)}
-          </span>
+          <span className="text-slate-400 tabular-nums">本次 ¥{cost.toFixed(4)}</span>
         )}
         {latency !== null && (
-          <span className="tabular-nums text-slate-500">
+          <span className="text-slate-500 tabular-nums">
             模型耗时 {(latency / 1000).toFixed(1)} 秒
           </span>
         )}
@@ -528,7 +546,7 @@ export function GenerationConsole({
 
         {/*
           回流（07）的痕迹。放在状态排里而不是跟着 phase 文案一闪而过 ——
-          「这一次带上了上一轮的问题」需要事后也看得到。
+          “这一次带上了上一轮的问题”需要事后也看得到。
         */}
         {callbackNote && (
           <span
@@ -584,7 +602,7 @@ export function GenerationConsole({
         </div>
       )}
 
-      {/* 规格：用户要看的是「它把我的需求理解成了什么」，
+      {/* 规格：用户要看的是“它把我的需求理解成了什么”，
           理解错了要在这里就发现，而不是等成品出来 */}
       {spec && (
         <div className="border-b border-[var(--color-border-soft)] bg-violet-950/15 px-4 py-2.5">
@@ -592,7 +610,9 @@ export function GenerationConsole({
             <span className="rounded border border-violet-700/60 bg-violet-950/40 px-1.5 py-px text-[9.5px] text-violet-300">
               规格
             </span>
-            <span className="text-[12px] text-slate-200">{spec.goal || "（没有给出目标）"}</span>
+            <span className="text-[12px] text-slate-200">
+              {spec.goal || "（没有给出目标）"}
+            </span>
             {spec.fallback && (
               // 兜底必须显著标出来，否则用户会把通用硬检查当成针对自己需求的验收标准
               <span className="rounded border border-amber-700/60 bg-amber-950/40 px-1.5 py-px text-[9.5px] text-amber-300">
@@ -626,9 +646,7 @@ export function GenerationConsole({
                   <li key={a.id} className="py-0.5 text-[10.5px] leading-relaxed">
                     <span
                       className={
-                        a.level === "must"
-                          ? "text-violet-400"
-                          : "text-slate-600"
+                        a.level === "must" ? "text-violet-400" : "text-slate-600"
                       }
                     >
                       {a.level === "must" ? "必需" : "期望"}
@@ -643,14 +661,15 @@ export function GenerationConsole({
 
           {spec.outOfScope.length > 0 && (
             <div className="mt-1.5 text-[10.5px] text-slate-500">
-              明确不做：<span className="text-slate-400">{spec.outOfScope.join("、")}</span>
+              明确不做：
+              <span className="text-slate-400">{spec.outOfScope.join("、")}</span>
             </div>
           )}
 
           {spec.questions.length > 0 ? (
             /*
               人工门禁：全流程唯一需要人的地方。疑问做成可填写的表单，
-              只提示一句「有 2 个问题」而不给回答的地方，等于把人拦在门口又不给开门。
+              只提示一句“有 2 个问题”而不给回答的地方，等于把人拦在门口又不给开门。
             */
             <div className="mt-2 rounded border border-amber-900/50 bg-amber-950/25 px-2.5 py-2">
               <div className="text-[10.5px] text-amber-300">
@@ -659,13 +678,13 @@ export function GenerationConsole({
               <ul className="mt-1.5 space-y-1.5">
                 {spec.questions.map((q) => (
                   <li key={q}>
-                    <div className="text-[10.5px] leading-relaxed text-amber-200/90">{q}</div>
+                    <div className="text-[10.5px] leading-relaxed text-amber-200/90">
+                      {q}
+                    </div>
                     <input
                       type="text"
                       value={draft[q] ?? ""}
-                      onChange={(e) =>
-                        setDraft((d) => ({ ...d, [q]: e.target.value }))
-                      }
+                      onChange={(e) => setDraft((d) => ({ ...d, [q]: e.target.value }))}
                       placeholder="留空表示由你决定"
                       className="mt-1 w-full rounded border border-amber-900/60 bg-[var(--color-surface)] px-2 py-1 text-[11px] text-slate-200 outline-none focus:border-amber-600"
                     />
@@ -682,7 +701,7 @@ export function GenerationConsole({
                   {submitting ? "提交中…" : "提交回答"}
                 </button>
                 {/*
-                  「按我的回答重出一版规格」：回答不只是确认，而是真的改进规格。
+                  “按我的回答重出一版规格”：回答不只是确认，而是真的改进规格。
                   它多花一次规格化的钱，所以单独一个按钮并写明代价，绝不默认勾选。
                 */}
                 <button
@@ -695,7 +714,7 @@ export function GenerationConsole({
                   提交回答并按回答重出规格
                 </button>
                 {/*
-                  「知悉并继续」与「提交回答」并列：它们是同一个决定的两个方向，
+                  “知悉并继续”与“提交回答”并列：它们是同一个决定的两个方向，
                   要么我把疑问答清楚，要么我认了让你替我猜。
                 */}
                 <button
@@ -708,14 +727,15 @@ export function GenerationConsole({
                   {acknowledging ? "提交中…" : "知悉并继续（由模型替我决定）"}
                 </button>
                 <span className="text-[10px] text-amber-200/60">
-                  留空也算提交 —— 那是「你替我决定」，不是没看到
+                  留空也算提交 —— 那是“你替我决定”，不是没看到
                 </span>
               </div>
               <div className="mt-1 text-[10px] text-slate-400/80">
-                「知悉并继续」的代价：模型会替你猜这些没答的地方，猜错了要到
-                <span className="text-slate-300">验收那一步</span>才看得出来 —— 那时钱已经花完了。
+                “知悉并继续”的代价：模型会替你猜这些没答的地方，猜错了要到
+                <span className="text-slate-300">验收那一步</span>才看得出来 ——
+                那时钱已经花完了。
                 <br />
-                「按回答重出规格」的代价：多花一次规格化调用（约 ¥0.01 上下），
+                “按回答重出规格”的代价：多花一次规格化调用（约 ¥0.01 上下），
                 换来的是回答真的改进规格，而不只是被记下来当确认。
               </div>
               {gateMsg && (
@@ -778,8 +798,8 @@ export function GenerationConsole({
               {running
                 ? "等待模型返回…"
                 : hasArtifact
-                  ? "这次构建已经生成过成品。想看过程可以点「重新生成」，或在下面切到「预览」直接看结果。"
-                  : "点右上角「开始生成」，这里会实时显示模型写的内容。"}
+                  ? "这次构建已经生成过成品。想看过程可以点“重新生成”，或在下面切到“预览”直接看结果。"
+                  : "点右上角“开始生成”，这里会实时显示模型写的内容。"}
             </span>
           )}
         </pre>

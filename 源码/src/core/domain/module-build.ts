@@ -206,7 +206,11 @@ export interface ModuleBrief {
  * 把架构里的一条模块记录配上规格与依赖，变成一份派工单。
  * 职责必须写清楚：派工单上没写只管这一块，N 个模块就会各自写一个完整应用。
  */
-export function moduleBrief(arch: ArchSpec, spec: AppSpec, target: ArchModule): ModuleBrief {
+export function moduleBrief(
+  arch: ArchSpec,
+  spec: AppSpec,
+  target: ArchModule,
+): ModuleBrief {
   const features = spec.acceptance
     .filter((a) => target.coversFeatures.includes(a.id))
     .map((a) => ({ id: a.id, statement: a.statement, level: a.level }));
@@ -234,13 +238,16 @@ export function buildModulePrompt(
   const featureLines =
     features.length > 0
       ? features.map(
-          (f) => `  · ${f.id}｜${f.statement}（${f.level === "must" ? "必需" : "期望"}）`,
+          (f) =>
+            `  · ${f.id}｜${f.statement}（${f.level === "must" ? "必需" : "期望"}）`,
         )
       : ["  （这个模块在架构里没有挂到具体条目上 —— 按职责写，不要越界）"];
 
   const depLines =
     dependencies.length > 0
-      ? dependencies.map((d) => `  · ${d.id}（${d.name}）：${d.responsibility || "（未填写）"}`)
+      ? dependencies.map(
+          (d) => `  · ${d.id}（${d.name}）：${d.responsibility || "（未填写）"}`,
+        )
       : ["  （它不依赖别的模块）"];
 
   return [
@@ -354,8 +361,16 @@ export function moduleSignatureCandidates(m: {
     认领标记：模块构建提示词强制要求、装配提示词要求原样保留的那一个。
     两种引号都收，模型换引号不该让检查变红。
   */
-  push(m.html.includes(`data-module="${m.moduleId}"`) ? `data-module="${m.moduleId}"` : null);
-  push(m.html.includes(`data-module='${m.moduleId}'`) ? `data-module='${m.moduleId}'` : null);
+  push(
+    m.html.includes(`data-module="${m.moduleId}"`)
+      ? `data-module="${m.moduleId}"`
+      : null,
+  );
+  push(
+    m.html.includes(`data-module='${m.moduleId}'`)
+      ? `data-module='${m.moduleId}'`
+      : null,
+  );
 
   // js 里的具名函数：标记可能被装配时当成注释留下，函数名是代码真的在跑的证据
   push(firstIdentifier(m.js));
@@ -447,7 +462,10 @@ export function buildAssemblePrompt(input: {
   let used = 0;
   batch.modules.forEach((m, i) => {
     // 单模块能带的额度：既不超过单模块上限，也不超过全局剩余额度
-    const room = Math.max(0, Math.min(MODULE_FRAGMENT_MAX_CHARS, ASSEMBLE_TOTAL_MAX_CHARS - used));
+    const room = Math.max(
+      0,
+      Math.min(MODULE_FRAGMENT_MAX_CHARS, ASSEMBLE_TOTAL_MAX_CHARS - used),
+    );
     const chunk = [
       `===== 模块 ${i + 1}/${batch.modules.length}：${m.moduleId}（${nameOf(m.moduleId)}）=====`,
       responsibilityOf(m.moduleId) ? `职责：${responsibilityOf(m.moduleId)}` : "",
@@ -477,8 +495,10 @@ export function buildAssemblePrompt(input: {
   */
   if (batch.failed.length > 0) {
     parts.push(
-      "⚠️ 下面这几个模块**构建失败**了，产物里不会有它们的代码：",
-      ...batch.failed.map((f) => `  · ${f.moduleId}（${nameOf(f.moduleId)}）：${f.message}`),
+      "下面这几个模块**构建失败**了，产物里不会有它们的代码：",
+      ...batch.failed.map(
+        (f) => `  · ${f.moduleId}（${nameOf(f.moduleId)}）：${f.message}`,
+      ),
       "请不要替它们编造实现 —— 缺的功能宁可在界面上如实少一块，也不要假装做完了。",
       "",
     );
@@ -487,7 +507,7 @@ export function buildAssemblePrompt(input: {
   parts.push(
     "装配要求：",
     "1. 产出一个**完整、可直接运行**的自包含单文件 HTML（CSS 与 JS 全部内联，不引用任何外部资源）",
-    "2. 每个模块的那段 `data-module=\"模块id\"` 标记**原样保留**：它是「这段代码真的进了产物」的唯一凭据",
+    '2. 每个模块的那段 `data-module="模块id"` 标记**原样保留**：它是“这段代码真的进了产物”的唯一凭据',
     "3. 各模块的 CSS 汇总进同一个 <style>，JS 汇总进同一个 <script>；同名函数/变量要重新命名，不要互相覆盖",
     "4. 骨架（<html>/<head>/<body>、公共布局、页面标题）由你补，模块片段里没有的那部分才算你的活儿",
     "5. 界面文字用简体中文，数据用 localStorage 持久化",
@@ -503,7 +523,8 @@ export function buildAssemblePrompt(input: {
  * 而 from-run.ts 仍然以 arch 事件为准。
  */
 export function summarizeBatch(batch: BuildBatch, arch: ArchSpec): BuildBatchSummary {
-  const nameOf = (id: string): string => arch.modules.find((m) => m.id === id)?.name ?? id;
+  const nameOf = (id: string): string =>
+    arch.modules.find((m) => m.id === id)?.name ?? id;
 
   return {
     modules: batch.modules.map((m) => ({

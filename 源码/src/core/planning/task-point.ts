@@ -1,6 +1,6 @@
 /**
  * 任务点：三层 Agent 树的最小数据单位，只有类型与纯函数。
- * 树用一层 parentId 引用的平铺列表，「到点生成」要求子节点出生前不存在。
+ * 树用一层 parentId 引用的平铺列表，“到点生成”要求子节点出生前不存在。
  * depth 与 kind 分开存，为将来控制层下再挂子 Agent 留出空间。
  */
 
@@ -54,7 +54,7 @@ export function isControlLayer(depth: number): boolean {
 /**
  * 子节点状态汇总成工序状态：空 → pending，再依次 running / failed / waiting / 全 done / ready。
  * 顺序有讲究：running 要让画面活着，waiting 必须穿过 done 冒到工序层，否则用户不知道在等自己。
- * 取舍：skipped 与 pending 都落到 pending，本期不引入「部分完成」。
+ * 取舍：skipped 与 pending 都落到 pending，本期不引入“部分完成”。
  */
 export function rollUpStatus(children: readonly TaskPoint[]): TaskPointStatus {
   if (children.length === 0) return "pending";
@@ -124,7 +124,7 @@ export const TONE_RGB: Record<TaskPointTone, string> = {
 
 /**
  * 状态 → 胶囊文字。与色调分开：planning 与 running 同为绿，文字不同。
- * 措辞：一级 Agent 是控制层，done 写「已完成」不写「已通过」。
+ * 措辞：一级 Agent 是控制层，done 写“已完成”不写“已通过”。
  */
 const STATUS_LABEL: Record<TaskPointStatus, string> = {
   pending: "待执行",

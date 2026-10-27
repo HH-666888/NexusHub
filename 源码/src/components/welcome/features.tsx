@@ -55,9 +55,7 @@ export function Features() {
             {f.icon}
           </div>
           <h3 className="text-sm font-medium text-slate-100">{f.title}</h3>
-          <p className="mt-2 flex-1 text-xs leading-relaxed text-slate-400">
-            {f.body}
-          </p>
+          <p className="mt-2 flex-1 text-xs leading-relaxed text-slate-400">{f.body}</p>
           <div className="mt-4 flex flex-wrap gap-1.5 border-t border-[rgb(var(--tint)/0.18)] pt-3.5">
             {f.tags.map((t) => (
               <span

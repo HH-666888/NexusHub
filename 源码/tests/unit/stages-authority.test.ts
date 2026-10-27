@@ -29,7 +29,7 @@ describe("工序权限 · 基本形状", () => {
     }
   });
 
-  it("【最要紧】验收与交付必须是只读的", () => {
+  it("最要紧验收与交付必须是只读的", () => {
     // 判定者不参与生产：验收若也能改，自己修完自己判过就不再是独立检查。
     // 谁把 access 改成 write，这条会红。
     const verify = STAGE_MAP.verify;
@@ -58,7 +58,7 @@ describe("工序权限 · 要不要人点头", () => {
     }
   });
 
-  it("【关键】humanGate 只能抬高，不能降低", () => {
+  it("humanGate 只能抬高，不能降低", () => {
     // 规格化按规则算是不用人批，但故意让它停下来问：规格错了后面五道全白做。
     // 反过来不行：加一道门的人不该顺手把权限也放开。
     const fake = {
@@ -84,7 +84,9 @@ describe("工序权限 · 要不要人点头", () => {
   });
 
   it("没加码的那些，说明就是规则本身那句话", () => {
-    expect(stageAuthorityNote(STAGE_MAP.verify)).toBe(explainAuthority(STAGE_MAP.verify));
+    expect(stageAuthorityNote(STAGE_MAP.verify)).toBe(
+      explainAuthority(STAGE_MAP.verify),
+    );
   });
 
   it("stageApproval 对六道工序都给得出结论", () => {
@@ -103,14 +105,14 @@ describe("工序权限 · 整套流程的画像", () => {
     expect(report.observeOnly.map((o) => o.id)).toEqual(["verify"]);
   });
 
-  it("没有任何一处是对外的 —— 所以没有「失守」这回事", () => {
+  it("没有任何一处是对外的 —— 所以没有“失守”这回事", () => {
     // 这是如实报告，不是检查通过：Nexus 不部署不发布，六道工序全在自己这边做。
     // 哪天加了一道真的对外的工序，这里会红，那时必须同时补人拍板。
     expect(report.unguarded).toHaveLength(0);
     expect(report.gated).toHaveLength(0);
   });
 
-  it("结论是一句人话，不是「通过」两个字", () => {
+  it("结论是一句人话，不是“通过”两个字", () => {
     expect(report.verdict).toContain("1 处只看不改");
   });
 

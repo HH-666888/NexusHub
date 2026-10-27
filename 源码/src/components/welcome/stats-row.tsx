@@ -2,8 +2,8 @@ import { TINT_OPTIONS } from "@/core/domain/appearance";
 
 /**
  * 首页数字栏。四个数字全部是实测值，不是营销数字 ——
- * 参赛作品最容易被问倒的地方就是「这个数字哪来的」。
- * 任何一个变了，这里必须跟着改，否则就成了另一种「界面写着已通过但交不出产物」。
+ * 参赛作品最容易被问倒的地方就是“这个数字哪来的”。
+ * 任何一个变了，这里必须跟着改，否则就成了另一种“界面写着已通过但交不出产物”。
  *
  * 分节 + 数据行 + 卡片的结构来自 MiMo 与 MiniMax 首页，颜色与字体沿用现有令牌。
  */
@@ -24,10 +24,7 @@ export function StatsRow() {
       style={{ "--tint": `rgb(${TINT_OPTIONS[0].colors[0]})` } as React.CSSProperties}
     >
       {STATS.map((s) => (
-        <div
-          key={s.label}
-          className="bg-[var(--color-surface)] px-4 py-5 text-center"
-        >
+        <div key={s.label} className="bg-[var(--color-surface)] px-4 py-5 text-center">
           <div className="text-2xl font-semibold tracking-tight text-slate-100 tabular-nums">
             {s.value}
             {s.unit && (

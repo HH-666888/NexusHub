@@ -1,6 +1,6 @@
 /**
  * 人工门禁：规格里还有待确认的疑问就停下等人，不替用户猜。
- * 答案与「知悉并继续」各落一份产物（answers.json / ack.json），不动表结构。
+ * 答案与“知悉并继续”各落一份产物（answers.json / ack.json），不动表结构。
  * 有问题无答案 → paused；提交答案 → running；续跑时发现 answers 即跳过门禁。
  */
 
@@ -19,7 +19,7 @@ export interface SpecAnswers {
   answers: SpecAnswer[];
   answeredAt: number;
   /**
-   * 用户要求「按这些回答重出一版规格」。消费方是生成接口的续跑分支：
+   * 用户要求“按这些回答重出一版规格”。消费方是生成接口的续跑分支：
    * 看到 true 就按回答重出规格，出完改回 false，一次请求只消费一次。
    */
   revise?: boolean;
@@ -28,7 +28,7 @@ export interface SpecAnswers {
 export const ANSWERS_ARTIFACT_NAME = "answers.json";
 
 /**
- * ack.json 的形状。「知悉但没答」与「答了」对下游含义相反，所以单开一份产物；
+ * ack.json 的形状。“知悉但没答”与“答了”对下游含义相反，所以单开一份产物；
  * 重新生成走 DELETE 会把它一起清掉，不会留下过期的知悉。
  */
 export interface SpecAck {
@@ -39,7 +39,6 @@ export interface SpecAck {
 }
 
 export const ACK_ARTIFACT_NAME = "ack.json";
-
 
 export interface GateDecision {
   /** 要不要停下来等人 */
@@ -52,7 +51,7 @@ export interface GateDecision {
   fallback: boolean;
 }
 
-/** 还没回答的疑问；decideGate 与「知悉」判断共用，避免两处实现分叉 */
+/** 还没回答的疑问；decideGate 与“知悉”判断共用，避免两处实现分叉 */
 export function pendingQuestions(spec: AppSpec, answers: SpecAnswers | null): string[] {
   const answered = new Set(
     (answers?.answers ?? [])
@@ -64,14 +63,14 @@ export function pendingQuestions(spec: AppSpec, answers: SpecAnswers | null): st
 
 /**
  * 该不该停下来问：有疑问没答 → 停，答完 → 放行，没有疑问 → 直接往下走。
- * 兜底规格没有 questions，所以「兜底」必须写进 reason 让调用方读到。
+ * 兜底规格没有 questions，所以“兜底”必须写进 reason 让调用方读到。
  */
 export function decideGate(
   spec: AppSpec,
   answers: SpecAnswers | null,
   /** 规格是否兜底，不传为 false */
   fallback = false,
-  /** 用户是否已「知悉并继续」，默认 false；调用方须用 isAcknowledged 计算，而不是看有没有记录 */
+  /** 用户是否已“知悉并继续”，默认 false；调用方须用 isAcknowledged 计算，而不是看有没有记录 */
   acknowledged = false,
 ): GateDecision {
   if (spec.questions.length === 0) {
@@ -100,7 +99,7 @@ export function decideGate(
 
   return {
     /*
-      这里可被「知悉」放行，兜底那条不行：兜底没有 questions，走不到这个分支。
+      这里可被“知悉”放行，兜底那条不行：兜底没有 questions，走不到这个分支。
       放行时 pause 变 false，但 reason 必须说全还有几条没答、后果是什么。
     */
     pause: !acknowledged,
@@ -120,16 +119,15 @@ export function decideGate(
   };
 }
 
-
 /**
- * 这一趟是不是「答完疑问后的续跑」：有规格且有非空回答，或已按知悉放行过。
+ * 这一趟是不是“答完疑问后的续跑”：有规格且有非空回答，或已按知悉放行过。
  * 重跑规格化只会换一批新疑问，把用户已确认的内容重摇一次。
- * 「重新生成」走 DELETE 会清掉规格与答案，到这里是 spec = null，不会误判。
+ * “重新生成”走 DELETE 会清掉规格与答案，到这里是 spec = null，不会误判。
  */
 export function isGateResume(
   spec: AppSpec | null,
   answers: SpecAnswers | null,
-  /** 知悉记录；传了的话「知悉过」同样构成续跑 */
+  /** 知悉记录；传了的话“知悉过”同样构成续跑 */
   ack: SpecAck | null = null,
 ): boolean {
   if (!spec) return false;
@@ -138,7 +136,7 @@ export function isGateResume(
 }
 
 /**
- * 用户是否「知悉并继续」过，且他知悉的正是在当前待确认的那几条：
+ * 用户是否“知悉并继续”过，且他知悉的正是在当前待确认的那几条：
  * 规格变了之后新疑问他没看过，拿旧记录放行等于替他多猜了几条。
  */
 export function isAcknowledged(ack: SpecAck | null, pendingNow?: string[]): boolean {
@@ -206,8 +204,8 @@ export interface AnswerValidation {
 }
 
 /**
- * 允许留空（用户有权跳过，等于「你替我决定」），但不允许提交与问题对不上的答案：
- * 那会让 pending 永远对不上，用户陷入「明明答了还让我答」的死循环。
+ * 允许留空（用户有权跳过，等于“你替我决定”），但不允许提交与问题对不上的答案：
+ * 那会让 pending 永远对不上，用户陷入“明明答了还让我答”的死循环。
  */
 export function validateAnswers(
   spec: AppSpec,
@@ -229,7 +227,7 @@ export function validateAnswers(
     const answer = s.answer.trim();
     if (!answer) {
       blankCount++;
-      // 空白也留下：它表示「看了但不回答」，与没看到这题不同
+      // 空白也留下：它表示“看了但不回答”，与没看到这题不同
       kept.push({ question: s.question, answer: "" });
       continue;
     }

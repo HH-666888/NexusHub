@@ -62,7 +62,9 @@ export const ARCH_SYSTEM_PROMPT = `你是一位软件架构师。用户会用一
 /** 用户消息：原话 + 规格 */
 export function buildArchPrompt(userInput: string, spec: AppSpec): string {
   const acceptance = spec.acceptance
-    .map((a) => `  · ${a.id}｜${a.statement}（${a.level === "must" ? "必需" : "期望"}）`)
+    .map(
+      (a) => `  · ${a.id}｜${a.statement}（${a.level === "must" ? "必需" : "期望"}）`,
+    )
     .join("\n");
 
   return [
@@ -85,8 +87,7 @@ export function buildArchPrompt(userInput: string, spec: AppSpec): string {
 // 只做结构校验，不做质量判断；质量判断在 generate/arch-check.ts
 
 export type ArchParseResult =
-  | { ok: true; arch: ArchSpec }
-  | { ok: false; reason: string; raw: string };
+  { ok: true; arch: ArchSpec } | { ok: false; reason: string; raw: string };
 
 /**
  * 归一出合法模块 id。
@@ -157,9 +158,7 @@ export function parseArch(raw: string): ArchParseResult {
         name: asString(m.name) || id,
         responsibility: asString(m.responsibility),
         // dependsOn 用同一套归一，否则 "Task Store" 与 "task-store" 会被当成两个模块
-        dependsOn: asStringArray(m.dependsOn)
-          .map(normalizeModuleId)
-          .filter(Boolean),
+        dependsOn: asStringArray(m.dependsOn).map(normalizeModuleId).filter(Boolean),
         /*
           coversFeatures 不归一：那些 id 是规格定的形状，在这里改等于把
           引用错误改成引用正确，第一道检查就再也发现不了真正的错位。
@@ -174,7 +173,11 @@ export function parseArch(raw: string): ArchParseResult {
     这种时候说解析成功，只会把一个空洞一路带到画布上。
   */
   if (modules.length === 0) {
-    return { ok: false, reason: "架构里一个模块都没有（modules 为空或全都不带合法 id）", raw };
+    return {
+      ok: false,
+      reason: "架构里一个模块都没有（modules 为空或全都不带合法 id）",
+      raw,
+    };
   }
 
   const packages: { name: string; why: string }[] = [];

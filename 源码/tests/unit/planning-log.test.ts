@@ -123,7 +123,7 @@ describe("到点语义：第 N 步的树里没有未来的东西", () => {
     }
   });
 
-  it("未来的点不是「存在但隐藏」—— 它根本不在数组里", () => {
+  it("未来的点不是“存在但隐藏”—— 它根本不在数组里", () => {
     // 断言的是数组本身：未来的点不在数组里，而不是存在但隐藏。
     const now = projectAt(threeStagesLog(), 15);
     expect(now).toHaveLength(2);
@@ -335,7 +335,7 @@ describe("顺序：按出生先后，同一时刻按出现先后", () => {
   });
 });
 
-describe("maxSeq：日志里的「现在」", () => {
+describe("maxSeq：日志里的“现在”", () => {
   it("空日志返回 0", () => {
     expect(maxSeq([])).toBe(0);
   });
@@ -349,7 +349,7 @@ describe("maxSeq：日志里的「现在」", () => {
     expect(maxSeq(log)).toBe(45);
   });
 
-  it("maxSeq(log) 就是「现在」：用它投影出来的是一棵完整的树", () => {
+  it("maxSeq(log) 就是“现在”：用它投影出来的是一棵完整的树", () => {
     // maxSeq 的用途是拿它当截止时刻，不是排序；改成只统计 born 会让这条红。
     const log = appendStatus(richLog(), "ui-1", "running", 33);
     const now = projectAt(log, maxSeq(log));

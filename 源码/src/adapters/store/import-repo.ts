@@ -47,7 +47,8 @@ export interface ImportRunPayload {
 }
 
 /** 与 core/run/service.ts 的 RunResult 同形：失败是可读原因而非异常 */
-export type ImportRunResult = { ok: true; runId: string } | { ok: false; reason: string };
+export type ImportRunResult =
+  { ok: true; runId: string } | { ok: false; reason: string };
 
 /**
  * 把一份导出载荷写成一条新运行。
@@ -69,7 +70,7 @@ export async function importRun(payload: ImportRunPayload): Promise<ImportRunRes
       if (!isSafePathSegment(segment)) {
         return {
           ok: false,
-          reason: `产物路径里有不合法的片段「${segment}」，整份导入已拒绝（原路径：${a.path}）`,
+          reason: `产物路径里有不合法的片段“${segment}”，整份导入已拒绝（原路径：${a.path}）`,
         };
       }
     }

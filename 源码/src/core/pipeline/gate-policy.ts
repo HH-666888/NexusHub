@@ -6,10 +6,7 @@
 import { STAGE_MAP, stageApproval, stageAuthorityNote, type StageId } from "./stages";
 
 /** 运行时覆盖：declared 按声明；pause 强制停，continue 强制放行，可无视声明 */
-export type GateOverride =
-  | "declared"
-  | "pause"
-  | "continue";
+export type GateOverride = "declared" | "pause" | "continue";
 
 export interface GatePolicy {
   stage: StageId;
@@ -29,7 +26,10 @@ export interface GatePolicy {
  * 优先级：强制停下 > 权限模型 > 强制放行。
  * 加严永远允许，放松必须有明确覆盖且标成 overridden。
  */
-export function resolveGatePolicy(stageId: StageId, override: GateOverride): GatePolicy {
+export function resolveGatePolicy(
+  stageId: StageId,
+  override: GateOverride,
+): GatePolicy {
   const stage = STAGE_MAP[stageId];
   const declared = stageApproval(stage) === "human";
   const reason = stageAuthorityNote(stage);
@@ -54,7 +54,7 @@ export function resolveGatePolicy(stageId: StageId, override: GateOverride): Gat
       overridden: true,
       reason,
       overrideNote:
-        `「${stage.name}」这一步声明了要人点头，但当前设置是先放行。` +
+        `“${stage.name}”这一步声明了要人点头，但当前设置是先放行。` +
         `也就是说，规格里那些模型拿不准的地方，这一次它会替你猜。` +
         `猜出来的东西会照常往下做，错了要到验收那一步才看得出来 —— 那时钱已经花完了。`,
     };

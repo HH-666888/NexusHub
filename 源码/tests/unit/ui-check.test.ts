@@ -98,7 +98,7 @@ describe("检查① 每条功能都有对应的页面或入口", () => {
     expect(item.detail).toContain("2 个页面");
   });
 
-  it("【关键】孤儿功能：没有任何页面承接 → 不通过，而且**逐条列出 id**", () => {
+  it("孤儿功能：没有任何页面承接 → 不通过，而且**逐条列出 id**", () => {
     // detail 里要真的出现那两个孤儿 id；被覆盖到的 ac-1 不该出现。
     const ui = goodUi({
       pages: [
@@ -148,7 +148,13 @@ describe("检查① 每条功能都有对应的页面或入口", () => {
     // 多出来的引用不造成孤儿功能，但它多半说明模型看错了规格，要说出来。
     const ui = goodUi({
       pages: [
-        { id: "board", name: "看板页", route: "/", coversFeatures: ["ac-1", "ac-2", "ac-3", "ac-9"], dataNeeds: [] },
+        {
+          id: "board",
+          name: "看板页",
+          route: "/",
+          coversFeatures: ["ac-1", "ac-2", "ac-3", "ac-9"],
+          dataNeeds: [],
+        },
       ],
     });
     const item = itemOf(inspectUi(ui, SPEC, ARCH), 0);
@@ -166,7 +172,7 @@ describe("检查② 组件引用的设计变量全部已定义", () => {
     expect(item.detail).toContain("全部已定义");
   });
 
-  it("【关键】悬空引用 → 不通过，而且 detail 点名「哪个组件引用了哪个变量」", () => {
+  it("悬空引用 → 不通过，而且 detail 点名“哪个组件引用了哪个变量”", () => {
     // 悬空引用在浏览器里静默失效：样式不生效、控制台不报错。
     // 检查必须把组件与变量名一起说出来，否则用户没法定位。
     const ui = goodUi({
@@ -267,7 +273,12 @@ describe("检查② 组件引用的设计变量全部已定义", () => {
         { name: "--never-used", value: "1px" },
       ],
       components: [
-        { id: "task-card", name: "任务卡", usedOn: ["board"], usesTokens: ["--color-surface"] },
+        {
+          id: "task-card",
+          name: "任务卡",
+          usedOn: ["board"],
+          usesTokens: ["--color-surface"],
+        },
       ],
     });
     const item = itemOf(inspectUi(ui, SPEC, ARCH), 1);
@@ -278,8 +289,8 @@ describe("检查② 组件引用的设计变量全部已定义", () => {
   });
 });
 
-describe("检查③ 数据需求对得上模块（★ 边界说明在这里）", () => {
-  it("【关键】检查名里必须带着「未核实接口契约」—— 边界写在名字上", () => {
+describe("检查③ 数据需求对得上模块（边界说明在这里）", () => {
+  it("检查名里必须带着“未核实接口契约”—— 边界写在名字上", () => {
     // stages.ts 的验收标准说的是接口契约，而 ArchModule 没有 interfaces 字段。
     // 检查实际只判 dataNeeds 指不指得到模块，名字里必须带着未核实接口契约。
     const item = itemOf(inspectUi(goodUi(), SPEC, ARCH), 2);
@@ -303,7 +314,7 @@ describe("检查③ 数据需求对得上模块（★ 边界说明在这里）",
     expect(item.detail).toContain("board-ui");
   });
 
-  it("对不上模块的数据需求 → 不通过，列出「哪个页面需要什么」和现有模块", () => {
+  it("对不上模块的数据需求 → 不通过，列出“哪个页面需要什么”和现有模块", () => {
     const ui = goodUi({
       pages: [
         {
@@ -370,7 +381,14 @@ describe("检查③ 数据需求对得上模块（★ 边界说明在这里）",
   });
 
   it("没有任何页面声明数据需求 → 通过，但 detail 明说这一条无从判定", () => {
-    const item = itemOf(inspectUi(goodUi({ pages: goodUi().pages.map((p) => ({ ...p, dataNeeds: [] })) }), SPEC, ARCH), 2);
+    const item = itemOf(
+      inspectUi(
+        goodUi({ pages: goodUi().pages.map((p) => ({ ...p, dataNeeds: [] })) }),
+        SPEC,
+        ARCH,
+      ),
+      2,
+    );
 
     expect(item.pass).toBe(true);
     expect(item.detail).toContain("无从判定");
@@ -404,7 +422,9 @@ describe("三条检查的汇总与顺序", () => {
             dataNeeds: ["ghost"],
           },
         ],
-        components: [{ id: "card", name: "卡", usedOn: ["board"], usesTokens: ["--nope"] }],
+        components: [
+          { id: "card", name: "卡", usedOn: ["board"], usesTokens: ["--nope"] },
+        ],
       },
       SPEC,
       ARCH,

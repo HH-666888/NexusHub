@@ -12,11 +12,7 @@ import { resolveTheme } from "@/server/theme";
  * 有了它，任何位置直接写 <ThemeToggleServer /> 即可，
  * 主题解析只发生在这一处。
  */
-export async function ThemeToggleServer({
-  className,
-}: {
-  className?: string;
-}) {
+export async function ThemeToggleServer({ className }: { className?: string }) {
   const { theme } = await resolveTheme();
   return <ThemeToggle current={theme} className={className} />;
 }

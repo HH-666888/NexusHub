@@ -72,9 +72,7 @@ describe("外观配置的收窄", () => {
 
   it("旧版本残留的多余字段被忽略，不会带进新配置", () => {
     const c = normalizeAppearance({ font: "kai", 某个已删除的选项: "x" });
-    expect(Object.keys(c).sort()).toEqual(
-      Object.keys(DEFAULT_APPEARANCE).sort(),
-    );
+    expect(Object.keys(c).sort()).toEqual(Object.keys(DEFAULT_APPEARANCE).sort());
   });
 });
 
@@ -170,7 +168,7 @@ describe("主题（黑 / 白）", () => {
     }
   });
 
-  it("【关键】旧版本存过深色底（canvas 字段）时，迁移成黑主题而不是退回默认", () => {
+  it("旧版本存过深色底（canvas 字段）时，迁移成黑主题而不是退回默认", () => {
     // 上一版的配置长这样，库里可能还留着
     const legacy = normalizeAppearance({
       font: "mono",
@@ -226,7 +224,9 @@ describe("辅助色方案", () => {
         );
 
         // 逗号是这条规矩的反面，显式挡一道。
-        expect(c, `${t.id}: ${c} 用了逗号，配斜杠透明度会变成非法值`).not.toContain(",");
+        expect(c, `${t.id}: ${c} 用了逗号，配斜杠透明度会变成非法值`).not.toContain(
+          ",",
+        );
       }
     }
   });
@@ -239,9 +239,7 @@ describe("辅助色方案", () => {
   });
 
   it("非法方案名退回默认", () => {
-    expect(normalizeAppearance({ tint: "不存在" }).tint).toBe(
-      DEFAULT_APPEARANCE.tint,
-    );
+    expect(normalizeAppearance({ tint: "不存在" }).tint).toBe(DEFAULT_APPEARANCE.tint);
   });
 });
 
@@ -301,7 +299,7 @@ describe("密钥掩码", () => {
     expect(masked).not.toContain("thisisafakekeyforunittesting");
   });
 
-  it("掩码结果固定为「前3 + 4星 + 后4」，与原文长度无关", () => {
+  it("掩码结果固定为“前3 + 4星 + 后4”，与原文长度无关", () => {
     // 掩码后的长度不该泄漏原文有多长。
     const short = maskApiKey("sk-abcdefghij");
     const long = maskApiKey("sk-" + "z".repeat(64));
@@ -422,7 +420,13 @@ describe("模型配置的收窄", () => {
 describe("预设套用", () => {
   it("套用预设会填好地址与模型名", () => {
     const next = applyPreset(
-      { provider: "deepseek", baseUrl: "", apiKey: "", decideModel: "", executeModel: "" },
+      {
+        provider: "deepseek",
+        baseUrl: "",
+        apiKey: "",
+        decideModel: "",
+        executeModel: "",
+      },
       "moonshot",
     );
     expect(next.provider).toBe("moonshot");
@@ -444,7 +448,7 @@ describe("预设套用", () => {
     expect(next.apiKey).toBe("sk-我 的密钥");
   });
 
-  it("选「自定义」时不清空已有内容", () => {
+  it("选“自定义”时不清空已有内容", () => {
     const current = {
       provider: "deepseek" as const,
       baseUrl: "https://a.com",
@@ -494,7 +498,7 @@ describe("模型配置的读写", () => {
     expect(await loadModelConfig(store)).toEqual(DEFAULT_MODEL_CONFIG);
   });
 
-  it("【关键】密钥留空时保留原有密钥 —— 不能让用户改个模型名就把密钥弄丢", async () => {
+  it("密钥留空时保留原有密钥 —— 不能让用户改个模型名就把密钥弄丢", async () => {
     // 先存一份带密钥的配置
     await saveModelConfig(
       store,
@@ -534,53 +538,61 @@ describe("模型配置的读写", () => {
   });
 
   it("填了新密钥时覆盖旧的", async () => {
-    await saveModelConfig(store, {
-      source: "custom",
-      custom: {
-        provider: "custom",
-        baseUrl: "https://api.example.com/v1",
-        apiKey: "sk-旧密钥",
-        decideModel: "m",
-        executeModel: "m",
+    await saveModelConfig(
+      store,
+      {
+        source: "custom",
+        custom: {
+          provider: "custom",
+          baseUrl: "https://api.example.com/v1",
+          apiKey: "sk-旧密钥",
+          decideModel: "m",
+          executeModel: "m",
+        },
       },
-    }, 1);
+      1,
+    );
 
-    await saveModelConfig(store, {
-      source: "custom",
-      custom: {
-        provider: "custom",
-        baseUrl: "https://api.example.com/v1",
-        apiKey: "sk-新密钥",
-        decideModel: "m",
-        executeModel: "m",
+    await saveModelConfig(
+      store,
+      {
+        source: "custom",
+        custom: {
+          provider: "custom",
+          baseUrl: "https://api.example.com/v1",
+          apiKey: "sk-新密钥",
+          decideModel: "m",
+          executeModel: "m",
+        },
       },
-    }, 1);
+      1,
+    );
 
     expect((await loadModelConfig(store)).custom.apiKey).toBe("sk-新密钥");
   });
 
   it("校验不通过时不写库 —— 半成品存进去只会把问题往后推", async () => {
-    await saveModelConfig(store, {
-      source: "custom",
-      custom: {
-        provider: "custom",
-        baseUrl: "",
-        apiKey: "",
-        decideModel: "",
-        executeModel: "",
+    await saveModelConfig(
+      store,
+      {
+        source: "custom",
+        custom: {
+          provider: "custom",
+          baseUrl: "",
+          apiKey: "",
+          decideModel: "",
+          executeModel: "",
+        },
       },
-    }, 1);
+      1,
+    );
 
     expect(store._data.has(SETTINGS_KEYS.modelConfig)).toBe(false);
     expect(await loadModelConfig(store)).toEqual(DEFAULT_MODEL_CONFIG);
   });
 
   it("切回平台默认能保存成功", async () => {
-    const { check } = await saveModelConfig(
-      store,
-      { source: "platform" },
-      1,
-    );
+    const { check } = await saveModelConfig(store, { source: "platform" }, 1);
     expect(check.ok).toBe(true);
     expect((await loadModelConfig(store)).source).toBe("platform");
   });

@@ -8,7 +8,7 @@ import { GenerationConsole } from "./generation-console";
 /**
  * 运行工作区。三个标签页：生成过程 / 成品 / 源码。
  *
- * 可折叠，默认跟随「有没有成品」：没成品时展开（开始生成的入口在里面），
+ * 可折叠，默认跟随“有没有成品”：没成品时展开（开始生成的入口在里面），
  * 有成品时收起，只留一条 40px 的标签条，把屏幕下半还给画布。
  * 高度用 38vh 自己定 —— 父组件拿不到开关状态，也就不该由父组件给高度。
  *
@@ -35,11 +35,11 @@ export function RunWorkbench({
 }) {
   const router = useRouter();
   /**
-   * 展开状态。初值跟着「有没有成品」走：没成品时展开，
-   * 那是唯一能找到「开始生成」的地方；有成品时收起。
+   * 展开状态。初值跟着“有没有成品”走：没成品时展开，
+   * 那是唯一能找到“开始生成”的地方；有成品时收起。
    */
   const [open, setOpen] = useState(!hasArtifact);
-  /** 有成品时默认停在「成品」，点进来最想看的通常是做出来的东西 */
+  /** 有成品时默认停在“成品”，点进来最想看的通常是做出来的东西 */
   const [tab, setTab] = useState<"generate" | "artifact" | "source">(
     hasArtifact ? "artifact" : "generate",
   );
@@ -121,7 +121,9 @@ export function RunWorkbench({
 
         <div className="ml-auto flex items-center gap-3 text-[11px] text-slate-500">
           {artifactBytes !== null && (
-            <span className="tabular-nums">成品 {(artifactBytes / 1024).toFixed(1)} KB</span>
+            <span className="tabular-nums">
+              成品 {(artifactBytes / 1024).toFixed(1)} KB
+            </span>
           )}
           {hasArtifact && (
             <>
@@ -144,7 +146,7 @@ export function RunWorkbench({
           )}
 
           {/*
-            箭头指「点了之后往哪走」，不是「它现在在哪」：收起时朝上，展开时朝下。
+            箭头指“点了之后往哪走”，不是“它现在在哪”：收起时朝上，展开时朝下。
           */}
           <button
             type="button"
@@ -178,7 +180,7 @@ export function RunWorkbench({
             ) : (
               <Empty
                 title="还没有成品"
-                hint="切到「生成过程」点一下开始生成，完成后这里会出现打开成品的入口。"
+                hint="切到“生成过程”点一下开始生成，完成后这里会出现打开成品的入口。"
                 action={{ label: "去生成", onClick: () => pick("generate") }}
               />
             ))}

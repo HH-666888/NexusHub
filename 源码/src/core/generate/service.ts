@@ -1,12 +1,16 @@
 /**
  * 生成编排：从一句话到可运行页面的全过程，以异步事件流吐出。
- * 顺序是「先记账，再检查，最后落盘」—— 钱花出去是事实，失败了也要记。
+ * 顺序是“先记账，再检查，最后落盘”—— 钱花出去是事实，失败了也要记。
  */
 
 import type { Artifact } from "../domain/artifact";
 import { summarizeChecks, type CheckResult, type CheckSummary } from "../domain/check";
 import type { ArchSpec } from "../domain/arch";
-import { buildAssemblePrompt, type BuildBatch, type BuildBatchSummary } from "../domain/module-build";
+import {
+  buildAssemblePrompt,
+  type BuildBatch,
+  type BuildBatchSummary,
+} from "../domain/module-build";
 import type { AppSpec, SpecGate } from "../domain/spec";
 import type { UiSpec } from "../domain/ui-spec";
 import type { ArchCheck } from "./arch-check";
@@ -27,7 +31,7 @@ import { addUsage, ZERO_USAGE } from "../domain/module-build";
 
 // 事件定义：前端认识这几种事件就能渲染出完整的过程视图。
 // arch / ui / building 做成 phase 而不是新 kind：PHASE_OWNER 是穷尽 Record，
-// 加一个值编译器就会逼着人回答「这条 phase 算谁的」。
+// 加一个值编译器就会逼着人回答“这条 phase 算谁的”。
 
 export type GeneratePhase =
   | "spec" // 规格化：把一句话需求整理成结构化规格
@@ -125,14 +129,13 @@ export interface GenerateInput {
   callbackContext?: string | null;
   /**
    * 并行构建批次。传了之后装配提示词会真的带上各模块片段，
-   * 产物检查也会多跑一条「模块代码确实进入了产物」的探针。
+   * 产物检查也会多跑一条“模块代码确实进入了产物”的探针。
    * 不传即保持原来的单次调用行为，事件序列一个字节都不变。
    */
   batch?: BuildBatch | null;
   /** 架构产物，只用来让装配提示词带上模块名与职责；不传则只写 id */
   arch?: ArchSpec | null;
 }
-
 
 export async function* generateApp(
   deps: GenerateDeps,
@@ -160,7 +163,7 @@ export async function* generateApp(
     label:
       input.batch && input.batch.modules.length > 0
         ? // 这次是装配：说清不是从头写，用户才知道前面那次并行没白跑
-        `正在装配 ${input.batch.modules.length} 个模块的产出`
+          `正在装配 ${input.batch.modules.length} 个模块的产出`
         : input.effort === "none"
           ? "正在生成（不思考）"
           : "正在生成",
@@ -239,7 +242,7 @@ export async function* generateApp(
 
     /*
       重试条件：截断了、还有下一次、且加倍之后确实更大。
-      attempt < MAX_ATTEMPTS 不能省 —— 少了它事件里会写「已加倍重新装配」，
+      attempt < MAX_ATTEMPTS 不能省 —— 少了它事件里会写“已加倍重新装配”，
       而那次装配根本没发生。
     */
     const nextBudget = attemptResult.truncated
@@ -351,7 +354,7 @@ export async function* generateApp(
   yield { kind: "artifact", artifact };
 
   // 收尾
-  // 有检查没过时标记为失败，让「生成完了」与「生成对了」保持区别
+  // 有检查没过时标记为失败，让“生成完了”与“生成对了”保持区别
   const ok = summary.failed === 0;
   await runs.update(input.runId, {
     stage: ok ? "verify" : "build",

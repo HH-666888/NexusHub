@@ -55,7 +55,7 @@ describe("步骤块 · 分块边界", () => {
     expect(toStepBlocks([])).toEqual([]);
   });
 
-  it("第一条 phase 之前的事件归到「开始」块", () => {
+  it("第一条 phase 之前的事件归到“开始”块", () => {
     const blocks = toStepBlocks([think(0, "先想"), text(1, "再写")]);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].title).toBe(START_BLOCK_TITLE);
@@ -75,7 +75,7 @@ describe("步骤块 · 分块边界", () => {
     ]);
   });
 
-  it("【不变量】块数 === phase 数（含「开始」块当且仅当首条不是 phase）", () => {
+  it("不变量块数 === phase 数（含“开始”块当且仅当首条不是 phase）", () => {
     // 块数只比 phase 数多一个开始块，多一块就是凭空造步骤。
     // 分块边界只许来自真实存在的 phase 事件。
     const leadingPhase = [
@@ -91,19 +91,17 @@ describe("步骤块 · 分块边界", () => {
     for (const events of [leadingPhase, leadingOther, noPhase]) {
       const phaseCount = events.filter((e) => e.payload.kind === "phase").length;
       const startsWithPhase = events[0]?.payload.kind === "phase";
-      expect(toStepBlocks(events)).toHaveLength(
-        phaseCount + (startsWithPhase ? 0 : 1),
-      );
+      expect(toStepBlocks(events)).toHaveLength(phaseCount + (startsWithPhase ? 0 : 1));
     }
   });
 
-  it("一条 phase 都没有时，只切出一块「开始」（不凭空造六道工序）", () => {
+  it("一条 phase 都没有时，只切出一块“开始”（不凭空造六道工序）", () => {
     const blocks = toStepBlocks([text(0, "只写了一行")]);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].title).toBe(START_BLOCK_TITLE);
   });
 
-  it("★ 空块保留：phase 后面什么都没跟，也必须留下「这一步发生过」", () => {
+  it("空块保留：phase 后面什么都没跟，也必须留下“这一步发生过”", () => {
     const blocks = toStepBlocks([phase(0, "正在保存产物")]);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].title).toBe("正在保存产物");
@@ -114,13 +112,17 @@ describe("步骤块 · 分块边界", () => {
   });
 
   it("最后一块是空块时也保留（生成到一半断在这里）", () => {
-    const blocks = toStepBlocks([phase(0, "第一步"), text(1, "内容"), phase(2, "第二步")]);
+    const blocks = toStepBlocks([
+      phase(0, "第一步"),
+      text(1, "内容"),
+      phase(2, "第二步"),
+    ]);
     expect(blocks).toHaveLength(2);
     expect(blocks[1].text).toBe("");
     expect(blocks[1].toSeq).toBe(2);
   });
 
-  it("phase 没带 label 时说「未命名」，不编一个名字", () => {
+  it("phase 没带 label 时说“未命名”，不编一个名字", () => {
     const blocks = toStepBlocks([
       { seq: 0, payload: { kind: "phase", phase: "generating", label: "  " } },
     ]);
@@ -130,12 +132,22 @@ describe("步骤块 · 分块边界", () => {
 
 describe("步骤块 · 内容归属", () => {
   it("reasoning 多段 delta 按序拼接", () => {
-    const blocks = toStepBlocks([phase(0, "正在生成"), think(1, "先看"), think(2, "需求"), think(3, "再动手")]);
+    const blocks = toStepBlocks([
+      phase(0, "正在生成"),
+      think(1, "先看"),
+      think(2, "需求"),
+      think(3, "再动手"),
+    ]);
     expect(blocks[0].reasoning).toBe("先看需求再动手");
   });
 
   it("text 多段 delta 按序拼接", () => {
-    const blocks = toStepBlocks([phase(0, "正在生成"), text(1, "<html>"), text(2, "<body>"), text(3, "</body>")]);
+    const blocks = toStepBlocks([
+      phase(0, "正在生成"),
+      text(1, "<html>"),
+      text(2, "<body>"),
+      text(3, "</body>"),
+    ]);
     expect(blocks[0].text).toBe("<html><body></body>");
   });
 
@@ -179,7 +191,13 @@ describe("步骤块 · 内容归属", () => {
     expect(total?.reasoningTokens).toBe(150);
     expect(total?.costCny).toBeCloseTo(0.0357, 10);
     // 归到当前块之后，别的块不许再"继承"这笔账
-    expect(toStepBlocks([phase(0, "第一步"), usage(1, 0.5, { input: 1, output: 1, reasoning: 0 }), phase(2, "第二步")])[1].usage).toBeNull();
+    expect(
+      toStepBlocks([
+        phase(0, "第一步"),
+        usage(1, 0.5, { input: 1, output: 1, reasoning: 0 }),
+        phase(2, "第二步"),
+      ])[1].usage,
+    ).toBeNull();
   });
 
   it("没收到 check / usage 时是 null，不是空数组也不是 0", () => {
@@ -201,7 +219,13 @@ describe("步骤块 · 内容归属", () => {
         seq: 1,
         payload: {
           kind: "artifact",
-          artifact: { runId: "r", kind: "html", path: "r/index.html", bytes: 2048, createdAt: 1 },
+          artifact: {
+            runId: "r",
+            kind: "html",
+            path: "r/index.html",
+            bytes: 2048,
+            createdAt: 1,
+          },
         },
       },
     ]);
@@ -212,7 +236,10 @@ describe("步骤块 · 内容归属", () => {
 
 describe("步骤块 · 语气", () => {
   it("phase:done → ok", () => {
-    const blocks = toStepBlocks([phase(0, "正在生成"), phase(1, "完成 · 7/7 项检查通过", "done")]);
+    const blocks = toStepBlocks([
+      phase(0, "正在生成"),
+      phase(1, "完成 · 7/7 项检查通过", "done"),
+    ]);
     expect(blocks[1].tone).toBe("ok");
   });
 
@@ -239,12 +266,12 @@ describe("步骤块 · 语气", () => {
     expect(clean[1].tone).toBe("ok");
   });
 
-  it("普通 phase → normal（不许把「在跑」染成成功或失败）", () => {
+  it("普通 phase → normal（不许把“在跑”染成成功或失败）", () => {
     const blocks = toStepBlocks([phase(0, "正在生成")]);
     expect(blocks[0].tone).toBe("normal");
   });
 
-  it("「开始」块默认 normal，但真的出过错时照样是红的", () => {
+  it("“开始”块默认 normal，但真的出过错时照样是红的", () => {
     // 预算闸门就是这种形状：首条事件是 error，之后什么都没有。
     // 若因为没 phase 就一律 normal，界面会是一块看不出出过事的灰色开始块。
     const clean = toStepBlocks([text(0, "先写一行")]);
@@ -291,7 +318,11 @@ describe("步骤块 · 序号与身份", () => {
   });
 
   it("事件流从非 0 的 seq 开始时，边界照样对", () => {
-    const blocks = toStepBlocks([phase(11, "第一步"), text(12, "字"), phase(13, "第二步")]);
+    const blocks = toStepBlocks([
+      phase(11, "第一步"),
+      text(12, "字"),
+      phase(13, "第二步"),
+    ]);
     expect(blocks.map((b) => [b.id, b.fromSeq, b.toSeq])).toEqual([
       ["step-11", 11, 12],
       ["step-13", 13, 13],
@@ -337,7 +368,7 @@ describe("步骤块 · 面板默认停在哪一块", () => {
     expect(pickCurrentBlockId(blocks)).toBe(blocks[0].id);
   });
 
-  it("★ 最后一块是空的（收尾 phase:\"done\"）→ 停在倒数第二块", () => {
+  it('最后一块是空的（收尾 phase:"done"）→ 停在倒数第二块', () => {
     // 一次跑完的运行最常见的样子：正文之后再来一条完成 7/7 项检查的收尾 phase。
     // 它是一次真实发生过的步骤，但一个字都没输出。
     const blocks = toStepBlocks([
@@ -370,7 +401,7 @@ describe("步骤块 · 面板默认停在哪一块", () => {
     expect(pickCurrentBlockId(blocks)).toBe(blocks[0].id);
   });
 
-  it("★ 全都空 → 退回**最后一块**（不是 null）", () => {
+  it("全都空 → 退回**最后一块**（不是 null）", () => {
     // 不能返回 null：null 在面板那里表示还没有任何过程事件。
     // 这里的事实是步骤都发生了、只是没有留下输出。
     // 退回最后一块，面板会照实说这一步没有返回思考内容或正文。
@@ -445,7 +476,7 @@ describe("步骤块 · 面板默认停在哪一块", () => {
     expect(pickCurrentBlockId(blocks)).toBe(blocks[1].id);
   });
 
-  it("★ 出过错的块只要写了东西，照样被选中（判据与 tone 无关）", () => {
+  it("出过错的块只要写了东西，照样被选中（判据与 tone 无关）", () => {
     // 往前找只认有没有内容，不认好不好看。
     // 失败那一步写了半截正文，它就是这次运行里最后一个有内容的块。
     const blocks = toStepBlocks([
@@ -458,7 +489,7 @@ describe("步骤块 · 面板默认停在哪一块", () => {
     expect(pickCurrentBlockId(blocks)).toBe(blocks[0].id);
   });
 
-  it("⚠️ 只选一个 id：块本身一个字段都不改（不合并、不搬运内容）", () => {
+  it("只选一个 id：块本身一个字段都不改（不合并、不搬运内容）", () => {
     const blocks = toStepBlocks([
       phase(0, "正在生成"),
       text(1, "第一块的字"),

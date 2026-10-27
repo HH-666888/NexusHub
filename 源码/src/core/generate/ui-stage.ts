@@ -1,7 +1,7 @@
 /**
  * 界面设计：一次决策级调用，把已定型的架构变成页面与设计变量，写盘成 ui-spec.json。
  * 写法与 arch-stage 一致；spec 判功能有页面，arch 判数据需求指得到模块。
- * 降级为「单页 + 一套最小变量」，三条本地检查照样全绿，所以 fallback 标记必须如实。
+ * 降级为“单页 + 一套最小变量”，三条本地检查照样全绿，所以 fallback 标记必须如实。
  */
 
 import type { ArtifactStore } from "../ports/artifact-store";
@@ -19,7 +19,6 @@ import {
   type UiSpec,
 } from "../domain/ui-spec";
 import { inspectUi, type UiCheck } from "./ui-check";
-
 
 export type UiStageEvent =
   | { kind: "phase"; phase: "ui"; label: string }
@@ -74,7 +73,6 @@ export const UI_MAX_OUTPUT_TOKENS = 6000;
 
 /** 产文件名，与 stages.ts 的声明一致，测试守住两者相同 */
 export const UI_ARTIFACT_NAME = "ui-spec.json";
-
 
 export async function* runUiStage(
   deps: UiStageDeps,
@@ -228,7 +226,7 @@ export async function* runUiStage(
     };
   }
 
-  // 一次性调用也会思考，不发出来界面会显示「没有返回思考内容」；放在结果事件之前
+  // 一次性调用也会思考，不发出来界面会显示“没有返回思考内容”；放在结果事件之前
   if (result.reasoning.trim().length > 0) {
     yield { kind: "reasoning", delta: result.reasoning };
   }

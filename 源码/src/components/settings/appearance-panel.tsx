@@ -43,10 +43,7 @@ export function AppearancePanel({
   updatedAt: number | null;
 }) {
   const [config, setConfig] = useState<AppearanceConfig>(initial);
-  const [state, formAction, pending] = useActionState(
-    saveAppearanceAction,
-    INITIAL,
-  );
+  const [state, formAction, pending] = useActionState(saveAppearanceAction, INITIAL);
 
   const previewVars = appearanceToCssVars(config);
   const dirty = JSON.stringify(config) !== JSON.stringify(initial);
@@ -75,7 +72,7 @@ export function AppearancePanel({
       </header>
 
       <form action={formAction}>
-        {/* 隐藏字段是「本地状态」与「真实表单」之间的唯一桥梁。
+        {/* 隐藏字段是“本地状态”与“真实表单”之间的唯一桥梁。
             有它们在，没跑 JS 的环境也能提交出正确配置。 */}
         {(Object.keys(config) as Array<keyof AppearanceConfig>).map((k) => (
           <input key={k} type="hidden" name={k} value={config[k]} />
@@ -111,8 +108,8 @@ export function AppearancePanel({
             {/* 辅助色的实际效果预览：一排发光小点 */}
             <div className="-mt-3 flex items-center gap-2 pl-1">
               <span className="text-[10px] text-slate-600">分配效果</span>
-              {TINT_OPTIONS.find((t) => t.id === config.tint)?.colors
-                .slice(0, 6)
+              {TINT_OPTIONS.find((t) => t.id === config.tint)
+                ?.colors.slice(0, 6)
                 .map((_, i) => (
                   <span
                     key={i}
@@ -139,9 +136,7 @@ export function AppearancePanel({
               label="背景风格"
               options={BACKDROP_OPTIONS}
               value={config.backdrop}
-              onChange={(v) =>
-                update("backdrop", v as AppearanceConfig["backdrop"])
-              }
+              onChange={(v) => update("backdrop", v as AppearanceConfig["backdrop"])}
             />
             <OptionGroup
               label="圆角"
@@ -154,9 +149,7 @@ export function AppearancePanel({
           {/* ---------- 右侧：实时预览 ---------- */}
           <div className="lg:sticky lg:top-4 lg:self-start">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-slate-300">
-                实时预览
-              </span>
+              <span className="text-xs font-medium text-slate-300">实时预览</span>
               <button
                 type="submit"
                 disabled={pending || !dirty}
@@ -173,10 +166,12 @@ export function AppearancePanel({
             <div
               data-theme={config.theme}
               data-backdrop={config.backdrop}
-              style={{
-                ...previewVars,
-                background: "var(--color-canvas)",
-              } as CSSProperties}
+              style={
+                {
+                  ...previewVars,
+                  background: "var(--color-canvas)",
+                } as CSSProperties
+              }
               className="relative overflow-hidden rounded-xl border border-[var(--color-border-soft)] p-4"
             >
               <div
@@ -199,16 +194,14 @@ export function AppearancePanel({
                     className="tint-dot inline-block h-2 w-2 rounded-full"
                     style={{ "--tint": tintVarAt(0) } as CSSProperties}
                   />
-                  <span className="text-sm font-semibold text-slate-100">
-                    Nexus
-                  </span>
+                  <span className="text-sm font-semibold text-slate-100">Nexus</span>
                 </div>
 
                 <div
                   className="mt-3 text-lg leading-tight font-semibold text-slate-100"
                   style={{ fontFamily: "var(--app-font)" }}
                 >
-                  把「做一个……」
+                  把“做一个……”
                   <br />
                   <span style={{ color: "var(--app-accent-soft)" }}>
                     变成真能用的东西

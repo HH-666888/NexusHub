@@ -51,14 +51,14 @@ export interface BuildModulesInput {
   continueOnError?: boolean;
   /**
    * 只构建这几个模块（断点续跑）。未给即构建全部。
-   * 提示词里的「第 N 个 / 共 M 个」仍按架构里的全部模块数算。
+   * 提示词里的“第 N 个 / 共 M 个”仍按架构里的全部模块数算。
    */
   onlyModuleIds?: readonly string[];
 }
 
 /**
  * 归一并发上限。<=0 落到默认值而不是 max(1, x)：
- * concurrency: 0 的语义是「没想好」，按 0 处理会让一次运行安静地不构建任何模块。
+ * concurrency: 0 的语义是“没想好”，按 0 处理会让一次运行安静地不构建任何模块。
  */
 export function resolveConcurrency(raw?: number): number {
   if (raw === undefined || !Number.isFinite(raw) || raw <= 0) {
@@ -69,8 +69,7 @@ export function resolveConcurrency(raw?: number): number {
 
 /** 一个模块这一轮的结果 */
 type Outcome =
-  | { ok: true; build: ModuleBuild }
-  | { ok: false; failure: ModuleBuildFailure };
+  { ok: true; build: ModuleBuild } | { ok: false; failure: ModuleBuildFailure };
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -99,7 +98,7 @@ export async function buildModules(
 
   /*
     要跑的模块数为 0：不发起调用，返回空批次，也不补假模块 ——
-    补一个会让「并行构建」从事实变成台词。
+    补一个会让“并行构建”从事实变成台词。
   */
   if (targets.length === 0) {
     return {
@@ -122,13 +121,13 @@ export async function buildModules(
 
   /**
    * 跑一个模块：一次模型调用 → 解析成片段，任何一步出错都变成一条 failure。
-   * 「单模块失败不许拖垮整批」就落在「错误在这里变成数据，不向上冒」。
+   * “单模块失败不许拖垮整批”就落在“错误在这里变成数据，不向上冒”。
    */
   async function runOne(target: ArchModule, index: number): Promise<Outcome> {
     const brief = moduleBrief(input.arch, input.spec, target);
     /*
-      「第几个」取它在架构全部模块里的位置：只补 1 个时它可能是第 4 个，
-      对它说「你是第 1 个，共 4 个」是自相矛盾的。
+      “第几个”取它在架构全部模块里的位置：只补 1 个时它可能是第 4 个，
+      对它说“你是第 1 个，共 4 个”是自相矛盾的。
     */
     const archIndex = modules.findIndex((m) => m.id === target.id);
     const userMessage = buildModulePrompt(
@@ -157,7 +156,7 @@ export async function buildModules(
       });
     } catch (err) {
       /*
-        调用本身失败：钱通常没花出去，但「失败」必须留下，它对应清单上一个红点。
+        调用本身失败：钱通常没花出去，但“失败”必须留下，它对应清单上一个红点。
         重试那一次失败不会走到这里 —— 助手把它收成了 retryError。
       */
       return {
@@ -183,7 +182,7 @@ export async function buildModules(
     const result = call.result;
     /*
       账本粒度：一个模块一行（重试过就把两次合起来）。模块层的交付单位是
-      「这个模块花了多少钱」；「重试过」由 retriedModules、失败原因和思考内容三处
+      “这个模块花了多少钱”；“重试过”由 retriedModules、失败原因和思考内容三处
       说出来，不靠账本。装配那一道没有模块这个中间单位，所以按调用记 —— 有意不同。
     */
     const spentUsage = call.attempts.reduce(
@@ -197,7 +196,7 @@ export async function buildModules(
     const parsed = parseModuleBuild(target.id, result.text);
     if (!parsed.ok) {
       /*
-        失败原因要把「截断」和「重试」说出来：这两种原因的处置方式完全不同。
+        失败原因要把“截断”和“重试”说出来：这两种原因的处置方式完全不同。
       */
       const why = call.retryError
         ? `产出无法使用：${parsed.reason}（输出被长度上限截断，加倍预算重试那一次又失败了：${call.retryError}）`

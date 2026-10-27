@@ -65,8 +65,11 @@ const BASE: ModelRequest = {
 };
 
 describe("截断重试 · 该重试的时候", () => {
-  it("【关键】第一次被截断 → 加倍预算重试一次，并以第二次为准", async () => {
-    const { model, h } = makeModel([{ truncated: true }, { truncated: false, text: "完整产物" }]);
+  it("第一次被截断 → 加倍预算重试一次，并以第二次为准", async () => {
+    const { model, h } = makeModel([
+      { truncated: true },
+      { truncated: false, text: "完整产物" },
+    ]);
     const out = await completeWithTruncationRetry(model, BASE);
 
     expect(h.calls).toHaveLength(2);
@@ -113,7 +116,7 @@ describe("截断重试 · 该重试的时候", () => {
 });
 
 describe("截断重试 · 不该重试的时候（反例）", () => {
-  it("★ 反例：没被截断 → **一次都不许多调**（无脑重试会让钱凭空翻倍）", async () => {
+  it("反例：没被截断 → **一次都不许多调**（无脑重试会让钱凭空翻倍）", async () => {
     const { model, h } = makeModel([{ truncated: false }]);
     const out = await completeWithTruncationRetry(model, BASE);
 
@@ -123,13 +126,13 @@ describe("截断重试 · 不该重试的时候（反例）", () => {
     expect(out.stillTruncated).toBe(false);
   });
 
-  it("★ 反例：调用本身抛错 → 不重试，异常原样往上抛", async () => {
+  it("反例：调用本身抛错 → 不重试，异常原样往上抛", async () => {
     const { model, h } = makeModel([{ throws: "网络断了" }]);
     await expect(completeWithTruncationRetry(model, BASE)).rejects.toThrow("网络断了");
     expect(h.calls).toHaveLength(1);
   });
 
-  it("★ 反例：没给 maxOutputTokens（用的是适配器默认值）→ 不重试，如实报截断", async () => {
+  it("反例：没给 maxOutputTokens（用的是适配器默认值）→ 不重试，如实报截断", async () => {
     const { model, h } = makeModel([{ truncated: true }]);
     const out = await completeWithTruncationRetry(model, {
       tier: "execute",
@@ -142,7 +145,7 @@ describe("截断重试 · 不该重试的时候（反例）", () => {
     expect(out.retriedWithMaxTokens).toBeNull();
   });
 
-  it("★ 反例：预算已经顶到上限 → 不重试（加倍等于没加）", async () => {
+  it("反例：预算已经顶到上限 → 不重试（加倍等于没加）", async () => {
     const { model, h } = makeModel([{ truncated: true }]);
     const out = await completeWithTruncationRetry(model, {
       ...BASE,
@@ -158,7 +161,10 @@ describe("截断重试 · 不该重试的时候（反例）", () => {
 describe("截断重试 · 加倍的边界", () => {
   it("加倍不会超过实测上限：100000 → 131072（而不是 200000）", async () => {
     const { model, h } = makeModel([{ truncated: true }, {}]);
-    const out = await completeWithTruncationRetry(model, { ...BASE, maxOutputTokens: 100000 });
+    const out = await completeWithTruncationRetry(model, {
+      ...BASE,
+      maxOutputTokens: 100000,
+    });
 
     expect(h.calls[1].maxOutputTokens).toBe(MAX_OUTPUT_TOKENS_CEILING);
     expect(out.retriedWithMaxTokens).toBe(MAX_OUTPUT_TOKENS_CEILING);
@@ -170,7 +176,7 @@ describe("截断重试 · 加倍的边界", () => {
     expect(h.calls[1].maxOutputTokens).toBe(131072);
   });
 
-  it("【关键】重试之后**仍然**被截断 → 如实标记 stillTruncated（不许当成功）", async () => {
+  it("重试之后**仍然**被截断 → 如实标记 stillTruncated（不许当成功）", async () => {
     const { model, h } = makeModel([{ truncated: true }, { truncated: true }]);
     const out = await completeWithTruncationRetry(model, BASE);
 
@@ -183,9 +189,12 @@ describe("截断重试 · 加倍的边界", () => {
 });
 
 describe("截断重试 · 重试那一次自己失败（最容易漏账的一种）", () => {
-  it("【关键】重试抛错 → **不往上抛**，把第一次的结果带出来并说清重试失败", async () => {
+  it("重试抛错 → **不往上抛**，把第一次的结果带出来并说清重试失败", async () => {
     // 第一次调用成功返回、钱已经花掉；把重试异常往上抛，这笔钱就凭空消失。
-    const { model, h } = makeModel([{ truncated: true, costCny: 0.07 }, { throws: "网关超时" }]);
+    const { model, h } = makeModel([
+      { truncated: true, costCny: 0.07 },
+      { throws: "网关超时" },
+    ]);
     const out = await completeWithTruncationRetry(model, BASE);
 
     expect(h.calls).toHaveLength(2);
@@ -197,7 +206,7 @@ describe("截断重试 · 重试那一次自己失败（最容易漏账的一种
     expect(out.retriedWithMaxTokens).toBe(16384);
   });
 
-  it("★ 反例：重试成功时 retryError 必须是 null（别把正常路径也标成失败）", async () => {
+  it("反例：重试成功时 retryError 必须是 null（别把正常路径也标成失败）", async () => {
     const { model } = makeModel([{ truncated: true }, {}]);
     const out = await completeWithTruncationRetry(model, BASE);
     expect(out.retryError).toBeNull();

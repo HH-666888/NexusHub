@@ -14,15 +14,9 @@ interface AuthCardProps {
 /**
  * 登录 / 注册页共用的卡片外壳
  * 两页视觉完全一致，只有表单内容与底部链接不同 ——
- * 把外壳抽出来，就不会出现「改了登录页忘了改注册页」的情况。
+ * 把外壳抽出来，就不会出现“改了登录页忘了改注册页”的情况。
  */
-export function AuthCard({
-  title,
-  subtitle,
-  children,
-  footer,
-  error,
-}: AuthCardProps) {
+export function AuthCard({ title, subtitle, children, footer, error }: AuthCardProps) {
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm">

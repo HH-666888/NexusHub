@@ -113,7 +113,9 @@ async function main() {
   console.log(`  会话令牌  ${token}`);
   console.log();
   console.log("  给截图工具用（开发期）：");
-  console.log(`  node scripts/shot.mjs "http://localhost:3000/studio?run=${run.id}" out.png "${token}" 900`);
+  console.log(
+    `  node scripts/shot.mjs "http://localhost:3000/studio?run=${run.id}" out.png "${token}" 900`,
+  );
 }
 
 main().catch((err) => {

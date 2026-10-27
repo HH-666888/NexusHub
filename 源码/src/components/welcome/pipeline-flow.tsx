@@ -6,7 +6,7 @@ import { STAGES } from "@/core/pipeline/stages";
  * 首页核心视觉：一句话 → 六道工序 → 一个成品。
  *
  * 性能是硬约束：动效只改 transform 与 opacity（跳过布局与绘制，直接由 GPU 合成），
- * 「节点点亮」用覆盖层的 opacity 而不是改 background-color 或 box-shadow —— 后者每帧重绘。
+ * “节点点亮”用覆盖层的 opacity 而不是改 background-color 或 box-shadow —— 后者每帧重绘。
  * 全场没有一张图片、没有一行动画 JS，引入库带来的几十 KB 在这里是 0。
  *
  * 阶段数据取自 core/pipeline/stages：首页讲的六道工序就是产品里真正跑的那六道。
@@ -15,7 +15,10 @@ export function PipelineFlow() {
   return (
     <div className="relative mx-auto w-full max-w-3xl">
       {/* 输入：用户说的那一句话 */}
-      <div className="animate-rise mx-auto max-w-xl" style={{ animationDelay: "0.15s" }}>
+      <div
+        className="animate-rise mx-auto max-w-xl"
+        style={{ animationDelay: "0.15s" }}
+      >
         <div className="flex items-center gap-3 rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] px-4 py-3">
           <span aria-hidden className="text-slate-500">
             ▸
@@ -28,9 +31,7 @@ export function PipelineFlow() {
             className="caret inline-block h-4 w-0.5 bg-[var(--app-accent-soft)] align-middle"
           />
         </div>
-        <p className="mt-2 text-center text-[11px] text-slate-500">
-          你只需要说这一句
-        </p>
+        <p className="mt-2 text-center text-[11px] text-slate-500">你只需要说这一句</p>
       </div>
 
       {/* ---------- 连接线 ---------- */}
@@ -41,10 +42,7 @@ export function PipelineFlow() {
       />
 
       {/* 流水线：六道工序依次点亮 */}
-      <div
-        className="animate-rise relative"
-        style={{ animationDelay: "0.45s" }}
-      >
+      <div className="animate-rise relative" style={{ animationDelay: "0.45s" }}>
         <ol className="relative grid grid-cols-3 gap-2 sm:grid-cols-6 sm:gap-3">
           {STAGES.map((stage, i) => (
             <li
@@ -54,10 +52,10 @@ export function PipelineFlow() {
             >
               {/*
                 点亮的覆盖层。位移量 = 索引 × 固定间隔，
-                形成一道依次流过的波，视觉上就是「工厂在运转」。
+                形成一道依次流过的波，视觉上就是“工厂在运转”。
 
                 颜色用该工序自己的辅助色（第 i 个位置），而不是统一的强调色 ——
-                六道工序各一色，扫过去的时候能看清「现在是第几道」。
+                六道工序各一色，扫过去的时候能看清“现在是第几道”。
               */}
               <span
                 aria-hidden
@@ -83,7 +81,7 @@ export function PipelineFlow() {
                   boxShadow: "0 0 20px -10px rgb(var(--tint) / 0.75)",
                 }}
               >
-                {/* 顶部细亮线 ——「光亮感」的主要来源 */}
+                {/* 顶部细亮线 ——“光亮感”的主要来源 */}
                 <span
                   aria-hidden
                   className="absolute inset-x-0 top-0 h-px"
@@ -152,7 +150,10 @@ export function PipelineFlow() {
             ].map((col) => (
               <div key={col.title} className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
-                  <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${col.tone}`} />
+                  <span
+                    aria-hidden
+                    className={`h-1.5 w-1.5 rounded-full ${col.tone}`}
+                  />
                   <span className="text-[9px] text-slate-400">{col.title}</span>
                 </div>
                 {Array.from({ length: col.n }).map((_, i) => (

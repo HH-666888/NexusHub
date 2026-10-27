@@ -52,7 +52,7 @@ export interface CockpitProps {
   costByStage?: CostByStage;
   /**
    * 人工门禁的运行时覆盖，服务端读环境变量后传下来。
-   * 必须一路传到图上：图上写「要人点头」而运行时不真的停，比没有门禁更糟。
+   * 必须一路传到图上：图上写“要人点头”而运行时不真的停，比没有门禁更糟。
    */
   gateOverride?: GateOverride;
   /** 主题开关。由服务端页面渲染好传进来，见 cockpit-header 里的说明 */
@@ -74,11 +74,11 @@ export function Cockpit({
   const pathname = usePathname();
 
   /*
-    让「构建记录 / 任务图」这个切换进 URL。
+    让“构建记录 / 任务图”这个切换进 URL。
     理由有两个，第二个才是主要的：
       一、链接可分享 —— 把 ?tab=graph 发给别人，对方打开就是同一张图
       二、截图与端到端测试没法点按钮。
-           验证工具只能「导航到某个地址」，不能「先点一下再截」。
+           验证工具只能“导航到某个地址”，不能“先点一下再截”。
            状态不上 URL，这块界面就永远没法自动验证。
     用 replace 而不是 push：切个标签页不该在浏览器历史里留一堆记录，
     否则用户按返回键要按很多次才能退出去。
@@ -97,16 +97,16 @@ export function Cockpit({
   };
 
   /**
-   * 示例提示词的「种子」：点空状态里的示例时，把文字填进顶部的输入框。
+   * 示例提示词的“种子”：点空状态里的示例时，把文字填进顶部的输入框。
    *
-   * 用「种子 + key 重挂载」而不是受控组件：受控要把每次按键提到这一层，
+   * 用“种子 + key 重挂载”而不是受控组件：受控要把每次按键提到这一层，
    * 整棵子树跟着重渲染。代价是重挂载会丢掉已输入的内容 —— 而点示例本来就要覆盖它。
    */
   const [seed, setSeed] = useState<{ text: string; n: number } | null>(null);
 
   /*
     进度推算抽在 core 里：那里藏着一条不能改错的规则 ——
-    没接入的工序绝不能显示成「已通过」，所以要被单测钉住，而不是靠人眼检查。
+    没接入的工序绝不能显示成“已通过”，所以要被单测钉住，而不是靠人眼检查。
   */
   const stageStatuses = computeStageStatuses(selectedRun);
   const plannedCount = countPlanned();
@@ -129,7 +129,7 @@ export function Cockpit({
           </div>
 
           {/*
-            如实说明当前实现到哪一步。与其让评委自己发现「这几道工序没跑」，
+            如实说明当前实现到哪一步。与其让评委自己发现“这几道工序没跑”，
             不如主动讲清楚现在有什么、还差什么。
           */}
           {plannedCount > 0 && (
@@ -137,10 +137,8 @@ export function Cockpit({
               当前为
               <span className="mx-1 text-slate-300">直通模式</span>
               ：跳过架构定型 / 界面设计，直接生成。
-              <span className="mx-1 text-slate-400">
-                {plannedCount} 道工序尚未接入
-              </span>
-              ，标为「未接入」的工序暂时不产出契约文件。
+              <span className="mx-1 text-slate-400">{plannedCount} 道工序尚未接入</span>
+              ，标为“未接入”的工序暂时不产出契约文件。
             </div>
           )}
 
@@ -184,7 +182,7 @@ export function Cockpit({
                       没花过钱时 describeStageCost 返回 null，这一行就不出现 —— 不显示一个零。
                     */}
                     {describeStageCost(costByStage, s.id) && (
-                      <span className="tabular-nums text-slate-400">
+                      <span className="text-slate-400 tabular-nums">
                         {describeStageCost(costByStage, s.id)}
                       </span>
                     )}
@@ -298,8 +296,8 @@ export function Cockpit({
           </div>
 
           {/*
-            没选中运行时不显示「¥0.0000 / token 0」—— 四个零摆在那里等于什么都没说，
-            还占了一块地方。改成说清「开始之后这里会出现什么」，信息量反而更大。
+            没选中运行时不显示“¥0.0000 / token 0”—— 四个零摆在那里等于什么都没说，
+            还占了一块地方。改成说清“开始之后这里会出现什么”，信息量反而更大。
           */}
           <div className="rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-surface)] p-3">
             <div className="text-[11px] text-slate-400">本次运行花费</div>
@@ -326,12 +324,10 @@ export function Cockpit({
               </>
             ) : (
               <>
-                <div className="mt-1 text-2xl font-semibold text-slate-600">
-                  ——
-                </div>
+                <div className="mt-1 text-2xl font-semibold text-slate-600">——</div>
                 <p className="mt-3 border-t border-[var(--color-border-soft)] pt-3 text-[10px] leading-relaxed text-slate-600">
-                  还没开始跑。开始之后这里会实时跳动：
-                  输入 / 输出 token、思考 token、缓存命中、峰谷计价。
+                  还没开始跑。开始之后这里会实时跳动： 输入 / 输出 token、思考
+                  token、缓存命中、峰谷计价。
                 </p>
               </>
             )}
@@ -346,9 +342,7 @@ export function Cockpit({
                 <div
                   key={s.id}
                   className={`rounded-lg border bg-[var(--color-surface)] p-3 transition ${
-                    active
-                      ? "border-blue-600/60"
-                      : "border-[var(--color-border-soft)]"
+                    active ? "border-blue-600/60" : "border-[var(--color-border-soft)]"
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -362,9 +356,7 @@ export function Cockpit({
                         </span>
                       )}
                       {active && (
-                        <span className="text-[10px] text-blue-400">
-                          当前阶段
-                        </span>
+                        <span className="text-[10px] text-blue-400">当前阶段</span>
                       )}
                     </span>
                   </div>
@@ -382,7 +374,7 @@ export function Cockpit({
               );
             })}
 
-            {/* 把「其余工序的契约还没产出」这件事明确说出来 */}
+            {/* 把“其余工序的契约还没产出”这件事明确说出来 */}
             {plannedCount > 0 && (
               <p className="px-1 text-[10px] leading-relaxed text-slate-600">
                 其余 {plannedCount} 道工序的契约（
@@ -414,10 +406,7 @@ export function Cockpit({
         ) : (
           <div className="flex h-12 items-center gap-2 px-4 text-[11px] text-slate-500">
             {["生成过程", "成品", "源码"].map((label) => (
-              <span
-                key={label}
-                className="rounded-md px-2.5 py-1 text-slate-600"
-              >
+              <span key={label} className="rounded-md px-2.5 py-1 text-slate-600">
                 {label}
               </span>
             ))}

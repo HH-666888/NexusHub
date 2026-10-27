@@ -17,12 +17,12 @@ export interface OutlineRow {
   level: 1 | 2;
   title: string;
   status: TaskPointStatus;
-  /** true = 「还没到点」的占位行，界面画成浅色虚线 */
+  /** true = “还没到点”的占位行，界面画成浅色虚线 */
   placeholder: boolean;
   /**
    * 画布上对应的节点 id —— 占位行没有对应节点。
    * 占位行的 id 是编出来的，给 null 而不是父 id，界面才不会给它加链接；
-   * 这也是「清单 ↔ 画布」对账关系的唯一落点。
+   * 这也是“清单 ↔ 画布”对账关系的唯一落点。
    */
   canvasNodeId: string | null;
 
@@ -55,7 +55,7 @@ export function toOutline(
       id: root.id,
       level: 1,
       title: root.title,
-      // 一级节点自己就是执行「规划」的主体，不用汇总
+      // 一级节点自己就是执行“规划”的主体，不用汇总
       status: root.status,
       placeholder: false,
       // 一级行是实体节点，画布上有它那张卡，点它跳过去要聚焦这个 id
@@ -67,9 +67,9 @@ export function toOutline(
     );
 
     for (const child of children) {
-        /*
+      /*
           二级行有下级就汇总，叶子用自己的 status：叶子是执行单元，没有下级可汇总，
-          而 rollUpStatus([]) 返回 pending，会让已完成的检查项显示成「还没做」。
+          而 rollUpStatus([]) 返回 pending，会让已完成的检查项显示成“还没做”。
         */
       const grandchildren = childrenOf(points, child.id);
       rows.push({
@@ -82,8 +82,8 @@ export function toOutline(
             : child.status, // 叶子：如实报它自己的状态
         placeholder: false,
         /*
-          二级行不一定是画布上的节点（画布只给「验收」长了子节点）。
-          这里不为它特判：清单说「在树上对应哪个 id」是事实，画布画没画是画布的事。
+          二级行不一定是画布上的节点（画布只给“验收”长了子节点）。
+          这里不为它特判：清单说“在树上对应哪个 id”是事实，画布画没画是画布的事。
         */
         canvasNodeId: child.id,
       });
@@ -91,7 +91,7 @@ export function toOutline(
 
     if (children.length === 0) {
       /*
-        占位行的标题固定「待规划」，但要区分「等着就行」和「卡住了别等」：
+        占位行的标题固定“待规划”，但要区分“等着就行”和“卡住了别等”：
         后者把工序的 blockedBy 一并交出去。没有时不写这个字段，保持逐字段相同。
       */
       const blockedBy = blockedByOf?.[root.id];
@@ -106,7 +106,7 @@ export function toOutline(
         placeholder: true,
         /*
           占位行没有对应节点：id 是编出来的，画布上不会有这个名字。
-          给 null 而不是 root.id，否则「待规划」那行点下去会跳到一级工序上。
+          给 null 而不是 root.id，否则“待规划”那行点下去会跳到一级工序上。
         */
         canvasNodeId: null,
         // 一级工序还没接时，把"卡在哪"一并交给界面（没有这一项就不写这个字段）

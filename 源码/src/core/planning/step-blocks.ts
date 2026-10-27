@@ -1,5 +1,5 @@
 /**
- * 步骤块：把一条事件流切成「一步一块」，纯逻辑零 IO。
+ * 步骤块：把一条事件流切成“一步一块”，纯逻辑零 IO。
  * 分块边界只用真实存在的 phase 事件：步骤是发生过的事，不是计划单子上的顺序。
  */
 
@@ -8,7 +8,7 @@ import type { CheckResult } from "../domain/check";
 /** 块的语气。界面按它上色：error 红 / ok 绿 / 其余中性 */
 export type StepTone = "normal" | "ok" | "error";
 
-/** 「开始」块的标题：第一条 phase 之前发生的事都归它 */
+/** “开始”块的标题：第一条 phase 之前发生的事都归它 */
 export const START_BLOCK_TITLE = "开始";
 
 /** 一条 phase 没带 label 时的兜底标题。宁可说"没命名"，也不要编一个名字 */
@@ -20,7 +20,7 @@ export interface StepBlock {
    * 不用递增下标：下标会随前面插事件整体漂移，React key 与 e2e 把手都靠这个 id。
    */
   id: string;
-  /** 标题来自 phase 的 label（「开始」块用自己的固定标题） */
+  /** 标题来自 phase 的 label（“开始”块用自己的固定标题） */
   title: string;
   tone: StepTone;
   /** 本块第一条事件的 seq */
@@ -54,7 +54,7 @@ interface Draft extends StepBlock {
 
 /**
  * 规则：每遇 kind:"phase" 开新块并用 label 作标题，其余事件归当前块；
- * 第一条 phase 之前的事件归「开始」块；tone 出错 → error，phase:"done" → ok。
+ * 第一条 phase 之前的事件归“开始”块；tone 出错 → error，phase:"done" → ok。
  * payload 收成 unknown 而不是 any：事件是从库里读回的 JSON，形状不可信。
  */
 export function toStepBlocks(
@@ -81,11 +81,11 @@ export function toStepBlocks(
     }
 
     /*
-      还没有任何 phase：给「开始」块而不是丢掉，否则一开始就报错的运行界面上是空白。
+      还没有任何 phase：给“开始”块而不是丢掉，否则一开始就报错的运行界面上是空白。
     */
     if (!current) current = openBlock(drafts, event.seq, START_BLOCK_TITLE);
 
-    // toSeq 是「这个块读到过哪一条」
+    // toSeq 是“这个块读到过哪一条”
     current.toSeq = event.seq;
 
     switch (kind) {
@@ -150,11 +150,11 @@ export function toStepBlocks(
   }));
 }
 
-// 选「面板默认该显示哪一块」
+// 选“面板默认该显示哪一块”
 
 /**
  * 一块有没有内容：有 reasoning、有 text 或有检查项，三者有一个非空即算。
- * checks 要求「有项」而不是「不是 null」：空数组合法地渲染不出任何东西。
+ * checks 要求“有项”而不是“不是 null”：空数组合法地渲染不出任何东西。
  * 判空一律走 trim()，与面板那边的判据逐字一致。
  */
 export function blockHasContent(block: StepBlock): boolean {
@@ -166,20 +166,20 @@ export function blockHasContent(block: StepBlock): boolean {
 /**
  * 选面板默认显示哪一块：从后往前找第一块有内容的，都没有就退回最后一块。
  * 不直接取最后一块，是因为跑完的运行结尾常常是 phase:"done" 的空块，
- * 面板一打开就显示「没有返回正文」，把整条运行读得像什么都没做。
+ * 面板一打开就显示“没有返回正文”，把整条运行读得像什么都没做。
  *
- * 这样选仍然诚实：显示的是真实某一步的真实内容，面板标题会写明「第 N 步 / 共 M 步」，
+ * 这样选仍然诚实：显示的是真实某一步的真实内容，面板标题会写明“第 N 步 / 共 M 步”，
  * 不是最后一块时还会明说后面还有几步没有输出；判据只问有没有内容，与 tone 无关。
  *
- * 退回最后一块而不是 null：null 在面板那里是「还没有任何过程事件」的空态，
- * 而这里的事实是「步骤都在，只是都没输出」，返回 null 等于说假话。
+ * 退回最后一块而不是 null：null 在面板那里是“还没有任何过程事件”的空态，
+ * 而这里的事实是“步骤都在，只是都没输出”，返回 null 等于说假话。
  */
 export function pickCurrentBlockId(blocks: readonly StepBlock[]): string | null {
   for (let i = blocks.length - 1; i >= 0; i--) {
     if (blockHasContent(blocks[i])) return blocks[i].id;
   }
   /*
-    一块有内容的都没有时退回最后一块，理由同上：null 会被读成「还没有过程事件」。
+    一块有内容的都没有时退回最后一块，理由同上：null 会被读成“还没有过程事件”。
   */
   return blocks.length > 0 ? blocks[blocks.length - 1].id : null;
 }
@@ -233,7 +233,7 @@ function asNumber(value: unknown): number {
 function toCheckItem(item: Record<string, unknown>): CheckResult {
   return {
     name: typeof item.name === "string" ? item.name : "（未命名检查项）",
-    // 只有真的是 true 才算通过；缺字段按「没通过」，比让来路不明的检查项冒充通过安全
+    // 只有真的是 true 才算通过；缺字段按“没通过”，比让来路不明的检查项冒充通过安全
     pass: item.pass === true,
     detail: typeof item.detail === "string" ? item.detail : "",
   };

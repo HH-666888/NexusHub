@@ -1,10 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import {
-  saveModelConfigAction,
-  type SettingsState,
-} from "@/app/actions/settings";
+import { saveModelConfigAction, type SettingsState } from "@/app/actions/settings";
 import {
   applyPreset,
   PROVIDER_PRESETS,
@@ -17,11 +14,11 @@ import { OptionGroup } from "./option-group";
 const INITIAL: SettingsState = {};
 
 /**
- * 模型接入配置面板。两种模式：「平台默认」用我们自己的额度，打开就能用；
- * 「我自己的」填自己的服务商与密钥，用你自己的额度。
+ * 模型接入配置面板。两种模式：“平台默认”用我们自己的额度，打开就能用；
+ * “我自己的”填自己的服务商与密钥，用你自己的额度。
  *
  * 服务端从不把密钥原文回传给浏览器：输入框里显示的始终是掩码，放在 placeholder 上，
- * 用户不动它就提交空值，服务端理解为「不修改」。这是不回传，不是加密 —— 库里目前仍是明文。
+ * 用户不动它就提交空值，服务端理解为“不修改”。这是不回传，不是加密 —— 库里目前仍是明文。
  * 提交用真正的 <form>，选项按钮只改本地状态，真正的值放在隐藏字段里，没有 JS 也能提交。
  */
 export function ModelPanel({
@@ -40,24 +37,18 @@ export function ModelPanel({
     decideModel: initial.custom.decideModel,
     executeModel: initial.custom.executeModel,
   });
-  const [state, formAction, pending] = useActionState(
-    saveModelConfigAction,
-    INITIAL,
-  );
+  const [state, formAction, pending] = useActionState(saveModelConfigAction, INITIAL);
 
   /*
     掩码的显示优先级：本次保存刚返回的 > 页面加载时带下来的。
     刻意不在保存成功后清空输入框 —— 那需要在渲染期间改 state，
     是个合法但很微妙的模式，容易在后续改动里变成难以定位的问题。
-    留着不清的代价只是「再点一次保存会重复提交同一个密钥」，
+    留着不清的代价只是“再点一次保存会重复提交同一个密钥”，
     结果完全一样，不值得为它引入复杂度。
   */
   const shownMask = state.apiKeyMasked ?? initial.custom.apiKeyMasked;
 
-  const update = <K extends keyof CustomEndpoint>(
-    key: K,
-    value: CustomEndpoint[K],
-  ) => {
+  const update = <K extends keyof CustomEndpoint>(key: K, value: CustomEndpoint[K]) => {
     setCustom((c) => ({ ...c, [key]: value }));
   };
 
@@ -241,9 +232,7 @@ function ModeCard({
           </span>
         )}
       </div>
-      <p className="mt-1.5 pl-5 text-[11px] leading-relaxed text-slate-500">
-        {desc}
-      </p>
+      <p className="mt-1.5 pl-5 text-[11px] leading-relaxed text-slate-500">{desc}</p>
       {extra && <div className="pl-5">{extra}</div>}
     </button>
   );
@@ -271,9 +260,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-medium text-slate-300">
-        {label}
-      </label>
+      <label className="mb-1.5 block text-xs font-medium text-slate-300">{label}</label>
       <input
         type={type}
         name={name}
@@ -281,7 +268,7 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete="off"
-        className={`w-full rounded-lg border bg-[var(--color-surface)] px-3 py-2 text-xs text-slate-100 outline-none transition-colors duration-150 placeholder:text-slate-600 ${
+        className={`w-full rounded-lg border bg-[var(--color-surface)] px-3 py-2 text-xs text-slate-100 transition-colors duration-150 outline-none placeholder:text-slate-600 ${
           error
             ? "border-red-800 focus:border-red-600"
             : "border-[var(--color-border-soft)] focus:border-[var(--app-accent)]"
@@ -312,16 +299,14 @@ function TextInput({
 }) {
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-medium text-slate-300">
-        {label}
-      </label>
+      <label className="mb-1.5 block text-xs font-medium text-slate-300">{label}</label>
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete="off"
-        className={`w-full rounded-lg border bg-[var(--color-surface)] px-3 py-2 text-xs text-slate-100 outline-none transition-colors duration-150 placeholder:text-slate-600 ${
+        className={`w-full rounded-lg border bg-[var(--color-surface)] px-3 py-2 text-xs text-slate-100 transition-colors duration-150 outline-none placeholder:text-slate-600 ${
           error
             ? "border-red-800 focus:border-red-600"
             : "border-[var(--color-border-soft)] focus:border-[var(--app-accent)]"

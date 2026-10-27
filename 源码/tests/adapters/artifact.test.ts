@@ -85,13 +85,13 @@ describe("产物 · 落盘与登记", () => {
     expect(await fsArtifactStore.readContent(latest!)).toBe('{"v":2}');
   });
 
-  it("★ 反例：那个 kind 一份都没有 → null（不是随手返回别的 kind）", async () => {
+  it("反例：那个 kind 一份都没有 → null（不是随手返回别的 kind）", async () => {
     expect(await fsArtifactStore.findLatest(runId, "text")).toBeNull();
   });
 });
 
 describe("产物 · 不一致与清理", () => {
-  it("★ 文件被外部删掉 → readContent 返回 null（登记还在，但要如实说读不到）", async () => {
+  it("文件被外部删掉 → readContent 返回 null（登记还在，但要如实说读不到）", async () => {
     const artifact = await save("ghost.json", '{"will":"be deleted"}');
     rmSync(path.join(tmp.workspace, runId, "ghost.json"), { force: true });
 
@@ -110,13 +110,17 @@ describe("产物 · 不一致与清理", () => {
     expect(existsSync(path.join(tmp.workspace, runId))).toBe(false);
   });
 
-  it("★ 反例：再清一次是 0（幂等，不许抛错）", async () => {
+  it("反例：再清一次是 0（幂等，不许抛错）", async () => {
     expect(await fsArtifactStore.removeByRun(runId)).toBe(0);
   });
 
-  it("★ 反例：别条运行的产物一份都不许受影响", async () => {
+  it("反例：别条运行的产物一份都不许受影响", async () => {
     const otherRun = (
-      await sqliteRunStore.create({ userId, prompt: "别人的运行", workflowVersion: "v1" })
+      await sqliteRunStore.create({
+        userId,
+        prompt: "别人的运行",
+        workflowVersion: "v1",
+      })
     ).id;
     const otherFile = path.join(tmp.workspace, otherRun, "keep.json");
     await fsArtifactStore.save({
@@ -134,13 +138,20 @@ describe("产物 · 不一致与清理", () => {
 
   it("路径里的 .. 被拒绝（穿越防线）", async () => {
     await expect(
-      fsArtifactStore.save({ runId, kind: "json", path: `${runId}/../../escape.json`, content: "x" }),
+      fsArtifactStore.save({
+        runId,
+        kind: "json",
+        path: `${runId}/../../escape.json`,
+        content: "x",
+      }),
     ).rejects.toThrow();
   });
 
-  it("★ 反例：正常路径当然要放行（别把防线做成一律拒绝）", async () => {
+  it("反例：正常路径当然要放行（别把防线做成一律拒绝）", async () => {
     const ok = await save("nested/dir/ok.json", '{"ok":1}');
-    expect(existsSync(path.join(tmp.workspace, runId, "nested", "dir", "ok.json"))).toBe(true);
+    expect(
+      existsSync(path.join(tmp.workspace, runId, "nested", "dir", "ok.json")),
+    ).toBe(true);
     await fsArtifactStore.removeByRun(runId);
     expect(ok.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -158,13 +169,23 @@ describe("产物 · 登记表", () => {
     expect(readFileSync(path.join(tmp.workspace, runId, "cn.json")).length).toBe(6);
   });
 
-  it("★ 载入用的注册文件不是手抄的：schema 里那份就是实际建出来的表", () => {
+  it("载入用的注册文件不是手抄的：schema 里那份就是实际建出来的表", () => {
     // 这条钉的是"夹具跑的是真迁移"：columns 由迁移生成，而不是手写 CREATE TABLE
     const cols = (
-      db.$client.prepare("PRAGMA table_info(artifacts)").all() as Array<{ name: string }>
+      db.$client.prepare("PRAGMA table_info(artifacts)").all() as Array<{
+        name: string;
+      }>
     ).map((c) => c.name);
     expect(cols).toEqual(
-      expect.arrayContaining(["id", "run_id", "kind", "path", "bytes", "sha256", "created_at"]),
+      expect.arrayContaining([
+        "id",
+        "run_id",
+        "kind",
+        "path",
+        "bytes",
+        "sha256",
+        "created_at",
+      ]),
     );
   });
 });

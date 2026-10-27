@@ -19,7 +19,6 @@ import {
 import type { AppSpec } from "../domain/spec";
 import { inspectArch, type ArchCheck } from "./arch-check";
 
-
 export type ArchStageEvent =
   | { kind: "phase"; phase: "arch"; label: string }
   /** 非流式调用的思考过程，整段一次性给出 */
@@ -65,13 +64,12 @@ export interface ArchStageInput {
 
 /**
  * 架构 JSON 比规格长（模块 + 依赖 + 归属），6000 够写 6 个模块。
- * 思考 token 计入 max_tokens，同批工序统一按「思考 + 正文」留余量。
+ * 思考 token 计入 max_tokens，同批工序统一按“思考 + 正文”留余量。
  */
 export const ARCH_MAX_OUTPUT_TOKENS = 6000;
 
 /** 产文件名，与 stages.ts 的声明一致，测试守住两者相同 */
 export const ARCH_ARTIFACT_NAME = "arch.json";
-
 
 export async function* runArchStage(
   deps: ArchStageDeps,
@@ -223,7 +221,7 @@ export async function* runArchStage(
     };
   }
 
-  // 一次性调用也会思考，不发出来界面会显示「没有返回思考内容」；放在结果事件之前
+  // 一次性调用也会思考，不发出来界面会显示“没有返回思考内容”；放在结果事件之前
   if (result.reasoning.trim().length > 0) {
     yield { kind: "reasoning", delta: result.reasoning };
   }

@@ -45,7 +45,7 @@ export function CockpitHeader({
         <form action={formAction} className="flex min-w-0 flex-1 items-center gap-3">
           {/*
             key 变化 → 输入框重新挂载 → defaultValue 生效。
-            这是「点了示例就把文字填进去」的实现方式，
+            这是“点了示例就把文字填进去”的实现方式，
             同时打字过程完全不经过上层组件，不会引发整页重渲染。
             autoFocus 只在点过示例之后才给，避免一进页面就抢焦点。
           */}

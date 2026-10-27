@@ -32,7 +32,7 @@ export default async function WelcomePage() {
       />
       <div
         aria-hidden
-        className="bd-glow pointer-events-none absolute -bottom-52 right-[-10rem] h-[34rem] w-[34rem] opacity-50"
+        className="bd-glow pointer-events-none absolute right-[-10rem] -bottom-52 h-[34rem] w-[34rem] opacity-50"
         style={{
           background:
             "radial-gradient(circle, rgba(var(--app-accent-glow), 0.16) 0%, transparent 66%)",
@@ -43,7 +43,9 @@ export default async function WelcomePage() {
       {/* 顶栏复用全局那个；这里是公开模式，右侧换成登录/免费开始，位置保持一致 */}
       <div className="relative z-10">
         <AppNav
-          user={user ? { displayName: user.displayName, username: user.username } : null}
+          user={
+            user ? { displayName: user.displayName, username: user.username } : null
+          }
           spentCny={null}
           themeToggle={<ThemeToggleServer />}
           /*
@@ -81,7 +83,7 @@ export default async function WelcomePage() {
             className="animate-rise mt-6 text-4xl leading-[1.15] font-semibold tracking-tight sm:text-5xl"
             style={{ animationDelay: "0.08s" }}
           >
-            把「做一个……」
+            把“做一个……”
             <br className="sm:hidden" />
             <span className="bg-gradient-to-r from-[var(--app-accent-soft)] via-[var(--app-accent-soft)] to-[var(--app-accent)] bg-clip-text text-transparent">
               变成真能用的东西
@@ -94,9 +96,7 @@ export default async function WelcomePage() {
           >
             你只管说清楚要什么。规格、架构、界面、代码、组装、验收
             这六道工序由流水线自动跑完，
-            <span className="text-slate-300">
-              中间每一步你都能看见、能叫停、能改。
-            </span>
+            <span className="text-slate-300">中间每一步你都能看见、能叫停、能改。</span>
           </p>
 
           {/*
@@ -120,11 +120,7 @@ export default async function WelcomePage() {
 
         {/* 02 · 你能看到什么 */}
         <section className="mx-auto w-full max-w-5xl px-6 pb-16">
-          <SectionHead
-            no="02"
-            title="你能看到什么"
-            note="这三条，同类工具普遍不做"
-          />
+          <SectionHead no="02" title="你能看到什么" note="这三条，同类工具普遍不做" />
           <Features />
         </section>
 
@@ -190,9 +186,9 @@ export default async function WelcomePage() {
         className="relative z-10 overflow-hidden border-y border-[var(--color-border-soft)] py-4 whitespace-nowrap select-none"
       >
         <span className="font-mono text-[11px] tracking-[0.42em] text-slate-700">
-          N E X U S · 一 个 网 页 里 的 软 件 工 厂 · N E X U S · 一 个 网 页
-          里 的 软 件 工 厂 · N E X U S · 一 个 网 页 里 的 软 件 工 厂 · N E X U
-          S · 一 个 网 页 里 的 软 件 工 厂 ·
+          N E X U S · 一 个 网 页 里 的 软 件 工 厂 · N E X U S · 一 个 网 页 里 的 软
+          件 工 厂 · N E X U S · 一 个 网 页 里 的 软 件 工 厂 · N E X U S · 一 个 网 页
+          里 的 软 件 工 厂 ·
         </span>
       </div>
 
@@ -200,9 +196,7 @@ export default async function WelcomePage() {
       <footer className="relative z-10 border-t border-[var(--color-border-soft)]">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-2 px-6 py-6 text-xs text-slate-500">
           <span>Nexus · 一个网页里的软件工厂</span>
-          <span>
-            全国高校 AI Web 开发挑战赛参赛作品 · 演示环境仅供评审使用
-          </span>
+          <span>全国高校 AI Web 开发挑战赛参赛作品 · 演示环境仅供评审使用</span>
         </div>
       </footer>
     </div>

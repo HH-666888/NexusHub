@@ -14,10 +14,7 @@ import {
   TINT_OPTIONS,
   type AppearanceConfig,
 } from "@/core/domain/appearance";
-import {
-  saveAppearance,
-  saveModelConfig,
-} from "@/core/settings/service";
+import { saveAppearance, saveModelConfig } from "@/core/settings/service";
 import { toModelConfigView } from "@/core/domain/model-config";
 import { getCurrentUser } from "@/server/auth-context";
 
@@ -91,11 +88,7 @@ export async function saveModelConfigAction(
     },
   };
 
-  const { config, check } = await saveModelConfig(
-    sqliteSettingsStore,
-    input,
-    user.id,
-  );
+  const { config, check } = await saveModelConfig(sqliteSettingsStore, input, user.id);
 
   if (!check.ok) {
     return {

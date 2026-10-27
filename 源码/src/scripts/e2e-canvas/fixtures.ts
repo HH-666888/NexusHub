@@ -15,15 +15,19 @@ import { inspectUi } from "@/core/generate/ui-check";
 import { reviewSpec, type AppSpec } from "@/core/domain/spec";
 import type { ArchSpec } from "@/core/domain/arch";
 import type { UiSpec } from "@/core/domain/ui-spec";
-import { ZERO_USAGE, summarizeBatch, type BuildBatch, type ModuleBuild } from "@/core/domain/module-build";
+import {
+  ZERO_USAGE,
+  summarizeBatch,
+  type BuildBatch,
+  type ModuleBuild,
+} from "@/core/domain/module-build";
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
 
 export function seedVerifyRun(username: string): { runId: string; count: number } {
   const db = new Database("./data/nexus.db");
   try {
     const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
-      | { id: number }
-      | undefined;
+      { id: number } | undefined;
     if (!user) throw new Error(`找不到测试账号 ${username}`);
 
     const runId = `e2e-tree-${Date.now().toString(36)}`;
@@ -35,11 +39,23 @@ export function seedVerifyRun(username: string): { runId: string; count: number 
     ).run(runId, user.id, "端到端夹具：一棵有子树的验收", now, now);
 
     const results = [
-      { name: "完整 HTML 结构", pass: true, detail: "产物含 html/head/body 三段完整结构" },
+      {
+        name: "完整 HTML 结构",
+        pass: true,
+        detail: "产物含 html/head/body 三段完整结构",
+      },
       { name: "内联样式", pass: true, detail: "样式全部内联，没有外部样式表引用" },
       { name: "内联脚本", pass: true, detail: "脚本全部内联，没有外部 js 引用" },
-      { name: "完全自包含（无外部引用）", pass: true, detail: "没有任何指向外部域名的引用" },
-      { name: "有事件处理", pass: false, detail: "没有找到 addEventListener 或 on* 属性" },
+      {
+        name: "完全自包含（无外部引用）",
+        pass: true,
+        detail: "没有任何指向外部域名的引用",
+      },
+      {
+        name: "有事件处理",
+        pass: false,
+        detail: "没有找到 addEventListener 或 on* 属性",
+      },
       { name: "数据能持久化", pass: true, detail: "用到了 localStorage 存取" },
       { name: "中文界面", pass: true, detail: "界面文案是中文" },
     ];
@@ -85,8 +101,7 @@ export function seedAdvancingRun(username: string): string {
   const db = new Database("./data/nexus.db");
   try {
     const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
-      | { id: number }
-      | undefined;
+      { id: number } | undefined;
     if (!user) throw new Error(`找不到测试账号 ${username}`);
 
     const runId = `e2e-vp-${Date.now().toString(36)}`;
@@ -98,11 +113,23 @@ export function seedAdvancingRun(username: string): string {
     ).run(runId, user.id, "端到端夹具：正在跑的运行（验视口跟随）", now, now);
 
     const results = [
-      { name: "完整 HTML 结构", pass: true, detail: "产物含 html/head/body 三段完整结构" },
+      {
+        name: "完整 HTML 结构",
+        pass: true,
+        detail: "产物含 html/head/body 三段完整结构",
+      },
       { name: "内联样式", pass: true, detail: "样式全部内联，没有外部样式表引用" },
       { name: "内联脚本", pass: true, detail: "脚本全部内联，没有外部 js 引用" },
-      { name: "完全自包含（无外部引用）", pass: true, detail: "没有任何指向外部域名的引用" },
-      { name: "有事件处理", pass: false, detail: "没有找到 addEventListener 或 on* 属性" },
+      {
+        name: "完全自包含（无外部引用）",
+        pass: true,
+        detail: "没有任何指向外部域名的引用",
+      },
+      {
+        name: "有事件处理",
+        pass: false,
+        detail: "没有找到 addEventListener 或 on* 属性",
+      },
       { name: "数据能持久化", pass: true, detail: "用到了 localStorage 存取" },
       { name: "中文界面", pass: true, detail: "界面文案是中文" },
     ];
@@ -151,14 +178,13 @@ export function dropRunEvent(runId: string, seq: number): void {
 }
 
 // 陪跑运行只用来被删掉：删除走服务端动作，触发客户端导航重新渲染，
-// 而整页刷新会重新挂载组件，测不出「推进后是否聚焦」。
+// 而整页刷新会重新挂载组件，测不出“推进后是否聚焦”。
 // created_at 故意早一分钟：删完页面跳回最近一条，主夹具仍须是最新的。
 export function seedBystanderRun(username: string, tag: string): string {
   const db = new Database("./data/nexus.db");
   try {
     const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
-      | { id: number }
-      | undefined;
+      { id: number } | undefined;
     if (!user) throw new Error(`找不到测试账号 ${username}`);
 
     const runId = `e2e-vp-bystander-${tag}-${Date.now().toString(36)}`;
@@ -174,13 +200,12 @@ export function seedBystanderRun(username: string, tag: string): string {
 }
 
 // 一条刚跑到第一道工序、没有任何 check 事件的运行：
-// 六道工序底下都该是「待规划」，这是最容易画错的形状。
+// 六道工序底下都该是“待规划”，这是最容易画错的形状。
 export function seedRunningRun(username: string): string {
   const db = new Database("./data/nexus.db");
   try {
     const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
-      | { id: number }
-      | undefined;
+      { id: number } | undefined;
     if (!user) throw new Error(`找不到测试账号 ${username}`);
 
     const runId = `e2e-plan-${Date.now().toString(36)}`;
@@ -196,7 +221,11 @@ export function seedRunningRun(username: string): string {
     ).run(
       runId,
       now,
-      JSON.stringify({ kind: "phase", phase: "spec", label: "正在把你的需求整理成规格" }),
+      JSON.stringify({
+        kind: "phase",
+        phase: "spec",
+        label: "正在把你的需求整理成规格",
+      }),
     );
 
     return runId;
@@ -213,13 +242,21 @@ export const STEP_CHECKS = [
   { name: "完整 HTML 结构", pass: true, detail: "产物含 html/head/body 三段完整结构" },
   { name: "内联样式", pass: true, detail: "样式全部内联，没有外部样式表引用" },
   { name: "内联脚本", pass: true, detail: "脚本全部内联，没有外部 js 引用" },
-  { name: "完全自包含（无外部引用）", pass: true, detail: "没有任何指向外部域名的引用" },
+  {
+    name: "完全自包含（无外部引用）",
+    pass: true,
+    detail: "没有任何指向外部域名的引用",
+  },
   { name: "有事件处理", pass: false, detail: "没有找到 addEventListener 或 on* 属性" },
   { name: "数据能持久化", pass: true, detail: "用到了 localStorage 存取" },
   { name: "中文界面", pass: true, detail: "界面文案是中文" },
 ];
 
-export const stepPhase = (phase: GeneratePhase, label: string) => ({ kind: "phase", phase, label });
+export const stepPhase = (phase: GeneratePhase, label: string) => ({
+  kind: "phase",
+  phase,
+  label,
+});
 export const stepText = (delta: string) => ({ kind: "text", delta });
 export const stepReasoning = (delta: string) => ({ kind: "reasoning", delta });
 export const stepUsage = (
@@ -229,7 +266,13 @@ export const stepUsage = (
   reasoningTokens: number,
 ) => ({
   kind: "usage",
-  usage: { inputTokens, outputTokens, reasoningTokens, cacheHitTokens: 0, cacheMissTokens: 0 },
+  usage: {
+    inputTokens,
+    outputTokens,
+    reasoningTokens,
+    cacheHitTokens: 0,
+    cacheMissTokens: 0,
+  },
   costCny,
   priceTier: "offPeak" as const,
   model: "e2e-fixture-model",
@@ -257,8 +300,7 @@ export function seedStepRun(
   const db = new Database("./data/nexus.db");
   try {
     const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
-      | { id: number }
-      | undefined;
+      { id: number } | undefined;
     if (!user) throw new Error(`找不到测试账号 ${username}`);
 
     const runId = `e2e-step-${tag}-${Date.now().toString(36)}`;
@@ -282,8 +324,12 @@ export function seedStepRun(
   }
 }
 
-// 往同一条运行追加事件：换运行会整个重挂，验不到「旧块不销毁」。
-export function appendStepEvents(runId: string, startSeq: number, rows: Array<[string, unknown]>): void {
+// 往同一条运行追加事件：换运行会整个重挂，验不到“旧块不销毁”。
+export function appendStepEvents(
+  runId: string,
+  startSeq: number,
+  rows: Array<[string, unknown]>,
+): void {
   const db = new Database("./data/nexus.db");
   try {
     const now = Date.now();
@@ -301,20 +347,35 @@ export function appendStepEvents(runId: string, startSeq: number, rows: Array<[s
 // 只有正文、没有 reasoning 的运行
 export const TEXT_ONLY_BODY = "这是模型写出来的正文，事件流里没有任何思考片段。";
 
-// 第二道工序「架构定型」的夹具：arch 事件到来后清单该长出模块子树。
+// 第二道工序“架构定型”的夹具：arch 事件到来后清单该长出模块子树。
 // 检查由真的 inspectArch 现算，手抄一份的话检查器改了夹具会失真。
 
 /** 四条功能条目，架构必须逐条覆盖 */
 export const ARCH_ACCEPTANCE: AppSpec["acceptance"] = [
-  { id: "ac-1", statement: "能新建任务", verifyBy: "点新建按钮，卡片出现在栏位里", level: "must" },
+  {
+    id: "ac-1",
+    statement: "能新建任务",
+    verifyBy: "点新建按钮，卡片出现在栏位里",
+    level: "must",
+  },
   {
     id: "ac-2",
     statement: "能拖动卡片换栏位",
     verifyBy: "拖到另一栏松手，卡片留在那一栏",
     level: "must",
   },
-  { id: "ac-3", statement: "刷新后数据还在", verifyBy: "按 F5 之后卡片位置不变", level: "should" },
-  { id: "ac-4", statement: "能删除任务", verifyBy: "点删除，卡片从栏位里消失", level: "should" },
+  {
+    id: "ac-3",
+    statement: "刷新后数据还在",
+    verifyBy: "按 F5 之后卡片位置不变",
+    level: "should",
+  },
+  {
+    id: "ac-4",
+    statement: "能删除任务",
+    verifyBy: "点删除，卡片从栏位里消失",
+    level: "should",
+  },
 ];
 
 export const ARCH_SPEC: AppSpec = {
@@ -362,7 +423,7 @@ export const ARCH_ARTIFACT: ArchSpec = {
 // 用真的检查器算，不手抄
 export const ARCH_CHECK = inspectArch(ARCH_ARTIFACT, ARCH_SPEC);
 
-// 第三道工序「界面设计」的夹具：ui 事件到来后清单该长出页面子树。
+// 第三道工序“界面设计”的夹具：ui 事件到来后清单该长出页面子树。
 // 页面覆盖全部验收标准，检查同样由真的 inspectUi 现算。
 
 /** 设计变量：组件引用的名字必须都在这里 */
@@ -426,8 +487,7 @@ export function seedArchRun(username: string): string {
   const db = new Database("./data/nexus.db");
   try {
     const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
-      | { id: number }
-      | undefined;
+      { id: number } | undefined;
     if (!user) throw new Error(`找不到测试账号 ${username}`);
 
     const runId = `e2e-arch-${Date.now().toString(36)}`;
@@ -445,7 +505,10 @@ export function seedArchRun(username: string): string {
         { kind: "spec", spec: ARCH_SPEC, gate: reviewSpec(ARCH_SPEC), fallback: false },
       ],
       ["phase", stepPhase("arch", "正在把规格切分成模块")],
-      ["arch", { kind: "arch", arch: ARCH_ARTIFACT, check: ARCH_CHECK, fallback: false }],
+      [
+        "arch",
+        { kind: "arch", arch: ARCH_ARTIFACT, check: ARCH_CHECK, fallback: false },
+      ],
     ];
 
     const ins = db.prepare(
@@ -466,8 +529,7 @@ export function seedUiRun(username: string): string {
   const db = new Database("./data/nexus.db");
   try {
     const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
-      | { id: number }
-      | undefined;
+      { id: number } | undefined;
     if (!user) throw new Error(`找不到测试账号 ${username}`);
 
     const runId = `e2e-ui-${Date.now().toString(36)}`;
@@ -485,7 +547,10 @@ export function seedUiRun(username: string): string {
         { kind: "spec", spec: ARCH_SPEC, gate: reviewSpec(ARCH_SPEC), fallback: false },
       ],
       ["phase", stepPhase("arch", "正在把规格切分成模块")],
-      ["arch", { kind: "arch", arch: ARCH_ARTIFACT, check: ARCH_CHECK, fallback: false }],
+      [
+        "arch",
+        { kind: "arch", arch: ARCH_ARTIFACT, check: ARCH_CHECK, fallback: false },
+      ],
       // label 照 ui-stage.ts 真正 yield 的那句写
       ["phase", stepPhase("ui", "正在把架构变成页面与设计变量")],
       ["ui", { kind: "ui", ui: UI_ARTIFACT, check: UI_CHECK, fallback: false }],
@@ -504,8 +569,8 @@ export function seedUiRun(username: string): string {
   }
 }
 
-// 第四道工序「并行构建」的夹具：modules 事件到来后该长出模块构建子树，
-// 三个模块里故意让一个失败，否则「部分失败如实呈现」验不到。
+// 第四道工序“并行构建”的夹具：modules 事件到来后该长出模块构建子树，
+// 三个模块里故意让一个失败，否则“部分失败如实呈现”验不到。
 
 /** 字段照 build-modules.ts 真实产出的那份写 */
 export function moduleBuildFixture(moduleId: string, costCny: number): ModuleBuild {
@@ -528,7 +593,10 @@ export function moduleBuildFixture(moduleId: string, costCny: number): ModuleBui
 
 // 三个模块两个成功一个失败；把失败的那个删掉就是粉饰部分失败。
 export const MODULES_BATCH: BuildBatch = {
-  modules: [moduleBuildFixture("task-store", 0.01), moduleBuildFixture("board-ui", 0.01)],
+  modules: [
+    moduleBuildFixture("task-store", 0.01),
+    moduleBuildFixture("board-ui", 0.01),
+  ],
   failed: [
     {
       moduleId: "local-persistence",
@@ -550,7 +618,10 @@ export const MODULES_BATCH: BuildBatch = {
 };
 
 /** 载荷由 summarizeBatch 现算，与 route.ts 发出的那条同构 */
-export const MODULES_EVENT = { kind: "modules", batch: summarizeBatch(MODULES_BATCH, ARCH_ARTIFACT) };
+export const MODULES_EVENT = {
+  kind: "modules",
+  batch: summarizeBatch(MODULES_BATCH, ARCH_ARTIFACT),
+};
 
 /** 失败模块该是红（248 113 113） */
 export const FAILED_DOT = "rgb(248, 113, 113)";
@@ -562,8 +633,7 @@ export function seedModulesRun(username: string): string {
   const db = new Database("./data/nexus.db");
   try {
     const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
-      | { id: number }
-      | undefined;
+      { id: number } | undefined;
     if (!user) throw new Error(`找不到测试账号 ${username}`);
 
     const runId = `e2e-modules-${Date.now().toString(36)}`;
@@ -581,7 +651,10 @@ export function seedModulesRun(username: string): string {
         { kind: "spec", spec: ARCH_SPEC, gate: reviewSpec(ARCH_SPEC), fallback: false },
       ],
       ["phase", stepPhase("arch", "正在把规格切分成模块")],
-      ["arch", { kind: "arch", arch: ARCH_ARTIFACT, check: ARCH_CHECK, fallback: false }],
+      [
+        "arch",
+        { kind: "arch", arch: ARCH_ARTIFACT, check: ARCH_CHECK, fallback: false },
+      ],
       // label 照 ui-stage.ts 真正 yield 的那句写
       ["phase", stepPhase("ui", "正在把架构变成页面与设计变量")],
       ["ui", { kind: "ui", ui: UI_ARTIFACT, check: UI_CHECK, fallback: false }],
@@ -609,7 +682,7 @@ export const DONE_LABEL = "完成 · 7/7 项检查通过";
 /** 有内容那一步的思考，面板第一屏就该是它 */
 export const PICK_THINKING = "先把结构想清楚：这一段是那一步真实的思考，不是拼出来的。";
 /** 有内容那一步的正文，切到结果必须看得到 */
-export const PICK_BODY = "这一段正文来自倒数第二步；收尾的「完成」本身没有任何输出。";
+export const PICK_BODY = "这一段正文来自倒数第二步；收尾的“完成”本身没有任何输出。";
 /** 反例夹具里最后一步自己的正文 */
 export const LAST_STEP_BODY = "最后一步自己写了正文，面板停在它身上，不需要再往前找。";
 
@@ -631,8 +704,7 @@ export async function seedPortableRun(username: string): Promise<string> {
   const db = new Database("./data/nexus.db");
   try {
     const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
-      | { id: number }
-      | undefined;
+      { id: number } | undefined;
     if (!user) throw new Error(`找不到测试账号 ${username}`);
 
     const now = Date.now();
@@ -644,9 +716,15 @@ export async function seedPortableRun(username: string): Promise<string> {
 
     const rows: Array<[string, unknown]> = [
       ["phase", stepPhase("spec", "正在把你的需求整理成规格")],
-      ["spec", { kind: "spec", spec: ARCH_SPEC, gate: reviewSpec(ARCH_SPEC), fallback: false }],
+      [
+        "spec",
+        { kind: "spec", spec: ARCH_SPEC, gate: reviewSpec(ARCH_SPEC), fallback: false },
+      ],
       ["phase", stepPhase("arch", "正在把规格切分成模块")],
-      ["arch", { kind: "arch", arch: ARCH_ARTIFACT, check: ARCH_CHECK, fallback: false }],
+      [
+        "arch",
+        { kind: "arch", arch: ARCH_ARTIFACT, check: ARCH_CHECK, fallback: false },
+      ],
       ["phase", stepPhase("ui", "正在把架构变成页面与设计变量")],
       ["ui", { kind: "ui", ui: UI_ARTIFACT, check: UI_CHECK, fallback: false }],
       ["phase", stepPhase("building", "正在并行构建 3 个模块（并发上限 3）")],
@@ -705,4 +783,3 @@ export async function cleanupPortableRun(runId: string): Promise<void> {
     db.close();
   }
 }
-

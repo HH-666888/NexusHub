@@ -60,7 +60,7 @@ export interface SpecStageInput {
   spentCny?: number;
   maxOutputTokens?: number;
   /**
-   * 「按我的回答重出一版规格」。给了就带上上一版规格与回答，并禁止重复提问；
+   * “按我的回答重出一版规格”。给了就带上上一版规格与回答，并禁止重复提问；
    * 没给就是原行为，从零出规格。
    */
   revision?: {
@@ -72,7 +72,7 @@ export interface SpecStageInput {
 /**
  * 重出规格时给模型的提示。
  * 上一版规格要整份在场：只给回答等于重新摇一次骰子，用户确认过的内容会变。
- * 「别把答过的问题再问一遍」—— 真出现的疑点仍可问，门禁拦得住。
+ * “别把答过的问题再问一遍”—— 真出现的疑点仍可问，门禁拦得住。
  */
 function buildRevisionPrompt(
   prompt: string,
@@ -105,7 +105,6 @@ export const SPEC_MAX_OUTPUT_TOKENS = 6000;
 /** 产文件名，与 stages.ts 的声明一致，测试守住两者相同 */
 export const SPEC_ARTIFACT_NAME = "spec.json";
 
-
 export async function* runSpecStage(
   deps: SpecStageDeps,
   input: SpecStageInput,
@@ -126,9 +125,7 @@ export async function* runSpecStage(
   yield {
     kind: "phase",
     phase: "spec",
-    label: input.revision
-      ? "正在按你的回答重出一版规格"
-      : "正在把你的需求整理成规格",
+    label: input.revision ? "正在按你的回答重出一版规格" : "正在把你的需求整理成规格",
   };
 
   let raw = "";
@@ -154,7 +151,11 @@ export async function* runSpecStage(
     // 重出一版规格（可选动作）：把上一版与回答一起给模型，
     // 否则回答只被记下当作确认，规格里拿不准的地方一个字都不会变。
     const userContent = input.revision
-      ? buildRevisionPrompt(input.prompt, input.revision.previous, input.revision.answers)
+      ? buildRevisionPrompt(
+          input.prompt,
+          input.revision.previous,
+          input.revision.answers,
+        )
       : buildSpecPrompt(input.prompt);
 
     result = await model.complete({
@@ -265,7 +266,7 @@ export async function* runSpecStage(
     };
   }
 
-  // 一次性调用也会思考，不发出来界面会显示「没有返回思考内容」；放在结果事件之前
+  // 一次性调用也会思考，不发出来界面会显示“没有返回思考内容”；放在结果事件之前
   if (result.reasoning.trim().length > 0) {
     yield { kind: "reasoning", delta: result.reasoning };
   }

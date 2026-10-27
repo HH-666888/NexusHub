@@ -31,13 +31,19 @@ import { childrenOf, hasOrphans, type TaskPoint } from "@/core/planning/task-poi
 const STAGE_INPUT = STAGES.map((s) => ({ id: s.id, name: s.name }));
 
 // 未接入的工序由 STAGES.implementation 现算，不写死名单。
-const PLANNED_IDS = STAGES.filter((s) => s.implementation === "planned").map((s) => s.id);
+const PLANNED_IDS = STAGES.filter((s) => s.implementation === "planned").map(
+  (s) => s.id,
+);
 
 // 七项检查名取自 inspectArtifact；任务点 id 沿用 forest.ts 的 verify:<name> 约定。
 const REAL_CHECK_NAMES = inspectArtifact("").map((r) => r.name);
 
 // 规格产物用 fallbackSpec 现造，条目 id 为 ac-N。
-const SPEC = fallbackSpec({ prompt: "做一个任务看板", model: "fallback", generatedAt: 0 });
+const SPEC = fallbackSpec({
+  prompt: "做一个任务看板",
+  model: "fallback",
+  generatedAt: 0,
+});
 
 // 运行事件的 kind 在外层，payload 结构随 kind 变化。
 interface RawEvent {
@@ -67,7 +73,10 @@ function specEvent(seq: number): RawEvent {
 }
 
 // check 事件默认全过，可传断言指定未过的项。
-function checkEvent(seq: number, pass: (name: string) => boolean = () => true): RawEvent {
+function checkEvent(
+  seq: number,
+  pass: (name: string) => boolean = () => true,
+): RawEvent {
   const results: CheckResult[] = REAL_CHECK_NAMES.map((name) => ({
     name,
     pass: pass(name),
@@ -155,7 +164,9 @@ describe("骨架：一级 Agent 与六道工序一次全生成", () => {
     const atZero = projectAt(planningFromRun(src([])), 0);
 
     for (const stage of STAGE_INPUT) {
-      expect(find(atZero, stage.id).status, `${stage.name} 没有事件却有进展`).toBe("pending");
+      expect(find(atZero, stage.id).status, `${stage.name} 没有事件却有进展`).toBe(
+        "pending",
+      );
     }
   });
 
@@ -177,7 +188,7 @@ describe("骨架：一级 Agent 与六道工序一次全生成", () => {
   });
 });
 
-describe("★ 诚实底线：没有真实事件的工序必须停在 pending", () => {
+describe("诚实底线：没有真实事件的工序必须停在 pending", () => {
   it("只有 spec 和 check 事件时，还没接入的工序仍是 pending，且一个子节点都没有", () => {
     // 没有真实事件的工序必须停在 pending，且名下没有执行点。
     // 状态可能被误算改掉，没有子点才是没接入的硬证据。
@@ -219,7 +230,14 @@ describe("★ 诚实底线：没有真实事件的工序必须停在 pending", (
 
   it("runStatus 为 failed 时，还没接入的工序仍然是 pending（失败也不许波及无关工序）", () => {
     const log = planningFromRun(
-      src([phaseEvent(10, "spec"), phaseEvent(20, "generating"), phaseEvent(30, "failed")], "failed"),
+      src(
+        [
+          phaseEvent(10, "spec"),
+          phaseEvent(20, "generating"),
+          phaseEvent(30, "failed"),
+        ],
+        "failed",
+      ),
     );
     const now = projectAt(log, maxSeq(log));
 
@@ -343,9 +361,10 @@ describe("七项检查 → 七个执行任务点", () => {
 
     for (const payload of cases) {
       const log = planningFromRun(src([{ seq: 30, kind: "check", payload }]));
-      expect(checkPointsAt(log, 100), `payload=${JSON.stringify(payload)} 时凭空造了点`).toEqual(
-        [],
-      );
+      expect(
+        checkPointsAt(log, 100),
+        `payload=${JSON.stringify(payload)} 时凭空造了点`,
+      ).toEqual([]);
     }
   });
 });
@@ -362,7 +381,10 @@ describe("产物是结果，不是任务点", () => {
       at: 0,
     };
     const log = planningFromRun(
-      src([phaseEvent(10, "generating"), { seq: 20, kind: "artifact", payload: { kind: "artifact", artifact } }]),
+      src([
+        phaseEvent(10, "generating"),
+        { seq: 20, kind: "artifact", payload: { kind: "artifact", artifact } },
+      ]),
     );
 
     const now = projectAt(log, maxSeq(log));
@@ -437,7 +459,11 @@ describe("串起现成函数：projectAt → toOutline", () => {
 describe("工序状态：按 phase 归属，失败要浮上来", () => {
   it("有 phase 的工序是 running（run 还在跑）", () => {
     const log = planningFromRun(
-      src([phaseEvent(5, "spec"), phaseEvent(20, "generating"), phaseEvent(30, "checking")]),
+      src([
+        phaseEvent(5, "spec"),
+        phaseEvent(20, "generating"),
+        phaseEvent(30, "checking"),
+      ]),
     );
     const now = projectAt(log, maxSeq(log));
 
@@ -450,7 +476,11 @@ describe("工序状态：按 phase 归属，失败要浮上来", () => {
   it("phase 为 failed 时，失败落在**当前工序**上（这里是 build）", () => {
     // failed 是运行终局标记，落在刚才在跑的那道工序上。
     const log = planningFromRun(
-      src([phaseEvent(5, "spec"), phaseEvent(20, "generating"), phaseEvent(30, "failed")]),
+      src([
+        phaseEvent(5, "spec"),
+        phaseEvent(20, "generating"),
+        phaseEvent(30, "failed"),
+      ]),
     );
     const now = projectAt(log, maxSeq(log));
 
@@ -470,7 +500,11 @@ describe("工序状态：按 phase 归属，失败要浮上来", () => {
   it("phase 为 done 时，动过的工序收成 done（运行结束不再停在 running）", () => {
     // 历史事件可能停在终局那一条，投影要自己认出运行已结束。
     const log = planningFromRun(
-      src([phaseEvent(5, "spec"), phaseEvent(20, "generating"), phaseEvent(50, "done")]),
+      src([
+        phaseEvent(5, "spec"),
+        phaseEvent(20, "generating"),
+        phaseEvent(50, "done"),
+      ]),
     );
     const now = projectAt(log, maxSeq(log));
 
@@ -493,7 +527,11 @@ describe("工序状态：按 phase 归属，失败要浮上来", () => {
     const log = planningFromRun(
       src([
         phaseEvent(5, "spec"),
-        { seq: 8, kind: "error", payload: { kind: "error", message: "模型给出的规格没法解析" } },
+        {
+          seq: 8,
+          kind: "error",
+          payload: { kind: "error", message: "模型给出的规格没法解析" },
+        },
         specEvent(10),
         phaseEvent(50, "done"),
       ]),
@@ -614,7 +652,7 @@ describe("架构定型 → 模块任务点", () => {
     for (const p of archPointsAt(other, 100)) expect(p.bornAtSeq).toBe(77);
   });
 
-  it("三条检查全过 → done；有不过的 → failed（★ 模块没有「执行」过，绝不给 running）", () => {
+  it("三条检查全过 → done；有不过的 → failed（模块没有“执行”过，绝不给 running）", () => {
     // 模块是将来才做的活，此刻无人执行，所以不给 running。
     // 检查全过记 done，有不过的记 failed，保守方向不能反。
     const passing = planningFromRun(src([archEvent(30)]));
@@ -631,7 +669,13 @@ describe("架构定型 → 模块任务点", () => {
     expect(brokenCheck.passed).toBeLessThan(brokenCheck.total); // 前提：这份夹具确实没过
 
     const log = planningFromRun(
-      src([{ seq: 30, kind: "arch", payload: { kind: "arch", arch: broken, check: brokenCheck } }]),
+      src([
+        {
+          seq: 30,
+          kind: "arch",
+          payload: { kind: "arch", arch: broken, check: brokenCheck },
+        },
+      ]),
     );
     const kids = archPointsAt(log, 30);
     expect(kids).toHaveLength(broken.modules.length);
@@ -649,8 +693,14 @@ describe("架构定型 → 模块任务点", () => {
       { label: "完全没有 check 字段", payload: { kind: "arch", arch: ARCH } },
       { label: "check 是 null", payload: { kind: "arch", arch: ARCH, check: null } },
       { label: "check 是空对象", payload: { kind: "arch", arch: ARCH, check: {} } },
-      { label: "results 是 null", payload: { kind: "arch", arch: ARCH, check: { results: null } } },
-      { label: "results 是空数组", payload: { kind: "arch", arch: ARCH, check: { results: [] } } },
+      {
+        label: "results 是 null",
+        payload: { kind: "arch", arch: ARCH, check: { results: null } },
+      },
+      {
+        label: "results 是空数组",
+        payload: { kind: "arch", arch: ARCH, check: { results: [] } },
+      },
       { label: "check 是一个数字", payload: { kind: "arch", arch: ARCH, check: 42 } },
     ];
 
@@ -679,7 +729,9 @@ describe("架构定型 → 模块任务点", () => {
     const kids = archPointsAt(log, 100);
 
     expect(kids).toHaveLength(ARCH.modules.length);
-    expect(kids.map((k) => k.bornAtSeq)).toEqual(new Array(ARCH.modules.length).fill(30));
+    expect(kids.map((k) => k.bornAtSeq)).toEqual(
+      new Array(ARCH.modules.length).fill(30),
+    );
   });
 
   it("payload 残缺时不硬造任务点：没有 modules 就一个点都不生成", () => {
@@ -694,21 +746,24 @@ describe("架构定型 → 模块任务点", () => {
 
     for (const payload of cases) {
       const log = planningFromRun(src([{ seq: 30, kind: "arch", payload }]));
-      expect(archPointsAt(log, 100), `payload=${JSON.stringify(payload)} 时凭空造了点`).toEqual(
-        [],
-      );
+      expect(
+        archPointsAt(log, 100),
+        `payload=${JSON.stringify(payload)} 时凭空造了点`,
+      ).toEqual([]);
     }
   });
 });
 
-describe("★ 串一遍 projectAt → toOutline：清单里 arch 那道自己长出了子树", () => {
-  it("有 arch 事件时：不再有「待规划」占位行，而是逐个列出模块", () => {
+describe("串一遍 projectAt → toOutline：清单里 arch 那道自己长出了子树", () => {
+  it("有 arch 事件时：不再有“待规划”占位行，而是逐个列出模块", () => {
     // 三件事一起断言：占位行消失、模块逐条列出、状态 done。
     // 与下面没有 arch 事件、占位行还在那条对照一起看。
     const log = planningFromRun(src([specEvent(10), archEvent(20)]));
     const rows = toOutline(projectAt(log, maxSeq(log)));
 
-    const archPlaceholders = rows.filter((r) => r.placeholder && r.id.startsWith("arch"));
+    const archPlaceholders = rows.filter(
+      (r) => r.placeholder && r.id.startsWith("arch"),
+    );
     expect(archPlaceholders, "arch 那道还有待规划占位行 —— 子树没长出来").toEqual([]);
 
     const archRows = rows.filter((r) => r.id.startsWith("arch:"));
@@ -727,19 +782,21 @@ describe("★ 串一遍 projectAt → toOutline：清单里 arch 那道自己长
     expect(level1.map((r) => r.id)).toEqual(STAGE_INPUT.map((s) => s.id));
   });
 
-  it("对照：没有 arch 事件的运行，arch 那道**仍然是**「待规划」占位行", () => {
+  it("对照：没有 arch 事件的运行，arch 那道**仍然是**“待规划”占位行", () => {
     // 对照组：防止 outline 改成一级行一律不补占位行之后，上一条恒真。
     const log = planningFromRun(src([specEvent(10), checkEvent(20)]));
     const rows = toOutline(projectAt(log, maxSeq(log)));
 
-    const archPlaceholders = rows.filter((r) => r.placeholder && r.id.startsWith("arch"));
+    const archPlaceholders = rows.filter(
+      (r) => r.placeholder && r.id.startsWith("arch"),
+    );
     expect(archPlaceholders).toHaveLength(1);
     expect(archPlaceholders[0].title).toBe("待规划");
     expect(archPlaceholders[0].level).toBe(2);
     expect(rows.filter((r) => r.id.startsWith("arch:"))).toEqual([]);
   });
 
-  it("★ 诚实底线也适用于已接入的 arch：这一次没跑过就仍然是 pending、名下无子点", () => {
+  it("诚实底线也适用于已接入的 arch：这一次没跑过就仍然是 pending、名下无子点", () => {
     // 已接入描述的是有没有实现，不是这一次跑没跑过。
     const log = planningFromRun(src([specEvent(10), checkEvent(20)], "done"));
     const now = projectAt(log, maxSeq(log));
@@ -840,7 +897,7 @@ describe("界面设计 → 页面任务点", () => {
     for (const p of uiPointsAt(other, 100)) expect(p.bornAtSeq).toBe(77);
   });
 
-  it("三条检查全过 → done；有不过的 → failed（★ 页面没有「执行」过，绝不给 running）", () => {
+  it("三条检查全过 → done；有不过的 → failed（页面没有“执行”过，绝不给 running）", () => {
     // 页面同样无人执行，不给 running。
     // 检查全过记 done，有不过的记 failed，与架构模块点同口径。
     const passing = planningFromRun(src([uiEvent(30)]));
@@ -862,7 +919,13 @@ describe("界面设计 → 页面任务点", () => {
     expect(brokenCheck.passed).toBeLessThan(brokenCheck.total); // 前提：这份夹具确实没过
 
     const log = planningFromRun(
-      src([{ seq: 30, kind: "ui", payload: { kind: "ui", ui: broken, check: brokenCheck } }]),
+      src([
+        {
+          seq: 30,
+          kind: "ui",
+          payload: { kind: "ui", ui: broken, check: brokenCheck },
+        },
+      ]),
     );
     const kids = uiPointsAt(log, 30);
     expect(kids).toHaveLength(broken.pages.length);
@@ -880,8 +943,14 @@ describe("界面设计 → 页面任务点", () => {
       { label: "完全没有 check 字段", payload: { kind: "ui", ui: UI_SPEC } },
       { label: "check 是 null", payload: { kind: "ui", ui: UI_SPEC, check: null } },
       { label: "check 是空对象", payload: { kind: "ui", ui: UI_SPEC, check: {} } },
-      { label: "results 是 null", payload: { kind: "ui", ui: UI_SPEC, check: { results: null } } },
-      { label: "results 是空数组", payload: { kind: "ui", ui: UI_SPEC, check: { results: [] } } },
+      {
+        label: "results 是 null",
+        payload: { kind: "ui", ui: UI_SPEC, check: { results: null } },
+      },
+      {
+        label: "results 是空数组",
+        payload: { kind: "ui", ui: UI_SPEC, check: { results: [] } },
+      },
       { label: "check 是一个数字", payload: { kind: "ui", ui: UI_SPEC, check: 42 } },
     ];
 
@@ -919,7 +988,9 @@ describe("界面设计 → 页面任务点", () => {
     const kids = uiPointsAt(log, 100);
 
     expect(kids).toHaveLength(UI_SPEC.pages.length);
-    expect(kids.map((k) => k.bornAtSeq)).toEqual(new Array(UI_SPEC.pages.length).fill(30));
+    expect(kids.map((k) => k.bornAtSeq)).toEqual(
+      new Array(UI_SPEC.pages.length).fill(30),
+    );
   });
 
   it("payload 残缺时不硬造任务点：没有 pages 就一个点都不生成", () => {
@@ -934,9 +1005,10 @@ describe("界面设计 → 页面任务点", () => {
 
     for (const payload of cases) {
       const log = planningFromRun(src([{ seq: 30, kind: "ui", payload }]));
-      expect(uiPointsAt(log, 100), `payload=${JSON.stringify(payload)} 时凭空造了点`).toEqual(
-        [],
-      );
+      expect(
+        uiPointsAt(log, 100),
+        `payload=${JSON.stringify(payload)} 时凭空造了点`,
+      ).toEqual([]);
     }
   });
 
@@ -960,8 +1032,8 @@ describe("界面设计 → 页面任务点", () => {
   });
 });
 
-describe("★ 串一遍 projectAt → toOutline：清单里 ui 那道也自己长出了子树", () => {
-  it("有 ui 事件时：不再有「待规划」占位行，而是逐个列出页面", () => {
+describe("串一遍 projectAt → toOutline：清单里 ui 那道也自己长出了子树", () => {
+  it("有 ui 事件时：不再有“待规划”占位行，而是逐个列出页面", () => {
     // 三件事一起断言：占位行消失、页面逐条列出、状态 done。
     // 与下面没有 ui 事件、占位行还在那条对照一起看。
     const log = planningFromRun(src([specEvent(10), archEvent(20), uiEvent(30)]));
@@ -986,10 +1058,12 @@ describe("★ 串一遍 projectAt → toOutline：清单里 ui 那道也自己�
     expect(level1.map((r) => r.id)).toEqual(STAGE_INPUT.map((s) => s.id));
 
     // 两棵子树同时在，架构的模块行没被挤掉。
-    expect(rows.filter((r) => r.id.startsWith("arch:")).length).toBe(ARCH.modules.length);
+    expect(rows.filter((r) => r.id.startsWith("arch:")).length).toBe(
+      ARCH.modules.length,
+    );
   });
 
-  it("对照：没有 ui 事件的运行，ui 那道**仍然是**「待规划」占位行", () => {
+  it("对照：没有 ui 事件的运行，ui 那道**仍然是**“待规划”占位行", () => {
     // 对照组：防止 outline 改成一级行一律不补占位行之后，上一条恒真。
     const log = planningFromRun(src([specEvent(10), checkEvent(20)]));
     const rows = toOutline(projectAt(log, maxSeq(log)));
@@ -1001,9 +1075,11 @@ describe("★ 串一遍 projectAt → toOutline：清单里 ui 那道也自己�
     expect(rows.filter((r) => r.id.startsWith("ui:"))).toEqual([]);
   });
 
-  it("★ 诚实底线也适用于已接入的 ui：这一次没跑过就仍然是 pending、名下无子点", () => {
+  it("诚实底线也适用于已接入的 ui：这一次没跑过就仍然是 pending、名下无子点", () => {
     // 已接入描述的是有没有实现，不是这一次跑没跑过。
-    const log = planningFromRun(src([specEvent(10), archEvent(20), checkEvent(25)], "done"));
+    const log = planningFromRun(
+      src([specEvent(10), archEvent(20), checkEvent(25)], "done"),
+    );
     const now = projectAt(log, maxSeq(log));
 
     expect(find(now, "ui").status).toBe("pending");
@@ -1057,7 +1133,11 @@ const BUILD_BATCH: BuildBatch = {
 
 // modules 事件载荷由 summarizeBatch 现算，不手抄摘要。
 function modulesEvent(seq: number, batch: BuildBatch = BUILD_BATCH): RawEvent {
-  return { seq, kind: "modules", payload: { kind: "modules", batch: summarizeBatch(batch, ARCH) } };
+  return {
+    seq,
+    kind: "modules",
+    payload: { kind: "modules", batch: summarizeBatch(batch, ARCH) },
+  };
 }
 
 function buildPointsAt(log: readonly PlanningEvent[], seq: number): TaskPoint[] {
@@ -1083,7 +1163,7 @@ describe("并行构建 → 模块构建任务点（含失败那一栏）", () =>
     expect(hasOrphans(projectAt(log, 30))).toBe(false);
   });
 
-  it("★ 失败模块 → failed，成功模块 → done；绝不给 running（构建已经结束了）", () => {
+  it("失败模块 → failed，成功模块 → done；绝不给 running（构建已经结束了）", () => {
     // 成功模块记 done，失败模块记 failed；抹掉失败会让产物和账目都对不上。
     // 构建在事件到达时已结束，不给 running。
     const log = planningFromRun(src([archEvent(20), modulesEvent(30)]));
@@ -1097,7 +1177,9 @@ describe("并行构建 → 模块构建任务点（含失败那一栏）", () =>
 
   it("失败的模块也带着原因进了摘要，而不是只剩一个红点", () => {
     // 载荷带 message，界面才能说明为什么红。
-    const payload = modulesEvent(30).payload as { batch: { failed: { moduleId: string; message: string; name: string }[] } };
+    const payload = modulesEvent(30).payload as {
+      batch: { failed: { moduleId: string; message: string; name: string }[] };
+    };
     expect(payload.batch.failed).toHaveLength(1);
     expect(payload.batch.failed[0].moduleId).toBe("board-ui");
     expect(payload.batch.failed[0].message).toContain("连接超时");
@@ -1111,7 +1193,7 @@ describe("并行构建 → 模块构建任务点（含失败那一栏）", () =>
     expect(buildPointsAt(log, 30).map((p) => p.bornAtSeq)).toEqual([30, 30]);
   });
 
-  it("顺序按 **arch** 排，而不是按事件里「成功在前、失败在后」的顺序", () => {
+  it("顺序按 **arch** 排，而不是按事件里“成功在前、失败在后”的顺序", () => {
     // 顺序按 arch 排，不按事件里成功在前的顺序，两处模块才对得上。
     const flipped: BuildBatch = {
       ...BUILD_BATCH,
@@ -1142,7 +1224,9 @@ describe("并行构建 → 模块构建任务点（含失败那一栏）", () =>
     const running = planningFromRun(src([archEvent(20), modulesEvent(30)]));
     expect(find(projectAt(running, 30), "build").status).toBe("running");
 
-    const doneLog = planningFromRun(src([archEvent(20), modulesEvent(30), phaseEvent(60, "done")]));
+    const doneLog = planningFromRun(
+      src([archEvent(20), modulesEvent(30), phaseEvent(60, "done")]),
+    );
     const now = projectAt(doneLog, maxSeq(doneLog));
     expect(find(now, "build").status).toBe("done");
     expect(childrenOf(now, "build")).toHaveLength(2);
@@ -1165,7 +1249,9 @@ describe("并行构建 → 模块构建任务点（含失败那一栏）", () =>
   });
 
   it("同一条 modules 事件到来两次：点只出生一次（appendBorn 幂等）", () => {
-    const log = planningFromRun(src([archEvent(20), modulesEvent(30), modulesEvent(45)]));
+    const log = planningFromRun(
+      src([archEvent(20), modulesEvent(30), modulesEvent(45)]),
+    );
     const kids = buildPointsAt(log, 100);
 
     expect(kids).toHaveLength(2);
@@ -1185,9 +1271,10 @@ describe("并行构建 → 模块构建任务点（含失败那一栏）", () =>
 
     for (const payload of cases) {
       const log = planningFromRun(src([{ seq: 30, kind: "modules", payload }]));
-      expect(buildPointsAt(log, 100), `payload=${JSON.stringify(payload)} 时凭空造了点`).toEqual(
-        [],
-      );
+      expect(
+        buildPointsAt(log, 100),
+        `payload=${JSON.stringify(payload)} 时凭空造了点`,
+      ).toEqual([]);
     }
   });
 
@@ -1226,13 +1313,15 @@ describe("并行构建 → 模块构建任务点（含失败那一栏）", () =>
   });
 });
 
-describe("★ 串一遍 projectAt → toOutline：清单里 build 那道自己长出了子树", () => {
-  it("有 modules 事件时：不再有「待规划」占位行，而是逐个列出模块构建结果", () => {
+describe("串一遍 projectAt → toOutline：清单里 build 那道自己长出了子树", () => {
+  it("有 modules 事件时：不再有“待规划”占位行，而是逐个列出模块构建结果", () => {
     // 第三次长出子树，这一次多一档失败状态。
     const log = planningFromRun(src([specEvent(10), archEvent(20), modulesEvent(30)]));
     const rows = toOutline(projectAt(log, maxSeq(log)));
 
-    const buildPlaceholders = rows.filter((r) => r.placeholder && r.id.startsWith("build"));
+    const buildPlaceholders = rows.filter(
+      (r) => r.placeholder && r.id.startsWith("build"),
+    );
     expect(buildPlaceholders, "build 那道还有待规划占位行 —— 子树没长出来").toEqual([]);
 
     // 列出来的模块 id、标题、层级都对得上。
@@ -1255,23 +1344,29 @@ describe("★ 串一遍 projectAt → toOutline：清单里 build 那道自己�
     expect(level1.map((r) => r.id)).toEqual(STAGE_INPUT.map((s) => s.id));
 
     // 三棵子树同时在，前面两道的行没被挤掉。
-    expect(rows.filter((r) => r.id.startsWith("arch:")).length).toBe(ARCH.modules.length);
+    expect(rows.filter((r) => r.id.startsWith("arch:")).length).toBe(
+      ARCH.modules.length,
+    );
   });
 
-  it("对照：没有 modules 事件的运行，build 那道**仍然是**「待规划」占位行", () => {
+  it("对照：没有 modules 事件的运行，build 那道**仍然是**“待规划”占位行", () => {
     // 对照组：防止占位行规则被改后上一条恒真。
     const log = planningFromRun(src([specEvent(10), archEvent(20), checkEvent(25)]));
     const rows = toOutline(projectAt(log, maxSeq(log)));
 
-    const buildPlaceholders = rows.filter((r) => r.placeholder && r.id.startsWith("build"));
+    const buildPlaceholders = rows.filter(
+      (r) => r.placeholder && r.id.startsWith("build"),
+    );
     expect(buildPlaceholders).toHaveLength(1);
     expect(buildPlaceholders[0].title).toBe("待规划");
     expect(buildPlaceholders[0].level).toBe(2);
     expect(rows.filter((r) => r.id.startsWith("build:"))).toEqual([]);
   });
 
-  it("★ 诚实底线也适用于第四道：这一次没跑过就仍然是 pending、名下无子点", () => {
-    const log = planningFromRun(src([specEvent(10), archEvent(20), checkEvent(25)], "done"));
+  it("诚实底线也适用于第四道：这一次没跑过就仍然是 pending、名下无子点", () => {
+    const log = planningFromRun(
+      src([specEvent(10), archEvent(20), checkEvent(25)], "done"),
+    );
     const now = projectAt(log, maxSeq(log));
 
     expect(find(now, "build").status).toBe("pending");

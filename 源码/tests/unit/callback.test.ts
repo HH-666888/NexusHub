@@ -29,7 +29,11 @@ function checkEvent(
   total = 7,
 ): RunEvent {
   const passed = total - failures.length;
-  const full = failures.map((f) => ({ name: f.name, detail: f.detail ?? "", pass: false }));
+  const full = failures.map((f) => ({
+    name: f.name,
+    detail: f.detail ?? "",
+    pass: false,
+  }));
   return ev(1, {
     kind: "check",
     results: [
@@ -103,7 +107,7 @@ describe("回流 · 从事件里捞上一次", () => {
     expect(prev.error).toBe("模型返回 429");
   });
 
-  it("【关键】有多条 check 时取最后一条", () => {
+  it("有多条 check 时取最后一条", () => {
     // 一次尝试里检查只该跑一次；有多条时取最后一条，取第一条会把中间态当成结论。
     const events = [
       checkEvent([{ name: "旧的失败", detail: "x" }], 7),
@@ -144,7 +148,7 @@ describe("回流 · 什么情况下带", () => {
     expect(hasSomethingToFeedBack(prev)).toBe(true);
   });
 
-  it("上一次跑挂了 —— 也带（「上次在这儿挂了」很有用）", () => {
+  it("上一次跑挂了 —— 也带（“上次在这儿挂了”很有用）", () => {
     const prev: PreviousAttempt = {
       failures: [],
       total: 0,
@@ -169,7 +173,7 @@ describe("回流 · 拼给模型的上下文", () => {
     error: null,
   };
 
-  it("【关键】只说没过的，不说过了的", () => {
+  it("只说没过的，不说过了的", () => {
     // 只带上一次实际没过的那几项；把七项全列一遍等于没说。
     const ctx = buildCallbackContext(prev)!;
     expect(ctx).toContain("导出可下载");
@@ -177,14 +181,14 @@ describe("回流 · 拼给模型的上下文", () => {
     expect(ctx, "把通过项也带上了").not.toContain("通过项");
   });
 
-  it("【关键】说清是「上一轮」，不是泛泛的「检查没过」", () => {
+  it("说清是“上一轮”，不是泛泛的“检查没过”", () => {
     // 说清是上一轮这项没过，而不是泛泛的检查没过。
     const ctx = buildCallbackContext(prev)!;
     expect(ctx).toContain("上一轮");
     expect(ctx).toContain("已经生成过一次");
   });
 
-  it("带上「几项里过了几项」，让它知道差多远", () => {
+  it("带上“几项里过了几项”，让它知道差多远", () => {
     const ctx = buildCallbackContext(prev)!;
     expect(ctx).toContain("7 项检查里过了 5 项");
   });
@@ -194,7 +198,7 @@ describe("回流 · 拼给模型的上下文", () => {
     expect(ctx).toContain("导出可下载：没有找到下载入口");
   });
 
-  it("【关键】原因是空的时候只写名字，不替它编一句", () => {
+  it("原因是空的时候只写名字，不替它编一句", () => {
     // 原因是空的时候只写名字，不替它编一句。
     const ctx = buildCallbackContext({
       ...prev,
@@ -206,7 +210,7 @@ describe("回流 · 拼给模型的上下文", () => {
     expect(ctx).not.toContain("可能是因为");
   });
 
-  it("跑挂的时候，额外给一句「保守一点」的建议", () => {
+  it("跑挂的时候，额外给一句“保守一点”的建议", () => {
     const ctx = buildCallbackContext({
       failures: [],
       total: 0,
@@ -226,7 +230,7 @@ describe("回流 · 拼给模型的上下文", () => {
 });
 
 describe("回流 · 说给用户听", () => {
-  it("【关键】回流必须说出来 —— 它是用户看不见的动作", () => {
+  it("回流必须说出来 —— 它是用户看不见的动作", () => {
     // 用户得知道这一次它被提醒了什么。
     const msg = describeCallback({
       failures: [
@@ -253,11 +257,17 @@ describe("回流 · 说给用户听", () => {
     expect(msg).toContain("中断");
   });
 
-  it("没有可带的就返回 null，而不是一句「没有」", () => {
+  it("没有可带的就返回 null，而不是一句“没有”", () => {
     // 界面上不该出现本轮没有回流这种废话
     expect(describeCallback(null)).toBeNull();
     expect(
-      describeCallback({ failures: [], total: 7, passed: 7, hadArtifact: true, error: null }),
+      describeCallback({
+        failures: [],
+        total: 7,
+        passed: 7,
+        hadArtifact: true,
+        error: null,
+      }),
     ).toBeNull();
   });
 });

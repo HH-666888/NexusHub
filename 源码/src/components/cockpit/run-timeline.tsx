@@ -9,10 +9,10 @@ import {
 } from "@/core/domain/run-event";
 
 /**
- * 时间轴回放：拖动滑块，看到「那一刻的画面」—— 已经写了多少字、花了多少钱、检查了几项。
- * 演示时不用现场等一次生成，也把「过程」从转瞬即逝的东西变成可复查的对象。
+ * 时间轴回放：拖动滑块，看到“那一刻的画面”—— 已经写了多少字、花了多少钱、检查了几项。
+ * 演示时不用现场等一次生成，也把“过程”从转瞬即逝的东西变成可复查的对象。
  *
- * 滑块按「事件序号」走，不按毫秒：模型吐字速度不均匀，按毫秒拖会在某些段落上
+ * 滑块按“事件序号”走，不按毫秒：模型吐字速度不均匀，按毫秒拖会在某些段落上
  * 怎么拖都不动、在另一些段落上一拖就跳过一大段。毫秒只是显示出来的结果。
  */
 
@@ -47,8 +47,8 @@ export function RunTimeline({ runId, refreshKey }: RunTimelineProps) {
 
     /*
       这里没有同步调用 setLoading(true)：lint 会拦，而且拦得对 ——
-      重新拉取时切回「加载中」再切回来，用户看到的是一次闪烁。
-      loading 初值就是 true，只有「拉完了」这一个方向需要改它。
+      重新拉取时切回“加载中”再切回来，用户看到的是一次闪烁。
+      loading 初值就是 true，只有“拉完了”这一个方向需要改它。
     */
     fetch(`/api/runs/${runId}/events`)
       .then((r) => {
@@ -147,7 +147,7 @@ export function RunTimeline({ runId, refreshKey }: RunTimelineProps) {
 
   /*
     还没有过程记录时的说明。
-    注意措辞：不是「没有数据」这种打发人的话，而是说清楚
+    注意措辞：不是“没有数据”这种打发人的话，而是说清楚
     **为什么还没有**、以及**什么时候会有**。
   */
   if (events.length === 0) {
@@ -157,7 +157,7 @@ export function RunTimeline({ runId, refreshKey }: RunTimelineProps) {
         <br />
         过程记录是在**真正调用模型的那一次生成**里写下来的；
         已有成品时刷新页面走的是回放路径，不会重复记录。
-        点「重新生成」跑一次，这里就会出现可拖动的时间轴。
+        点“重新生成”跑一次，这里就会出现可拖动的时间轴。
       </div>
     );
   }
@@ -203,7 +203,7 @@ export function RunTimeline({ runId, refreshKey }: RunTimelineProps) {
           aria-label="时间轴"
         />
 
-        <span className="w-24 flex-none text-right font-mono text-[10.5px] tabular-nums text-slate-500">
+        <span className="w-24 flex-none text-right font-mono text-[10.5px] text-slate-500 tabular-nums">
           {(frame.offsetMs / 1000).toFixed(1)}s / {(duration / 1000).toFixed(1)}s
         </span>
 
@@ -228,22 +228,23 @@ export function RunTimeline({ runId, refreshKey }: RunTimelineProps) {
       {/* ---------- 这一刻的画面 ---------- */}
       <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--color-border-soft)] pt-2 text-[10.5px] tabular-nums">
         <span className="text-slate-500">
-          第 <span className="text-slate-300">{frame.consumed}</span> / {events.length} 步
+          第 <span className="text-slate-300">{frame.consumed}</span> / {events.length}{" "}
+          步
         </span>
-        {frame.phaseLabel && (
-          <span className="text-slate-400">{frame.phaseLabel}</span>
-        )}
+        {frame.phaseLabel && <span className="text-slate-400">{frame.phaseLabel}</span>}
         <span className="text-slate-500">
           已写 <span className="text-slate-300">{frame.text.length}</span> 字
         </span>
         {/*
           花费只在真的收到过用量事件之后才显示。
-          没收到时显示「—」而不是 ¥0.0000 ——
-          「还不知道」和「花了零元」不是一回事。
+          没收到时显示“—”而不是 ¥0.0000 ——
+          “还不知道”和“花了零元”不是一回事。
         */}
         <span className="text-slate-500">
           {frame.costCny === null ? (
-            <>花费 <span className="text-slate-600">—</span></>
+            <>
+              花费 <span className="text-slate-600">—</span>
+            </>
           ) : (
             <>
               花费 <span className="text-slate-300">¥{frame.costCny.toFixed(4)}</span>
@@ -266,7 +267,10 @@ export function RunTimeline({ runId, refreshKey }: RunTimelineProps) {
         )}
         {frame.artifactBytes !== null && (
           <span className="text-slate-500">
-            产物 <span className="text-slate-300">{(frame.artifactBytes / 1024).toFixed(1)} KB</span>
+            产物{" "}
+            <span className="text-slate-300">
+              {(frame.artifactBytes / 1024).toFixed(1)} KB
+            </span>
           </span>
         )}
         {frame.error && <span className="text-red-400">出错：{frame.error}</span>}

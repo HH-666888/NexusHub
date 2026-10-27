@@ -7,11 +7,23 @@ import { StageDetail } from "./stage-detail";
 import type { CostByStage } from "@/core/domain/stage-cost";
 import type { GateOverride } from "@/core/pipeline/gate-policy";
 import { buildPipelineGraph, tracePath } from "@/core/pipeline/graph";
-import { toForestNodes, toLayoutNodes, type ChildrenByStage } from "@/core/pipeline/forest";
+import {
+  toForestNodes,
+  toLayoutNodes,
+  type ChildrenByStage,
+} from "@/core/pipeline/forest";
 import type { RunProgressInput } from "@/core/pipeline/progress";
-import { PANEL_GEOMETRY, WIDE_GEOMETRY, pipelineBounds } from "@/core/canvas/pipeline-layout";
+import {
+  PANEL_GEOMETRY,
+  WIDE_GEOMETRY,
+  pipelineBounds,
+} from "@/core/canvas/pipeline-layout";
 import { fitFloor } from "@/core/canvas/viewport";
-import { FOREST_GEOMETRY, TREE_LEVELS, layoutForest } from "@/core/canvas/forest-layout";
+import {
+  FOREST_GEOMETRY,
+  TREE_LEVELS,
+  layoutForest,
+} from "@/core/canvas/forest-layout";
 import {
   freshFocusFollow,
   markUserMoved,
@@ -46,14 +58,14 @@ export interface CanvasWorkbenchProps {
   childrenByStage?: ChildrenByStage;
   /**
    * 一级 Agent 根节点，原样透传给 PipelineCanvas：这棵树该长什么样是服务端投影的事实。
-   * 这里唯一的另一处用途是算「打开时对准哪儿」—— 有根节点时装进视口的是整棵三层树。
+   * 这里唯一的另一处用途是算“打开时对准哪儿”—— 有根节点时装进视口的是整棵三层树。
    */
   rootCard?: CanvasRootCard;
   /**
    * 这一步正在执行的工序，变了视口就聚焦过去。给的是业务 id 而不是节点 id：
    * 聚焦目标是那道工序的整棵子树，区域只有布局知道（LaidNode.subtree）。
    *
-   * 只在「变了」的时候聚焦。每次渲染都对准的话，用户永远没法把视口挪到别处 ——
+   * 只在“变了”的时候聚焦。每次渲染都对准的话，用户永远没法把视口挪到别处 ——
    * 手一松就被拽回去。判据在 core/canvas/focus-follow.ts（纯函数，有单测）。
    */
   focusStageId?: StageId | null;
@@ -67,9 +79,9 @@ export interface CanvasWorkbenchProps {
    * 用户在左侧清单里点名要看的那一个任务点（`?focus=<节点 id>`）。
    *
    * 它和 focusStageId 是两个概念：那个是自动跟随，没人要求视角变化，所以必须让着用户，
-   * 用户一动过视口就不许再跟；这个是用户自己点了清单里的一行，是「我要看这个」本身。
+   * 用户一动过视口就不许再跟；这个是用户自己点了清单里的一行，是“我要看这个”本身。
    * 后者必须无视前者那条禁令 —— 否则用户拖过画布再点清单，点了没反应，
-   * 他会以为清单坏了。点名同时记一笔「用户动过视口」，把这一趟的自动跟随关掉。
+   * 他会以为清单坏了。点名同时记一笔“用户动过视口”，把这一趟的自动跟随关掉。
    *
    * 找不到对应节点时什么都不做：清单里有些行在画布上没有卡片（比如规格化产出的
    * 验收条目），URL 也可能被手写成一个不存在的 id。猜一个位置比不动更坏。
@@ -107,7 +119,7 @@ export function CanvasWorkbench({
 
   /*
     点一个节点 → 把整条上下游链都点亮。用 tracePath 的 chain，它已经处理好
-    「沿顺序流转边上下走、不跨越回退边」—— 自己拼很容易把回退边当成主链。
+    “沿顺序流转边上下走、不跨越回退边”—— 自己拼很容易把回退边当成主链。
     依赖带上 graph：切了另一次运行而 activeId 没变时也必须重算。
   */
   const chain = useMemo(() => {
@@ -125,17 +137,17 @@ export function CanvasWorkbench({
   }, [graph, activeId]);
 
   /*
-    「打开时对准哪儿」分三种情况：有根节点用整棵树的包围盒（少了根，最上面那层
+    “打开时对准哪儿”分三种情况：有根节点用整棵树的包围盒（少了根，最上面那层
     开局就在屏幕外）；没有根但有子树用森林自己的包围盒（否则子树全在屏幕外）；
     两者都没有才用旧算法，它逐像素等于改之前的布局。
   */
   const tree = useMemo(() => {
     /*
-      有根节点时必须先算这一条。下面那条「有子树」用的是六棵根（toLayoutNodes）的
+      有根节点时必须先算这一条。下面那条“有子树”用的是六棵根（toLayoutNodes）的
       包围盒，不含一级 Agent —— 一头扎进去的话根卡开局就在屏幕外 212 像素处。
 
       几何和 PipelineCanvas 用同一份（FOREST_GEOMETRY + TREE_LEVELS）：
-      两边算的不是同一个东西的话，视口会「对准」一个画布上并不存在的位置。
+      两边算的不是同一个东西的话，视口会“对准”一个画布上并不存在的位置。
     */
     if (rootCard) {
       return layoutForest(
@@ -161,7 +173,7 @@ export function CanvasWorkbench({
   }, [kids, rootCard]);
 
   /**
-   * 整棵树的世界包围盒。三个用途都是「整棵树」这一个意思：
+   * 整棵树的世界包围盒。三个用途都是“整棵树”这一个意思：
    * fitBounds 打开时对准它，homeBounds 回到它，fitAllBounds 看全它（忽略下限）。
    *
    * 落到 pipelineBounds 时用的是当前档位的几何（面板三列两行 / 整页一行六个）——
@@ -181,7 +193,7 @@ export function CanvasWorkbench({
     双击聚焦：让视口装下它整棵子树（区域由 PipelineCanvas 从布局的 subtree 取）。
     带 nonce 是因为连点同一个节点两次 bounds 是同一个值，只看值第二次不触发。
 
-    「回到原点」不用清掉它：画布那个按钮直接 fit 到 homeBounds，
+    “回到原点”不用清掉它：画布那个按钮直接 fit 到 homeBounds，
     而 focusRequest 只在 nonce 变化时生效 —— 这正是把它设计成事件而不是状态的原因。
   */
   const [focusRequest, setFocusRequest] = useState<{
@@ -202,11 +214,14 @@ export function CanvasWorkbench({
 
   /**
    * 发一次聚焦请求（值 + nonce）。只发请求，不判断是谁要的 ——
-   * 判断留给调用方，因为「谁要的」决定了要不要关掉自动跟随。
+   * 判断留给调用方，因为“谁要的”决定了要不要关掉自动跟随。
    */
-  const requestFocus = useCallback((b: { x: number; y: number; w: number; h: number }) => {
-    setFocusRequest((cur) => ({ bounds: b, nonce: (cur?.nonce ?? 0) + 1 }));
-  }, []);
+  const requestFocus = useCallback(
+    (b: { x: number; y: number; w: number; h: number }) => {
+      setFocusRequest((cur) => ({ bounds: b, nonce: (cur?.nonce ?? 0) + 1 }));
+    },
+    [],
+  );
 
   const focusOn = useCallback(
     (b: { x: number; y: number; w: number; h: number }) => {
@@ -215,8 +230,8 @@ export function CanvasWorkbench({
         双击聚焦也是用户动过视口（他挑了一个要看的视角）。不记这一笔的话，
         他刚双击钻进某道工序，下一步一推进就被拽走。
 
-        这一笔只能记在「用户双击」这条路上：自动跟随也走 requestFocus，
-        记在那里的话第一次自动聚焦就会把自己关掉，症状是「功能只生效一次」。
+        这一笔只能记在“用户双击”这条路上：自动跟随也走 requestFocus，
+        记在那里的话第一次自动聚焦就会把自己关掉，症状是“功能只生效一次”。
       */
       followRef.current = markUserMoved(followRef.current);
     },
@@ -246,7 +261,7 @@ export function CanvasWorkbench({
 
     /*
       走一下唯一的策略函数再设置视口。focus 模式下它是恒等的 ——
-      这一行是为了让「自动聚焦属于 focus 模式」挂在唯一的地方：
+      这一行是为了让“自动聚焦属于 focus 模式”挂在唯一的地方：
       将来加 batch 模式时改 boundsFor 一个函数，这里会跟着变。
     */
     requestFocus(boundsFor("focus", target.subtree, bounds));
@@ -267,18 +282,18 @@ export function CanvasWorkbench({
     /*
       查不到就什么都不做：清单里有、画布上没画的行（规格化的验收条目），
       以及 URL 被手写成不存在的 id，都不是故障。
-      这时连「用户动过视口」都不记 —— 什么都没发生时不该留下任何痕迹。
+      这时连“用户动过视口”都不记 —— 什么都没发生时不该留下任何痕迹。
     */
     const target = tree?.byId.get(step.go);
     if (!target) return;
 
     /*
-      先记一笔「用户动过视口」，再发请求。这不是绕过那条禁令，而是「用户说了算之后，
-      这一趟就由他说了算」：他刚点进某个执行点看细节，下一步一推进就被拽走的话，
+      先记一笔“用户动过视口”，再发请求。这不是绕过那条禁令，而是“用户说了算之后，
+      这一趟就由他说了算”：他刚点进某个执行点看细节，下一步一推进就被拽走的话，
       点名这个功能就等于白点。
 
       这一笔只能记在用户点名这条路上。记在 requestFocus 里就错了 ——
-      自动跟随也走那儿，那样记一下等于「跟一次就再也不跟」。
+      自动跟随也走那儿，那样记一下等于“跟一次就再也不跟”。
     */
     followRef.current = markUserMoved(followRef.current);
 
@@ -297,7 +312,7 @@ export function CanvasWorkbench({
         fitBounds={bounds}
         homeBounds={bounds}
         /*
-          「看全」装下的是**整棵树**：有根时含根，没根时就是那片森林。
+          “看全”装下的是**整棵树**：有根时含根，没根时就是那片森林。
           它和 fitBounds 是同一个值 —— 区别不在区域，在**下限**：
           默认路径传 minFitScale（宁可切掉边角也要读得清），
           看全把它传成 0（用户明确要看全局）。取舍写在 canvas-stage 的 fitAll 上。
@@ -323,7 +338,7 @@ export function CanvasWorkbench({
       {/*
         详情面板浮在画布**上面**，不是画在世界坐标里 ——
         放进去的话它会跟着平移缩放一起漂，缩小时字糊成一团。
-        而它是一块「读数面板」，该像 HUD 一样钉在屏幕上。
+        而它是一块“读数面板”，该像 HUD 一样钉在屏幕上。
       */}
       <StageDetail
         node={detail?.node ?? null}

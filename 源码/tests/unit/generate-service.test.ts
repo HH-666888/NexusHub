@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { generateApp, type GenerateEvent } from "@/core/generate/service";
-import { buildAssemblePrompt, type BuildBatch, type ModuleBuild } from "@/core/domain/module-build";
+import {
+  buildAssemblePrompt,
+  type BuildBatch,
+  type ModuleBuild,
+} from "@/core/domain/module-build";
 import type { ArtifactStore } from "@/core/ports/artifact-store";
 import type { CostStore } from "@/core/ports/cost-store";
 import type { RunStore } from "@/core/ports/run-store";
-import type { ModelChunk, ModelPort, ModelRequest, ModelResult } from "@/core/ports/model";
+import type {
+  ModelChunk,
+  ModelPort,
+  ModelRequest,
+  ModelResult,
+} from "@/core/ports/model";
 import type { Artifact, NewArtifact } from "@/core/domain/artifact";
 import type { NewCostRecord } from "@/core/domain/cost";
 import { GENERATE_MAX_OUTPUT_TOKENS } from "@/core/generate/prompt";
@@ -73,7 +82,10 @@ function moduleBuild(over: Partial<ModuleBuild> & { moduleId: string }): ModuleB
 }
 
 const BATCH: BuildBatch = {
-  modules: [moduleBuild({ moduleId: "task-store" }), moduleBuild({ moduleId: "board-ui" })],
+  modules: [
+    moduleBuild({ moduleId: "task-store" }),
+    moduleBuild({ moduleId: "board-ui" }),
+  ],
   failed: [],
   concurrency: 3,
   retriedModules: [],
@@ -323,10 +335,12 @@ describe("⑨ 传 batch → 装配的用户消息里带上了各模块的代码�
 
   it("提示词与 buildAssemblePrompt 逐字一致（不是另拼一份）", async () => {
     const h = await run({ batch: BATCH, text: HTML_WITH_MODULES });
-    expect(userMessageOf(h)).toBe(buildAssemblePrompt({ prompt: PROMPT, batch: BATCH }));
+    expect(userMessageOf(h)).toBe(
+      buildAssemblePrompt({ prompt: PROMPT, batch: BATCH }),
+    );
   });
 
-  it("阶段文案说清楚这次是「装配」而不是从头写", async () => {
+  it("阶段文案说清楚这次是“装配”而不是从头写", async () => {
     const h = await run({ batch: BATCH, text: HTML_WITH_MODULES });
     const first = h.events[0];
     expect(first.kind === "phase" && first.label).toContain("装配");
@@ -364,7 +378,7 @@ describe("⑨ 传 batch → 装配的用户消息里带上了各模块的代码�
 });
 
 describe("⑩ 产物真的包含模块代码 → 新检查通过", () => {
-  it("多出第八项「模块代码确实进入了产物」，且它是通过的", async () => {
+  it("多出第八项“模块代码确实进入了产物”，且它是通过的", async () => {
     const h = await run({ batch: BATCH, text: HTML_WITH_MODULES });
     const checks = checksOf(h);
     const probe = checks.find((c) => c.name === "模块代码确实进入了产物");
@@ -387,7 +401,7 @@ describe("⑩ 产物真的包含模块代码 → 新检查通过", () => {
   });
 });
 
-describe("⑪ ★ 探针：产物里没有模块代码 → 新检查必须不通过 ★", () => {
+describe("⑪ 探针：产物里没有模块代码 → 新检查必须不通过", () => {
   it("七项全过但一个模块片段都没有 → 第八项红，并指名道姓说是哪个模块", async () => {
     // 探针：并行结果被丢弃、照旧单次生成时，旧七项全过而第八项必须红。
     // 只验第八项红还不够，detail 必须说出缺的是哪个模块。
@@ -398,9 +412,13 @@ describe("⑪ ★ 探针：产物里没有模块代码 → 新检查必须不通
 
     // 前提：这份产物确实能过原来那七项 —— 否则红是因为别的原因，探针就没意义了
     expect(checks.filter((c) => c.name !== "模块代码确实进入了产物")).toHaveLength(7);
-    expect(summaryOf(h)?.failures.map((f) => f.name)).toEqual(["模块代码确实进入了产物"]);
+    expect(summaryOf(h)?.failures.map((f) => f.name)).toEqual([
+      "模块代码确实进入了产物",
+    ]);
 
-    expect(probe?.pass, "产物里没有模块代码，第八项却是绿的 —— 这条检查是假的").toBe(false);
+    expect(probe?.pass, "产物里没有模块代码，第八项却是绿的 —— 这条检查是假的").toBe(
+      false,
+    );
     expect(probe?.detail).toContain("task-store");
     expect(probe?.detail).toContain("board-ui");
     expect(probe?.detail).toContain("找不到");
@@ -408,7 +426,9 @@ describe("⑪ ★ 探针：产物里没有模块代码 → 新检查必须不通
 
   it("只差一个模块也要红，而且只报缺的那一个", async () => {
     // 两个模块一个进了一个没进 —— "部分进去"不能算通过
-    const html = htmlWith(['<section data-module="task-store" class="task-store-box"></section>']);
+    const html = htmlWith([
+      '<section data-module="task-store" class="task-store-box"></section>',
+    ]);
     const h = await run({ batch: BATCH, text: html });
     const probe = checksOf(h).find((c) => c.name === "模块代码确实进入了产物");
 
@@ -540,7 +560,7 @@ describe("装配那一次调用失败时的行为不变", () => {
 const RETRY_PHASE = (label: string) => label.includes("加倍") && label.includes("作数");
 
 describe("装配截断重试", () => {
-  it("【关键】第一次顶满预算 → 加倍重来一次，产物取第二次的正文", async () => {
+  it("第一次顶满预算 → 加倍重来一次，产物取第二次的正文", async () => {
     const firstHalf = "<html><body><h1>写了一半";
     const h = await run({
       attempts: [
@@ -560,9 +580,12 @@ describe("装配截断重试", () => {
     expect(h.saved[0].content).not.toContain("写了一半");
   });
 
-  it("两次之间有一条 phase 事件，说清「上一次不算数」—— 界面据此另起一段", async () => {
+  it("两次之间有一条 phase 事件，说清“上一次不算数”—— 界面据此另起一段", async () => {
     const h = await run({
-      attempts: [{ truncated: true, costCny: 0.07 }, { text: PLAIN_HTML, costCny: 0.03 }],
+      attempts: [
+        { truncated: true, costCny: 0.07 },
+        { text: PLAIN_HTML, costCny: 0.03 },
+      ],
     });
     const retryLabels = h.events
       .filter((e) => e.kind === "phase")
@@ -572,7 +595,7 @@ describe("装配截断重试", () => {
     expect(h.events.filter((e) => e.kind === "usage")).toHaveLength(2); // 两次各一笔用量
   });
 
-  it("【关键】两次调用的钱都进账，跑完的累计金额含被重试掉的那一次", async () => {
+  it("两次调用的钱都进账，跑完的累计金额含被重试掉的那一次", async () => {
     const h = await run({
       spentCny: 0.1,
       attempts: [
@@ -592,11 +615,13 @@ describe("装配截断重试", () => {
     expect(Number(withCost[1].totalCostCny)).toBeCloseTo(0.2, 6); // 再加第二次 0.03
     // 每次写入的是那一次自己的用量，累加是 store 的职责。
     // 这里钉的是两次都写进去了。
-    expect((withCost[0].usage as { outputTokens: number }).outputTokens).toBe(GEN_BUDGET);
+    expect((withCost[0].usage as { outputTokens: number }).outputTokens).toBe(
+      GEN_BUDGET,
+    );
     expect((withCost[1].usage as { outputTokens: number }).outputTokens).toBe(200);
   });
 
-  it("★ 反例：没截断 → 只调一次、没有重试说明、也只有一个 usage", async () => {
+  it("反例：没截断 → 只调一次、没有重试说明、也只有一个 usage", async () => {
     const h = await run({ attempts: [{ text: PLAIN_HTML, costCny: 0.05 }] });
 
     expect(h.requests).toHaveLength(1);
@@ -610,7 +635,7 @@ describe("装配截断重试", () => {
     expect(h.costRecords).toHaveLength(1);
   });
 
-  it("★ 反例：重试之后**仍然**截断 → 只重试一次，并如实报「截断」", async () => {
+  it("反例：重试之后**仍然**截断 → 只重试一次，并如实报“截断”", async () => {
     const h = await run({
       attempts: [
         { truncated: true, costCny: 0.07, text: "<html>第一次" },
@@ -631,7 +656,7 @@ describe("装配截断重试", () => {
     expect(err && err.kind === "error" && err.hint).toContain("已经加倍重试过一次");
   });
 
-  it("★ 反例：预算已经到顶（131072）→ 不重试（加倍等于没加）", async () => {
+  it("反例：预算已经到顶（131072）→ 不重试（加倍等于没加）", async () => {
     const h = await run({
       maxOutputTokens: 131072,
       attempts: [{ truncated: true, costCny: 0.07 }],

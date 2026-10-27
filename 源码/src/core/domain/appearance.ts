@@ -240,12 +240,9 @@ export function normalizeAppearance(input: unknown): AppearanceConfig {
  * theme 不在这里翻译，走 <html data-theme>：CSS 没法按变量值选规则，
  * 而换主题要换一整套语义颜色，只能用属性选择器。
  */
-export function appearanceToCssVars(
-  config: AppearanceConfig,
-): Record<string, string> {
+export function appearanceToCssVars(config: AppearanceConfig): Record<string, string> {
   const font = FONT_OPTIONS.find((o) => o.id === config.font) ?? FONT_OPTIONS[0];
-  const scale =
-    SCALE_OPTIONS.find((o) => o.id === config.scale) ?? SCALE_OPTIONS[1];
+  const scale = SCALE_OPTIONS.find((o) => o.id === config.scale) ?? SCALE_OPTIONS[1];
   const accent =
     ACCENT_OPTIONS.find((o) => o.id === config.accent) ?? ACCENT_OPTIONS[0];
   const radius =

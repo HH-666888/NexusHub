@@ -64,7 +64,7 @@ export async function completeWithTruncationRetry(
   try {
     second = await model.complete({ ...req, maxOutputTokens: next });
   } catch (err) {
-      // 重试失败不能上抛：第一次已成功计费，上抛会让那笔花费消失
+    // 重试失败不能上抛：第一次已成功计费，上抛会让那笔花费消失
     return {
       result: first,
       calls: 2,

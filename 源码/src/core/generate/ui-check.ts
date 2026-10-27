@@ -1,6 +1,6 @@
 /**
  * 界面设计的本地检查：功能有页面、设计变量无悬空、数据需求能对上模块，不调模型。
- * 第三条只能按模块 id/名称做字面匹配，name 与 detail 必须写明「未核实接口契约」。
+ * 第三条只能按模块 id/名称做字面匹配，name 与 detail 必须写明“未核实接口契约”。
  */
 
 import type { ArchSpec } from "../domain/arch";
@@ -18,7 +18,6 @@ export interface UiCheck {
   passed: number;
   total: number;
 }
-
 
 function checkEveryFeatureHasAPage(ui: UiSpec, spec: AppSpec): UiCheckItem {
   const name = "每条功能都有对应的页面或入口";
@@ -64,7 +63,6 @@ function checkEveryFeatureHasAPage(ui: UiSpec, spec: AppSpec): UiCheckItem {
         : ""),
   };
 }
-
 
 function checkTokenRefs(ui: UiSpec): UiCheckItem {
   // 名字与 stages.ts:243 的验收标准逐字相同；只有第三条有意写弱
@@ -126,10 +124,9 @@ function checkTokenRefs(ui: UiSpec): UiCheckItem {
   };
 }
 
-
 /** 判据边界说明，每一条 detail 都要带上 */
 const DATA_NEED_BOUNDARY =
-  "⚠️ 只做了字面匹配：架构里现在没有「接口契约」这一栏" +
+  "只做了字面匹配：架构里现在没有“接口契约”这一栏" +
   "（ArchModule 只有 id/name/responsibility/dependsOn/coversFeatures），" +
   "所以这一条**没有**核实模块真的导出了对应的接口，也没有核实数据的形状与字段";
 
@@ -139,18 +136,20 @@ function sameLabel(a: string, b: string): boolean {
 }
 
 function checkDataNeeds(ui: UiSpec, arch: ArchSpec): UiCheckItem {
-  // 名字就是这条的边界，不是「接口契约完备」；有单测 toContain「未核实接口契约」
-  const name = "页面声明的数据需求都能对应到架构里的某个模块（按模块 id/名称匹配，未核实接口契约）";
+  // 名字就是这条的边界，不是“接口契约完备”；有单测 toContain“未核实接口契约”
+  const name =
+    "页面声明的数据需求都能对应到架构里的某个模块（按模块 id/名称匹配，未核实接口契约）";
 
-  const needs = ui.pages.flatMap((p) => p.dataNeeds.map((need) => ({ page: p.id, need })));
+  const needs = ui.pages.flatMap((p) =>
+    p.dataNeeds.map((need) => ({ page: p.id, need })),
+  );
 
   if (needs.length === 0) {
     // 没有数据需求即无物可判：记 pass，detail 要写明没有可查的
     return {
       name,
       pass: true,
-      detail:
-        `${ui.pages.length} 个页面都没有声明 dataNeeds，这一条无从判定。${DATA_NEED_BOUNDARY}`,
+      detail: `${ui.pages.length} 个页面都没有声明 dataNeeds，这一条无从判定。${DATA_NEED_BOUNDARY}`,
     };
   }
 
@@ -170,7 +169,7 @@ function checkDataNeeds(ui: UiSpec, arch: ArchSpec): UiCheckItem {
     const hit = arch.modules.some(
       (m) => sameLabel(need, m.id) || sameLabel(need, m.name),
     );
-    if (!hit) unmatched.push(`「${page}」需要 ${need}`);
+    if (!hit) unmatched.push(`“${page}”需要 ${need}`);
   }
 
   if (unmatched.length > 0) {
@@ -195,7 +194,6 @@ function checkDataNeeds(ui: UiSpec, arch: ArchSpec): UiCheckItem {
       `${DATA_NEED_BOUNDARY}`,
   };
 }
-
 
 /** 三条本地检查，顺序与 stages.ts 的 acceptance 一致，界面可逐行核对 */
 export function inspectUi(ui: UiSpec, spec: AppSpec, arch: ArchSpec): UiCheck {

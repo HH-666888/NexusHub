@@ -11,13 +11,8 @@ import type { AuthStore } from "@/core/ports/auth-store";
 import type { NewSession, NewUser, Session, User } from "@/core/domain/user";
 
 export const sqliteAuthStore: AuthStore = {
-
   async findUserByUsername(username: string): Promise<User | null> {
-    const row = db
-      .select()
-      .from(users)
-      .where(eq(users.username, username))
-      .get();
+    const row = db.select().from(users).where(eq(users.username, username)).get();
     return row ?? null;
   },
 
@@ -42,10 +37,7 @@ export const sqliteAuthStore: AuthStore = {
     return row;
   },
 
-  async updateUserPasswordHash(
-    userId: number,
-    passwordHash: string,
-  ): Promise<void> {
+  async updateUserPasswordHash(userId: number, passwordHash: string): Promise<void> {
     db.update(users)
       .set({ passwordHash, updatedAt: Date.now() })
       .where(eq(users.id, userId))

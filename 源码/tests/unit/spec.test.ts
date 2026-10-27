@@ -19,7 +19,11 @@ import {
   type AppSpec,
 } from "@/core/domain/spec";
 
-const meta = { prompt: "做一个任务看板", model: "test-model", generatedAt: 1_700_000_000_000 };
+const meta = {
+  prompt: "做一个任务看板",
+  model: "test-model",
+  generatedAt: 1_700_000_000_000,
+};
 
 /** 模型输出的一份标准规格 JSON */
 const GOOD_JSON = JSON.stringify({
@@ -27,10 +31,30 @@ const GOOD_JSON = JSON.stringify({
   audience: "小团队内部使用",
   scenarios: ["新建任务", "拖动改变状态", "刷新后数据还在"],
   acceptance: [
-    { id: "ac-1", statement: "可以新建任务", verifyBy: "点击新建按钮，输入标题，卡片出现在待办栏", level: "must" },
-    { id: "ac-2", statement: "可以拖动卡片到别的栏位", verifyBy: "按住卡片拖到进行中栏，松手后卡片留在该栏", level: "must" },
-    { id: "ac-3", statement: "刷新后卡片位置不变", verifyBy: "拖动后按 F5，卡片仍在拖动后的栏位", level: "must" },
-    { id: "ac-4", statement: "可以删除任务", verifyBy: "点击卡片上的删除，卡片消失", level: "should" },
+    {
+      id: "ac-1",
+      statement: "可以新建任务",
+      verifyBy: "点击新建按钮，输入标题，卡片出现在待办栏",
+      level: "must",
+    },
+    {
+      id: "ac-2",
+      statement: "可以拖动卡片到别的栏位",
+      verifyBy: "按住卡片拖到进行中栏，松手后卡片留在该栏",
+      level: "must",
+    },
+    {
+      id: "ac-3",
+      statement: "刷新后卡片位置不变",
+      verifyBy: "拖动后按 F5，卡片仍在拖动后的栏位",
+      level: "must",
+    },
+    {
+      id: "ac-4",
+      statement: "可以删除任务",
+      verifyBy: "点击卡片上的删除，卡片消失",
+      level: "should",
+    },
   ],
   scope: { inScope: ["看板", "拖拽"], outOfScope: ["多人协作", "账号体系"] },
   questions: [],
@@ -42,12 +66,12 @@ describe("规格 · 抠 JSON", () => {
   });
 
   it("带 ```json 围栏", () => {
-    const raw = "好的，这是规格：\n```json\n{\"a\":1}\n```\n希望有帮助";
+    const raw = '好的，这是规格：\n```json\n{"a":1}\n```\n希望有帮助';
     expect(extractJsonText(raw)).toBe('{"a":1}');
   });
 
   it("带 ``` 围栏但没写语言", () => {
-    expect(extractJsonText("```\n{\"a\":1}\n```")).toBe('{"a":1}');
+    expect(extractJsonText('```\n{"a":1}\n```')).toBe('{"a":1}');
   });
 
   it("夹在一堆解释文字中间", () => {
@@ -110,7 +134,10 @@ describe("规格 · 解析", () => {
   });
 
   it("字段类型不对时不炸，缺什么就是空的", () => {
-    const r = parseSpec('{"goal": 123, "scenarios": "不是数组", "acceptance": null}', meta);
+    const r = parseSpec(
+      '{"goal": 123, "scenarios": "不是数组", "acceptance": null}',
+      meta,
+    );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.spec.goal).toBe("");
@@ -178,7 +205,9 @@ describe("规格 · 校验", () => {
     const spec = base();
     spec.acceptance = spec.acceptance.slice(0, SPEC_MIN_ACCEPTANCE - 1);
     const issues = validateSpec(spec);
-    expect(issues.some((i) => i.level === "blocking" && i.message.includes("至少要"))).toBe(true);
+    expect(
+      issues.some((i) => i.level === "blocking" && i.message.includes("至少要")),
+    ).toBe(true);
   });
 
   it("必需级太少会拦下 —— 全是期望等于没有底线", () => {
@@ -186,7 +215,9 @@ describe("规格 · 校验", () => {
     spec.acceptance = spec.acceptance.map((a) => ({ ...a, level: "should" as const }));
     const issues = validateSpec(spec);
     expect(
-      issues.some((i) => i.level === "blocking" && i.message.includes(String(SPEC_MIN_MUST))),
+      issues.some(
+        (i) => i.level === "blocking" && i.message.includes(String(SPEC_MIN_MUST)),
+      ),
     ).toBe(true);
   });
 
@@ -200,7 +231,9 @@ describe("规格 · 校验", () => {
     const spec = base();
     spec.scenarios = [];
     expect(
-      validateSpec(spec).some((i) => i.level === "blocking" && i.message.includes("场景")),
+      validateSpec(spec).some(
+        (i) => i.level === "blocking" && i.message.includes("场景"),
+      ),
     ).toBe(true);
   });
 
@@ -208,7 +241,9 @@ describe("规格 · 校验", () => {
     const spec = base();
     spec.acceptance[0].verifyBy = "";
     expect(
-      validateSpec(spec).some((i) => i.level === "blocking" && i.message.includes("怎么验证")),
+      validateSpec(spec).some(
+        (i) => i.level === "blocking" && i.message.includes("怎么验证"),
+      ),
     ).toBe(true);
   });
 
@@ -216,15 +251,21 @@ describe("规格 · 校验", () => {
     const spec = base();
     spec.acceptance[0].statement = "界面美观";
     const issues = validateSpec(spec);
-    expect(issues.some((i) => i.level === "advisory" && i.message.includes("含糊"))).toBe(true);
-    expect(issues.some((i) => i.level === "blocking" && i.message.includes("含糊"))).toBe(false);
+    expect(
+      issues.some((i) => i.level === "advisory" && i.message.includes("含糊")),
+    ).toBe(true);
+    expect(
+      issues.some((i) => i.level === "blocking" && i.message.includes("含糊")),
+    ).toBe(false);
   });
 
   it("没写不做什么只提醒", () => {
     const spec = base();
     spec.scope.outOfScope = [];
     const issues = validateSpec(spec);
-    expect(issues.some((i) => i.level === "advisory" && i.message.includes("不做"))).toBe(true);
+    expect(
+      issues.some((i) => i.level === "advisory" && i.message.includes("不做")),
+    ).toBe(true);
   });
 });
 
@@ -259,7 +300,7 @@ describe("规格 · 门禁", () => {
     expect(gate.summary).toContain("可以进入架构定型");
   });
 
-  it("【关键】有未回答的问题时不放行 —— 这就是「人工门禁」", () => {
+  it("有未回答的问题时不放行 —— 这就是“人工门禁”", () => {
     const spec = base();
     spec.questions = ["要不要多人协作？"];
     const gate = reviewSpec(spec);

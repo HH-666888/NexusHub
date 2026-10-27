@@ -126,7 +126,9 @@ export const sqliteRunStore: RunStore = {
       .where(and(eq(runs.id, id), eq(runs.userId, userId)))
       .get();
     if (!before) return false;
-    db.delete(runs).where(and(eq(runs.id, id), eq(runs.userId, userId))).run();
+    db.delete(runs)
+      .where(and(eq(runs.id, id), eq(runs.userId, userId)))
+      .run();
     return true;
   },
 

@@ -56,7 +56,7 @@ describe("画布 · 换算", () => {
 });
 
 describe("画布 · 缩放", () => {
-  it("【关键】以光标为锚点缩放时，光标下的那个世界点不动", () => {
+  it("以光标为锚点缩放时，光标下的那个世界点不动", () => {
     // 不以光标为锚点，滚轮缩放时内容会朝视口中心跑，用户得反复缩放加重平移。
     const cursor = { x: 640, y: 300 };
     const before = screenToWorld(VP, cursor.x, cursor.y);
@@ -154,7 +154,7 @@ describe("画布 · 初始视口", () => {
     expect(HOME_WORLD.y).toBeCloseTo(1.5 * CELL, 9);
   });
 
-  it("【关键】核心格在视口里是偏上的 —— 下面要留地方长", () => {
+  it("核心格在视口里是偏上的 —— 下面要留地方长", () => {
     // 流水线从上往下长：核心格放偏上，往下加东西时不用先平移。
     const H = 900;
     const vp = homeViewport(1400, H);

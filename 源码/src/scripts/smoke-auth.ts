@@ -8,18 +8,13 @@ import { sqliteAuthStore } from "@/adapters/store/auth-repo";
 import { db, inspectDatabase } from "@/adapters/store/client";
 import { users } from "@/adapters/store/schema";
 import { hashSessionToken } from "@/core/auth/session";
-import {
-  loginUser,
-  logout,
-  registerUser,
-  resolveSession,
-} from "@/core/auth/service";
+import { loginUser, logout, registerUser, resolveSession } from "@/core/auth/service";
 
 const line = (s = "") => console.log(s);
 const ok = (s: string) => console.log(`  ✅ ${s}`);
 const fail = (s: string) => console.log(`  ❌ ${s}`);
 
-function expect_(cond: boolean, passMsg: string, failMsg: string) {
+function check(cond: boolean, passMsg: string, failMsg: string) {
   if (cond) ok(passMsg);
   else fail(failMsg);
 }
@@ -54,13 +49,21 @@ async function main() {
     username,
     password: "ab1",
   });
-  expect_(weak.ok === false, `太短的密码被拒绝：${!weak.ok ? weak.reason : ""}`, "太短的密码竟然通过了");
+  check(
+    weak.ok === false,
+    `太短的密码被拒绝：${!weak.ok ? weak.reason : ""}`,
+    "太短的密码竟然通过了",
+  );
 
   const bad = await registerUser(sqliteAuthStore, {
     username: "有 空格",
     password,
   });
-  expect_(bad.ok === false, `非法用户名被拒绝：${!bad.ok ? bad.reason : ""}`, "非法用户名竟然通过了");
+  check(
+    bad.ok === false,
+    `非法用户名被拒绝：${!bad.ok ? bad.reason : ""}`,
+    "非法用户名竟然通过了",
+  );
 
   const reg = await registerUser(
     sqliteAuthStore,
@@ -77,7 +80,7 @@ async function main() {
   ok(`昵称默认等于用户名：${reg.value.user.displayName}`);
   ok(`拿到会话令牌（前 12 位）：${token.slice(0, 12)}…`);
   ok(`入库的会话 id 是令牌的哈希：${reg.value.session.id.slice(0, 16)}…`);
-  expect_(
+  check(
     token !== reg.value.session.id,
     "令牌与库里的 id 不同 → 即使数据库泄露也无法直接登录",
     "令牌被原样存进了数据库",
@@ -89,7 +92,7 @@ async function main() {
     username: username.toUpperCase(),
     password,
   });
-  expect_(
+  check(
     dup.ok === false,
     `被拒绝：${!dup.ok ? dup.reason : ""}（大小写归一化生效）`,
     "同一用户名的大小写变体竟然注册成功了",
@@ -101,16 +104,20 @@ async function main() {
     username,
     password: "wrong999",
   });
-  expect_(wrong.ok === false, `错误密码被拒绝：${!wrong.ok ? wrong.reason : ""}`, "错误密码竟然登录成功");
+  check(
+    wrong.ok === false,
+    `错误密码被拒绝：${!wrong.ok ? wrong.reason : ""}`,
+    "错误密码竟然登录成功",
+  );
 
   const ghost = await loginUser(sqliteAuthStore, {
     username: "never_registered_user",
     password: "any123",
   });
   const sameMessage = !wrong.ok && !ghost.ok && wrong.reason === ghost.reason;
-  expect_(
+  check(
     ghost.ok === false && sameMessage,
-    "不存在的账号同样被拒，且提示与「密码错误」完全一致 → 不泄露账号是否存在",
+    "不存在的账号同样被拒，且提示与“密码错误”完全一致 → 不泄露账号是否存在",
     "不存在的账号被区别对待，可能被用来枚举已注册用户名",
   );
 
@@ -123,35 +130,39 @@ async function main() {
   }
   ok(`登录成功，耗时 ${loginMs} 毫秒（scrypt 计算占比最大）`);
   const loginToken = login.value.token;
-  expect_(loginToken !== token, "两次登录拿到不同令牌，会话彼此独立", "两次登录拿到同一个令牌");
+  check(
+    loginToken !== token,
+    "两次登录拿到不同令牌，会话彼此独立",
+    "两次登录拿到同一个令牌",
+  );
   line();
 
   heading("第五步 · 会话解析");
   const byToken = await resolveSession(sqliteAuthStore, loginToken);
-  expect_(
+  check(
     byToken !== null,
     `用令牌换回用户：#${byToken?.id} ${byToken?.username}`,
     "有效令牌竟然解析不出用户",
   );
 
   const garbage = await resolveSession(sqliteAuthStore, "这是一个伪造的令牌");
-  expect_(garbage === null, "伪造令牌被拒绝", "伪造令牌竟然通过了");
+  check(garbage === null, "伪造令牌被拒绝", "伪造令牌竟然通过了");
 
   const empty = await resolveSession(sqliteAuthStore, undefined);
-  expect_(empty === null, "空令牌被拒绝", "空令牌竟然通过了");
+  check(empty === null, "空令牌被拒绝", "空令牌竟然通过了");
   line();
 
   heading("第六步 · 登出");
   await logout(sqliteAuthStore, loginToken);
   const afterLogout = await resolveSession(sqliteAuthStore, loginToken);
-  expect_(
+  check(
     afterLogout === null,
     "登出后令牌立即失效（这正是服务端会话优于 JWT 的地方）",
     "登出后令牌仍然可用",
   );
 
   const stillValid = await resolveSession(sqliteAuthStore, token);
-  expect_(
+  check(
     stillValid !== null,
     "另一台设备的会话不受影响，仍然有效",
     "登出把其他设备也一起踢掉了",
@@ -161,10 +172,10 @@ async function main() {
   heading("第七步 · 清理测试数据");
   db.delete(users).where(eq(users.id, userId)).run();
   const gone = await sqliteAuthStore.findUserById(userId);
-  expect_(gone === null, "删除用户成功", "用户没有被删除");
+  check(gone === null, "删除用户成功", "用户没有被删除");
 
   const orphan = await sqliteAuthStore.findSession(hashSessionToken(token));
-  expect_(
+  check(
     orphan === null,
     "级联删除生效：该用户的会话已一并清除，没有留下孤儿数据",
     "存在孤儿会话，说明外键约束没有生效",

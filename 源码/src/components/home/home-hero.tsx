@@ -11,10 +11,10 @@ import { NAV_GUTTER } from "@/components/shell/gutter";
  * 填上公告、数据、引导反而会让这一屏失去焦点。
  *
  * 提交按钮用的是 /studio 顶栏同一个服务端动作（createRunAction），
- * 所以两条路径的行为天然一致。附件上传、模型档位仍然「说明白没接」—— 它们没有后端。
+ * 所以两条路径的行为天然一致。附件上传、模型档位仍然“说明白没接”—— 它们没有后端。
  */
 
-/** 产物类型。对应参考图上的「创作 / 短剧 / 互动影游」三个分段 */
+/** 产物类型。对应参考图上的“创作 / 短剧 / 互动影游”三个分段 */
 const KINDS = [
   { id: "web", label: "网页应用", hint: "能开、能点、数据存得住" },
   { id: "tool", label: "小工具", hint: "单页解决一件事" },
@@ -33,7 +33,7 @@ export function HomeHero() {
   const [notice, setNotice] = useState<string | null>(null);
 
   /*
-    提交走服务端动作。isPending 用来把按钮变成「正在创建…」并禁用 ——
+    提交走服务端动作。isPending 用来把按钮变成“正在创建…”并禁用 ——
     否则连点两下会建出两次运行，那就是两次钱。
   */
   const [state, formAction, isPending] = useActionState(createRunAction, INITIAL);
@@ -97,7 +97,7 @@ export function HomeHero() {
           />
 
           <div className="mt-3 flex items-center gap-2">
-            {/* 上传入口。参考图上是左下角那个「+」 */}
+            {/* 上传入口。参考图上是左下角那个“+” */}
             <button
               type="button"
               onClick={() => notWired("附件上传")}
@@ -108,8 +108,8 @@ export function HomeHero() {
             </button>
 
             {/*
-              模型档位。参考图上是一排胶囊，我们按「只放真的有的东西」
-              留两个 —— 这个和「先询问」都是我们真做出来的开关。
+              模型档位。参考图上是一排胶囊，我们按“只放真的有的东西”
+              留两个 —— 这个和“先询问”都是我们真做出来的开关。
             */}
             <button
               type="button"
@@ -125,7 +125,7 @@ export function HomeHero() {
 
             <div className="ml-auto flex items-center gap-2">
               {/*
-                「先询问」= 人工门禁。规格里有疑问时先停下来问，而不是替你猜。
+                “先询问”= 人工门禁。规格里有疑问时先停下来问，而不是替你猜。
                 后端已经完整实现（SPEC_GATE），但**这个开关目前只改本地状态** ——
                 真正生效的是服务端的环境变量。这一点写在 title 里，
                 不假装它是通的。
@@ -161,15 +161,17 @@ export function HomeHero() {
         </div>
 
         {/* 提示条。还没接的功能 / 服务端返回的错误，都走这里 */}
-        {shown && <p className="mt-2.5 text-center text-[11.5px] text-amber-400/90">{shown}</p>}
+        {shown && (
+          <p className="mt-2.5 text-center text-[11.5px] text-amber-400/90">{shown}</p>
+        )}
       </form>
 
       {/*
         ---------- 示例词条 ----------
         参考图这里是一排带小图的示例需求。
-        目前按「暂时空出来」处理：摆出等量的占位槽，
+        目前按“暂时空出来”处理：摆出等量的占位槽，
         这样以后填内容时版式不用重排 —— 位置和间距已经是对的。
-        用「——」而不是编几个假例子：编的例子点了跑不通，
+        用“——”而不是编几个假例子：编的例子点了跑不通，
         比空着更让人失望。
       */}
       <div className="flex flex-wrap items-center justify-center gap-2 pt-7 pb-14">

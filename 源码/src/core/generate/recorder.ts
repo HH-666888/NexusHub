@@ -97,10 +97,7 @@ export async function* recordRunEvents(
       }
 
       const buffered = textBuf.length + reasoningBuf.length;
-      const oldest = Math.min(
-        textStartAt || t,
-        reasoningStartAt || t,
-      );
+      const oldest = Math.min(textStartAt || t, reasoningStartAt || t);
       if (buffered >= flushChars || t - oldest >= flushIntervalMs) {
         flushDeltas(t);
         await persist();

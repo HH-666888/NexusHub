@@ -3,15 +3,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-  hashPassword,
-  needsRehash,
-  verifyPassword,
-} from "@/core/auth/password";
-import {
-  createSessionToken,
-  hashSessionToken,
-} from "@/core/auth/session";
+import { hashPassword, needsRehash, verifyPassword } from "@/core/auth/password";
+import { createSessionToken, hashSessionToken } from "@/core/auth/session";
 
 describe("密码哈希（scrypt）", () => {
   it("哈希结果不是明文，且格式自描述", async () => {

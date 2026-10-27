@@ -23,7 +23,7 @@ describe("用户名校验", () => {
     }
   });
 
-  it("接受中文用户名 —— 强迫人把「张三」写成拼音是无谓的摩擦", () => {
+  it("接受中文用户名 —— 强迫人把“张三”写成拼音是无谓的摩擦", () => {
     const r = checkUsername("张三");
     expect(r.ok).toBe(true);
     expect(r.value).toBe("张三");

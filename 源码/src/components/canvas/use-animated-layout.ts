@@ -31,7 +31,7 @@ export interface AnimatedLayout {
 
 export function useAnimatedLayout(target: LaidNode[]): AnimatedLayout {
   /*
-    prev 用 ref 而非 state：它只是「上一帧是什么」的书签，
+    prev 用 ref 而非 state：它只是“上一帧是什么”的书签，
     变它不该触发重渲染。
   */
   const prevRef = useRef<LaidNode[]>([]);

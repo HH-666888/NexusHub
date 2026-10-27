@@ -14,7 +14,12 @@ import {
   SPENDING_STAGE,
   tracePath,
 } from "@/core/pipeline/graph";
-import { STAGES, STAGE_MAP, stageApproval, stageAuthorityNote } from "@/core/pipeline/stages";
+import {
+  STAGES,
+  STAGE_MAP,
+  stageApproval,
+  stageAuthorityNote,
+} from "@/core/pipeline/stages";
 import { actorBadge } from "@/core/pipeline/authority";
 import type { CostByStage, StageCost } from "@/core/domain/stage-cost";
 
@@ -149,7 +154,7 @@ describe("流水线图 · 不出现假信息", () => {
     expect(planned.length).toBeGreaterThan(0);
   });
 
-  it("【关键】未接入的工序永远是「未接入」，不论运行跑到哪一步", () => {
+  it("未接入的工序永远是“未接入”，不论运行跑到哪一步", () => {
     const statuses = ["running", "paused", "done", "failed"] as const;
     for (const stage of STAGES.map((s) => s.id)) {
       for (const status of statuses) {
@@ -158,7 +163,7 @@ describe("流水线图 · 不出现假信息", () => {
           const node = g.nodes.find((n) => n.id === p.id)!;
           expect(
             nodeStatusLabel(node),
-            `运行到 ${stage}/${status} 时，未接入的 ${p.id} 显示成了「${nodeStatusLabel(node)}」`,
+            `运行到 ${stage}/${status} 时，未接入的 ${p.id} 显示成了“${nodeStatusLabel(node)}”`,
           ).toBe("未接入");
           expect(nodeTone(node)).toBe("planned");
         }
@@ -166,7 +171,7 @@ describe("流水线图 · 不出现假信息", () => {
     }
   });
 
-  it("【关键】未接入的工序花费恒为 0，即使上游硬塞了数字", () => {
+  it("未接入的工序花费恒为 0，即使上游硬塞了数字", () => {
     const cost = Object.fromEntries(
       STAGES.map((s) => [s.id, stageCost(9.99)]),
     ) as CostByStage;
@@ -265,14 +270,14 @@ describe("流水线图 · 路径追踪", () => {
     expect(t.chain.has("build")).toBe(true);
   });
 
-  it("上游按从近到远排列 —— 用户要的是「上一步是谁」", () => {
+  it("上游按从近到远排列 —— 用户要的是“上一步是谁”", () => {
     const t = tracePath(g, "build");
     // build 的上一步是 ui，再往前是 arch、spec
     expect(t.upstream[0]).toBe("ui");
     expect(t.upstream[t.upstream.length - 1]).toBe("spec");
   });
 
-  it("【关键】追踪只跟顺序流转，不跟回退边", () => {
+  it("追踪只跟顺序流转，不跟回退边", () => {
     // 如果回退边也算进路径，任何节点都会顺着退回起点，
     // 上游就永远等于全部六道工序，追踪失去意义。
     const t = tracePath(g, "assemble");
@@ -280,7 +285,7 @@ describe("流水线图 · 路径追踪", () => {
     expect(t.downstream).not.toContain("arch");
   });
 
-  it("【已知局限】流水线是线性的，所以链覆盖全部六道工序", () => {
+  it("已知局限流水线是线性的，所以链覆盖全部六道工序", () => {
     // 已知局限：六道工序是直线加回退边，上下游加起来必然是全部六道。
     // 要等并行构建裂成模块节点，这条链才有区分度。
     const t = tracePath(g, "build");
@@ -336,7 +341,7 @@ describe("流水线图 · 运行状态映射", () => {
     expect(nodeTone(verify)).toBe("pending");
   });
 
-  it("直通模式的工序在标签里说明「直通」，不含糊成普通的已通过", () => {
+  it("直通模式的工序在标签里说明“直通”，不含糊成普通的已通过", () => {
     const g = buildPipelineGraph({ run: { stage: "verify", status: "done" } });
     const build = g.nodes.find((n) => n.id === "build")!;
     expect(build.implementation).toBe("direct");
@@ -367,7 +372,7 @@ describe("流水线图 · 权限四件套", () => {
     }
   });
 
-  it("【最要紧】验收节点在图上也是只读的", () => {
+  it("最要紧验收节点在图上也是只读的", () => {
     // 判定者不参与生产：核心层已有单测钉着 verify.access === read。
     // 这一条钉的是它有没有真的传到图上。
     const verify = nodeOf("verify");
@@ -443,7 +448,7 @@ describe("流水线图 · 门禁的声明与实际", () => {
     expect(spec.gateActive).toBe(true);
   });
 
-  it("【关键】覆盖成放行时，图上看得出来", () => {
+  it("覆盖成放行时，图上看得出来", () => {
     // 声明要人点头而实际不停，比没有门禁更糟：用户会以为有人把关过了。
     // 所以 approval 与 gateActive 是两个字段，图上两个都要看得到。
     const g = buildPipelineGraph({ run: null, gateOverride: "continue" });
@@ -471,7 +476,7 @@ describe("流水线图 · 门禁的声明与实际", () => {
     expect(g.nodes.find((n) => n.id === "build")!.approval).toBe("none");
   });
 
-  it("没有一种组合会「声明要批、实际没停、而又看不出来」", () => {
+  it("没有一种组合会“声明要批、实际没停、而又看不出来”", () => {
     for (const o of ["declared", "pause", "continue"] as const) {
       const g = buildPipelineGraph({ run: null, gateOverride: o });
       for (const n of g.nodes) {

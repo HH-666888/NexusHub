@@ -49,12 +49,8 @@ function main() {
   const tables = info.tables.filter((t) => !t.startsWith("__drizzle"));
 
   for (const table of tables) {
-    const cols = sqlite
-      .prepare(`PRAGMA table_info(${table})`)
-      .all() as ColumnInfo[];
-    const idxs = sqlite
-      .prepare(`PRAGMA index_list(${table})`)
-      .all() as IndexInfo[];
+    const cols = sqlite.prepare(`PRAGMA table_info(${table})`).all() as ColumnInfo[];
+    const idxs = sqlite.prepare(`PRAGMA index_list(${table})`).all() as IndexInfo[];
     const fks = sqlite
       .prepare(`PRAGMA foreign_key_list(${table})`)
       .all() as ForeignKeyInfo[];
@@ -67,10 +63,7 @@ function main() {
     line("│");
     line("│ 字段");
     for (const c of cols) {
-      const flags = [
-        c.pk ? "主键" : "",
-        c.notnull ? "非空" : "可空",
-      ]
+      const flags = [c.pk ? "主键" : "", c.notnull ? "非空" : "可空"]
         .filter(Boolean)
         .join(" · ");
       line(`│   ${c.name.padEnd(16)} ${c.type.padEnd(10)} ${flags}`);

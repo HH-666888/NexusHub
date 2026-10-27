@@ -15,7 +15,7 @@ import type { ModelEffort } from "@/core/ports/model";
 
 const line = (s = "") => console.log(s);
 const ok = (s: string) => console.log(`  ✅ ${s}`);
-const warn = (s: string) => console.log(`  ⚠️  ${s}`);
+const warn = (s: string) => console.log(`   ${s}`);
 const bad = (s: string) => console.log(`  ❌ ${s}`);
 const info = (s: string) => console.log(`     ${s}`);
 
@@ -59,7 +59,9 @@ function inspectArtifact(html: string): CheckResult[] {
 
   // 不能有任何指向外部的资源引用
   const externals = [
-    ...html.matchAll(/<(?:script|link|img)[^>]+(?:src|href)=["'](https?:)?\/\/[^"']+/gi),
+    ...html.matchAll(
+      /<(?:script|link|img)[^>]+(?:src|href)=["'](https?:)?\/\/[^"']+/gi,
+    ),
   ].map((m) => m[0].slice(0, 80));
   add(
     "完全自包含（无外部引用）",
@@ -73,7 +75,11 @@ function inspectArtifact(html: string): CheckResult[] {
   add("有事件处理", hasListener, hasListener ? "含事件绑定" : "没找到任何事件绑定");
 
   const hasStorage = /localStorage/i.test(html);
-  add("数据能持久化", hasStorage, hasStorage ? "用到了 localStorage" : "没用到 localStorage");
+  add(
+    "数据能持久化",
+    hasStorage,
+    hasStorage ? "用到了 localStorage" : "没用到 localStorage",
+  );
 
   const cjk = (html.match(/[\u4e00-\u9fa5]/g) ?? []).length;
   add("中文界面", cjk >= 10, `含 ${cjk} 个中文字符`);
@@ -169,7 +175,9 @@ async function main() {
   ok(`调用完成，用时 ${(wallMs / 1000).toFixed(1)} 秒`);
   info(`模型：${result.model}`);
   info(`结束原因：${result.finishReason}`);
-  info(`输入 ${result.usage.inputTokens} tokens（缓存命中 ${result.usage.cacheHitTokens}）`);
+  info(
+    `输入 ${result.usage.inputTokens} tokens（缓存命中 ${result.usage.cacheHitTokens}）`,
+  );
   info(
     `输出 ${result.usage.outputTokens} tokens，其中思考 ${result.usage.reasoningTokens} tokens`,
   );
@@ -177,7 +185,9 @@ async function main() {
   info(`本次成本：${formatCny(result.costCny)}`);
 
   if (result.truncated) {
-    warn("输出被长度上限截断 —— 这不是模型能力问题，是预算不够，应提高 maxOutputTokens 重试");
+    warn(
+      "输出被长度上限截断 —— 这不是模型能力问题，是预算不够，应提高 maxOutputTokens 重试",
+    );
   }
   if (result.usage.reasoningTokens > result.usage.outputTokens * 0.8) {
     warn(
@@ -251,14 +261,20 @@ async function main() {
 
   heading("结论");
   line(`  一句话 → 一个可运行页面`);
-  line(`    耗时        ${(wallMs / 1000).toFixed(1)} 秒（模型 ${(result.latencyMs / 1000).toFixed(1)} 秒）`);
+  line(
+    `    耗时        ${(wallMs / 1000).toFixed(1)} 秒（模型 ${(result.latencyMs / 1000).toFixed(1)} 秒）`,
+  );
   line(`    成本        ${formatCny(result.costCny)}`);
   line(`    产物        ${(bytes / 1024).toFixed(1)} KB 单文件`);
   line(`    检查        ${passed} / ${checks.length} 项通过`);
   line(`    位置        ${outDir}`);
   line();
-  line(`  外推：若六阶段共需 20 次同规模调用，单次运行成本约 ${formatCny(result.costCny * 20)}`);
-  line(`  预算上限 RUN_COST_LIMIT_CNY 当前为 5 元 —— ${result.costCny * 20 < 5 ? "有充足余量" : "需要上调"}`);
+  line(
+    `  外推：若六阶段共需 20 次同规模调用，单次运行成本约 ${formatCny(result.costCny * 20)}`,
+  );
+  line(
+    `  预算上限 RUN_COST_LIMIT_CNY 当前为 5 元 —— ${result.costCny * 20 < 5 ? "有充足余量" : "需要上调"}`,
+  );
 }
 
 main().catch((err) => {

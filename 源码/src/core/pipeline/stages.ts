@@ -43,12 +43,12 @@ export type FaultClass =
   | "spec"; // 规格错：需求矛盾或不可实现
 
 /**
- * 实现状态。存在只为不把「规划中」显示成「已通过」：
+ * 实现状态。存在只为不把“规划中”显示成“已通过”：
  * wired 按契约实现且有产物，direct 是简化实现，planned 未接入。
  */
 export type StageImplementation = "wired" | "direct" | "planned";
 
-/** 一个「数」：这一阶段的判断依据是什么 */
+/** 一个“数”：这一阶段的判断依据是什么 */
 export interface StageMetric {
   label: string;
   /** 补充说明。可以没有 */
@@ -63,7 +63,7 @@ export interface StageDef {
   rationale: string;
   /** 本阶段必须产出的结构化产物（阶段契约） */
   artifact: string;
-  /** 机器可判的验收标准：本阶段能不能自己判定「做完了」 */
+  /** 机器可判的验收标准：本阶段能不能自己判定“做完了” */
   acceptance: string[];
   /** 失败时可退回的阶段（回退回路，使它不是瀑布） */
   fallbackTo: StageId[];
@@ -102,8 +102,8 @@ export const STAGES: readonly StageDef[] = [
     artifact: "spec.json",
     acceptance: [
       "每条功能条目都附带一句可判定的验收标准",
-      "每条验收标准都能明确回答「做到没有」，不含主观描述",
-      "排除项非空 —— 必须明确写出「不做什么」",
+      "每条验收标准都能明确回答“做到没有”，不含主观描述",
+      "排除项非空 —— 必须明确写出“不做什么”",
       "每条结论都带有用户原话依据，无依据的条目自动转为提问",
     ],
     fallbackTo: [],
@@ -172,13 +172,9 @@ export const STAGES: readonly StageDef[] = [
     order: 4,
     name: "并行构建",
     rationale:
-      "并行的粒度是「模块」而不是「文件」。文件级并行会产生大量合并冲突，收益为负。",
+      "并行的粒度是“模块”而不是“文件”。文件级并行会产生大量合并冲突，收益为负。",
     artifact: "modules/*.json",
-    acceptance: [
-      "每个模块的模块级自测通过",
-      "编译通过",
-      "导出的接口与架构契约一致",
-    ],
+    acceptance: ["每个模块的模块级自测通过", "编译通过", "导出的接口与架构契约一致"],
     fallbackTo: ["arch", "ui"],
     actor: "ai",
     access: "write",
@@ -191,8 +187,7 @@ export const STAGES: readonly StageDef[] = [
     id: "assemble",
     order: 5,
     name: "集成装配",
-    rationale:
-      "第一次看到完整的东西，也是上下文最重的一刻 —— 必须做上下文裁剪。",
+    rationale: "第一次看到完整的东西，也是上下文最重的一刻 —— 必须做上下文裁剪。",
     artifact: "manifest.json",
     acceptance: ["能启动", "端口可访问", "冒烟脚本能走通主流程"],
     fallbackTo: ["build", "arch"],
@@ -206,7 +201,7 @@ export const STAGES: readonly StageDef[] = [
       当前产物是单文件 HTML，没有服务可启动，也没有沙箱能跑别人的应用。
     */
     blockedBy: `需要沙箱与多文件产物：当前的产物是单文件 HTML，没有服务器也没有端口，
-所以「能启动 / 端口可访问 / 冒烟脚本能走通主流程」这三条无法如实检查`,
+所以“能启动 / 端口可访问 / 冒烟脚本能走通主流程”这三条无法如实检查`,
   },
   {
     id: "verify",
@@ -218,13 +213,13 @@ export const STAGES: readonly StageDef[] = [
     acceptance: [
       "覆盖率达标",
       "关键路径全绿",
-      "裁决表里没有「无法判定」项",
+      "裁决表里没有“无法判定”项",
       "敏感信息扫描通过（API 密钥不得出现在交付物中）",
     ],
     fallbackTo: ["assemble", "build", "ui", "arch", "spec"],
 
     /*
-      只读：判定者不参与生产。验收一旦能改代码，「没过就顺手修一下」会变得自然，
+      只读：判定者不参与生产。验收一旦能改代码，“没过就顺手修一下”会变得自然，
       自己修完自己判过就不再是独立检查。所以 access = read、scope = observe。
     */
     actor: "ai",
@@ -240,7 +235,6 @@ export const STAGES: readonly StageDef[] = [
     implementation: "direct",
   },
 ] as const;
-
 
 /**
  * 一道工序最终要不要人点头：规则给下限，humanGate 只能抬高不能降低。
@@ -278,7 +272,7 @@ export const FAULT_LABEL: Record<FaultClass, string> = {
   spec: "规格错",
 };
 
-/** 四类失败对应的处置动作 —— 这就是「归因分流」的全部含义 */
+/** 四类失败对应的处置动作 —— 这就是“归因分流”的全部含义 */
 export const FAULT_ACTION: Record<FaultClass, string> = {
   environment: "不调用模型，直接修环境后重跑本节点",
   code: "只给出错文件与报错，最小上下文定位修复",

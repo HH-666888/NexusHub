@@ -27,9 +27,24 @@ const SPEC: AppSpec = {
   audience: "3-8 人的小团队",
   scenarios: ["新建任务", "拖动改状态"],
   acceptance: [
-    { id: "ac-1", statement: "能新建任务", verifyBy: "点新建按钮，卡片出现", level: "must" },
-    { id: "ac-2", statement: "能拖动卡片换栏位", verifyBy: "拖到另一栏松手", level: "must" },
-    { id: "ac-3", statement: "刷新后数据还在", verifyBy: "按 F5 后位置不变", level: "should" },
+    {
+      id: "ac-1",
+      statement: "能新建任务",
+      verifyBy: "点新建按钮，卡片出现",
+      level: "must",
+    },
+    {
+      id: "ac-2",
+      statement: "能拖动卡片换栏位",
+      verifyBy: "拖到另一栏松手",
+      level: "must",
+    },
+    {
+      id: "ac-3",
+      statement: "刷新后数据还在",
+      verifyBy: "按 F5 后位置不变",
+      level: "should",
+    },
   ],
   scope: { inScope: ["看板"], outOfScope: ["多人实时协作"] },
   questions: [],
@@ -114,8 +129,10 @@ function makeHarness(opts: {
 
   const model: ModelPort = {
     async complete(req: ModelRequest): Promise<ModelResult> {
-      const user = typeof req.messages[1]?.content === "string" ? req.messages[1].content : "";
-      const system = typeof req.messages[0]?.content === "string" ? req.messages[0].content : "";
+      const user =
+        typeof req.messages[1]?.content === "string" ? req.messages[1].content : "";
+      const system =
+        typeof req.messages[0]?.content === "string" ? req.messages[0].content : "";
       // 模块 id 从提示词里读，不按调用顺序猜：并发下顺序不代表模块身份。
       lastPrompt = user;
       const moduleId = /模块 id：([a-z0-9-]+)/.exec(user)?.[1] ?? "?";
@@ -213,8 +230,7 @@ async function run(opts: {
   return { batch, h };
 }
 
-
-describe("★ 真的并发（不是 for 里 await）", () => {
+describe("真的并发（不是 for 里 await）", () => {
   it("6 个模块、默认上限 → 同时在飞的最大值 >1 且 <= 上限", async () => {
     // 串行实现也能让模块全成功、花费对得上，只有同时在飞的峰值能区分两者。
     // 断言两个方向：peak > 1（串行会红）、peak <= 上限（无节制会红）。
@@ -271,7 +287,6 @@ describe("★ 真的并发（不是 for 里 await）", () => {
     expect(batch.modules.map((m) => m.moduleId)).toEqual(ids);
   });
 });
-
 
 describe("单模块失败不拖垮整批（且失败留痕）", () => {
   it("一个模块调用抛错 → 进 failed[]，其余照常成功", async () => {
@@ -342,11 +357,15 @@ describe("单模块失败不拖垮整批（且失败留痕）", () => {
 
   it("continueOnError=false 时第一个失败中止整批并抛错（默认 true 不受影响）", async () => {
     await expect(
-      run({ ids: ["m-1", "m-2"], concurrency: 1, continueOnError: false, plan: () => ({ throws: "炸了" }) }),
+      run({
+        ids: ["m-1", "m-2"],
+        concurrency: 1,
+        continueOnError: false,
+        plan: () => ({ throws: "炸了" }),
+      }),
     ).rejects.toThrow(/m-1/);
   });
 });
-
 
 describe("自定口径", () => {
   it("全部失败 → 不抛错，返回 failed.length === 模块数 的批次（口径①）", async () => {
@@ -377,7 +396,6 @@ describe("自定口径", () => {
     expect(h.calls).toHaveLength(0);
   });
 });
-
 
 describe("每模块的提示词：带上了它自己的职责、功能条目与依赖", () => {
   it("职责写的是**这个模块**的，而不是别的模块的", async () => {
@@ -426,7 +444,6 @@ describe("每模块的提示词：带上了它自己的职责、功能条目与�
   });
 });
 
-
 describe("花费汇总", () => {
   it("总额 = 各模块花费之和，**含失败的那几次**", async () => {
     const { batch } = await run({
@@ -447,7 +464,9 @@ describe("花费汇总", () => {
     const { batch } = await run({
       ids: ["m-1", "m-2"],
       plan: (call) =>
-        call.moduleId === "m-1" ? { costCny: 0.01 } : { text: "不是 JSON", costCny: 0.05 },
+        call.moduleId === "m-1"
+          ? { costCny: 0.01 }
+          : { text: "不是 JSON", costCny: 0.05 },
     });
 
     expect(batch.totalCostCny).toBeCloseTo(0.06, 6);
@@ -484,7 +503,6 @@ describe("花费汇总", () => {
   });
 });
 
-
 describe("摘要与特征片段", () => {
   it("summarizeBatch 的模块名从 arch 查，不是从事件里抄", async () => {
     const ids = ["task-store", "board-ui"];
@@ -494,7 +512,10 @@ describe("摘要与特征片段", () => {
     });
     const summary = summarizeBatch(batch, archOf(ids));
 
-    expect(summary.modules.map((m) => m.name)).toEqual(["模块1·task-store", "模块2·board-ui"]);
+    expect(summary.modules.map((m) => m.name)).toEqual([
+      "模块1·task-store",
+      "模块2·board-ui",
+    ]);
     expect(summary.concurrency).toBe(DEFAULT_BUILD_CONCURRENCY);
     expect(summary.peakInFlight).toBe(batch.peakInFlight);
     expect(summary.totalCostCny).toBeCloseTo(batch.totalCostCny, 6);
@@ -537,7 +558,12 @@ describe("摘要与特征片段", () => {
     ).toBe("taskStoreInit");
 
     expect(
-      moduleSignature({ moduleId: "task-store", html: "<section></section>", css: ".task-store-box{}", js: "" }),
+      moduleSignature({
+        moduleId: "task-store",
+        html: "<section></section>",
+        css: ".task-store-box{}",
+        js: "",
+      }),
     ).toBe(".task-store-box");
   });
 
@@ -546,7 +572,10 @@ describe("摘要与特征片段", () => {
   });
 
   it("parseModuleBuild 缺 summary 时给一句实话，而不是编一句'已完成'", () => {
-    const parsed = parseModuleBuild("m-1", JSON.stringify({ html: "<section></section>" }));
+    const parsed = parseModuleBuild(
+      "m-1",
+      JSON.stringify({ html: "<section></section>" }),
+    );
     expect(parsed.ok).toBe(true);
     if (parsed.ok) {
       expect(parsed.build.summary).toContain("没有给出摘要");
@@ -556,7 +585,6 @@ describe("摘要与特征片段", () => {
   });
 });
 
-
 describe("装配提示词带上了各模块的代码片段", () => {
   it("每个模块的 html / css / js 都真的在提示词里，且标明是哪个模块", async () => {
     const ids = ["task-store", "board-ui"];
@@ -565,7 +593,11 @@ describe("装配提示词带上了各模块的代码片段", () => {
       plan: (call) => ({ text: moduleJson(call.moduleId) }),
     });
 
-    const prompt = buildAssemblePrompt({ prompt: SPEC.prompt, batch, arch: archOf(ids) });
+    const prompt = buildAssemblePrompt({
+      prompt: SPEC.prompt,
+      batch,
+      arch: archOf(ids),
+    });
 
     expect(prompt).toContain(SPEC.prompt);
     ids.forEach((id, i) => {
@@ -619,7 +651,7 @@ describe("装配提示词带上了各模块的代码片段", () => {
 // 思考要跟着结果走出来：编排层拿到它之后发 reasoning 事件。
 
 describe("模块的思考", () => {
-  it("【关键】成功的模块要把这一次的思考原样带出来（一字不改）", async () => {
+  it("成功的模块要把这一次的思考原样带出来（一字不改）", async () => {
     const thought = "先把状态存哪儿想清楚：用绝对时间戳，避免 setInterval 漂移";
     const { batch } = await run({
       ids: ["m-1"],
@@ -628,19 +660,19 @@ describe("模块的思考", () => {
     expect(batch.modules[0].reasoning).toBe(thought);
   });
 
-  it("★ 反例：没有思考时是空串 —— 编排层据此不发 reasoning 事件", async () => {
+  it("反例：没有思考时是空串 —— 编排层据此不发 reasoning 事件", async () => {
     const { batch } = await run({ ids: ["m-1"], plan: () => ({ reasoning: "" }) });
     expect(batch.modules[0].reasoning).toBe("");
     // 空思考必须能被"不发光"的判据识别出来（route.ts 用的是 trim 后长度）
     expect(batch.modules[0].reasoning.trim().length).toBe(0);
   });
 
-  it("★ 反例：只有空白字符也算没思考", async () => {
+  it("反例：只有空白字符也算没思考", async () => {
     const { batch } = await run({ ids: ["m-1"], plan: () => ({ reasoning: "  \n " }) });
     expect(batch.modules[0].reasoning.trim().length).toBe(0);
   });
 
-  it("【关键】解析失败的模块**也要**带出思考 —— 想了就是想了", async () => {
+  it("解析失败的模块**也要**带出思考 —— 想了就是想了", async () => {
     // 截断的模块往往正是想得最多的那些，失败时也要把思考带出来。
     const { batch } = await run({
       ids: ["m-1"],
@@ -652,7 +684,7 @@ describe("模块的思考", () => {
     expect(batch.failed[0].usage.reasoningTokens).toBe(0);
   });
 
-  it("★ 反例：调用直接抛错时没有思考（压根没有返回），给空串", async () => {
+  it("反例：调用直接抛错时没有思考（压根没有返回），给空串", async () => {
     const { batch } = await run({
       ids: ["m-1"],
       plan: () => ({ throws: "网络断了" }),
@@ -677,7 +709,7 @@ describe("模块的思考", () => {
 // 这里钉的是接线，重试助手本身另有单测。
 
 describe("截断重试", () => {
-  it("【关键】第一次顶满预算 → 加倍重试一次，第二次的产出作数", async () => {
+  it("第一次顶满预算 → 加倍重试一次，第二次的产出作数", async () => {
     const { batch, h } = await run({
       ids: ["m-1"],
       plan: (_call, nth) => (nth === 1 ? { truncated: true } : {}),
@@ -695,23 +727,28 @@ describe("截断重试", () => {
   it("重试过的模块要在批次里点出来 —— 用户该知道它第一次顶满了", async () => {
     const { batch } = await run({
       ids: ["m-1", "m-2"],
-      plan: (call, nth) => (call.moduleId === "m-2" && nth === 1 ? { truncated: true } : {}),
+      plan: (call, nth) =>
+        call.moduleId === "m-2" && nth === 1 ? { truncated: true } : {},
     });
     expect(batch.retriedModules).toEqual(["m-2"]);
   });
 
-  it("★ 反例：没截断 → 一次都不许多调，retriedModules 是空的", async () => {
+  it("反例：没截断 → 一次都不许多调，retriedModules 是空的", async () => {
     const { batch, h } = await run({ ids: ["m-1"], plan: () => ({}) });
     expect(h.calls.filter((c) => c.moduleId === "m-1")).toHaveLength(1);
     expect(batch.retriedModules).toEqual([]);
   });
 
-  it("【关键】两次调用的钱都进账 —— 截断那次往往正是最贵的", async () => {
+  it("两次调用的钱都进账 —— 截断那次往往正是最贵的", async () => {
     const { batch } = await run({
       ids: ["m-1"],
       plan: (_call, nth) =>
         nth === 1
-          ? { truncated: true, costCny: 0.07, usage: { inputTokens: 500, outputTokens: 32768 } }
+          ? {
+              truncated: true,
+              costCny: 0.07,
+              usage: { inputTokens: 500, outputTokens: 32768 },
+            }
           : { costCny: 0.02, usage: { inputTokens: 500, outputTokens: 9000 } },
     });
 
@@ -720,7 +757,7 @@ describe("截断重试", () => {
     expect(batch.modules[0].costCny).toBeCloseTo(0.09, 6);
   });
 
-  it("重试之后仍然截断、仍然解析不出来 → 报失败，且原因里说清「截断」与「重试」", async () => {
+  it("重试之后仍然截断、仍然解析不出来 → 报失败，且原因里说清“截断”与“重试”", async () => {
     const { batch } = await run({
       ids: ["m-1"],
       plan: (_call, nth) =>
@@ -738,7 +775,7 @@ describe("截断重试", () => {
     expect(batch.retriedModules).toEqual(["m-1"]);
   });
 
-  it("★ 反例：重试那一次自己挂了（正文仍可解析）→ 算成功但**标明截断**，第一次的钱照记", async () => {
+  it("反例：重试那一次自己挂了（正文仍可解析）→ 算成功但**标明截断**，第一次的钱照记", async () => {
     // 截断出来的内容往往还能用：记成功 + truncated，并把重试过的模块点出来。
     const { batch } = await run({
       ids: ["m-1", "m-2"],
@@ -758,7 +795,7 @@ describe("截断重试", () => {
     expect(batch.retriedModules).toEqual(["m-1"]);
   });
 
-  it("★ 反例：重试挂了**且**第一次的正文没法用 → 报失败，原因里说清是重试失败", async () => {
+  it("反例：重试挂了**且**第一次的正文没法用 → 报失败，原因里说清是重试失败", async () => {
     const { batch } = await run({
       ids: ["m-1", "m-2"],
       plan: (call, nth) =>
@@ -779,7 +816,7 @@ describe("截断重试", () => {
 });
 
 describe("断点续跑 · 只构建缺的那几个", () => {
-  it("【关键】点名 2 个 → 只有 2 次模型调用，另外两个模块一次都没跑", async () => {
+  it("点名 2 个 → 只有 2 次模型调用，另外两个模块一次都没跑", async () => {
     const { batch, h } = await run({
       ids: ["m1", "m2", "m3", "m4"],
       onlyModuleIds: ["m2", "m4"],
@@ -791,7 +828,7 @@ describe("断点续跑 · 只构建缺的那几个", () => {
     expect(h.callsByModule.get("m3") ?? 0).toBe(0);
   });
 
-  it("【关键】提示词里的「第 N 个 / 共 M 个」按**架构全部模块**算，不按这一小批算", async () => {
+  it("提示词里的“第 N 个 / 共 M 个”按**架构全部模块**算，不按这一小批算", async () => {
     // 只补 1 个模块时，对它说第 1 个共 4 个会自相矛盾。
     const { h } = await run({ ids: ["m1", "m2", "m3", "m4"], onlyModuleIds: ["m3"] });
     expect(h.calls.length).toBe(1);
@@ -800,13 +837,13 @@ describe("断点续跑 · 只构建缺的那几个", () => {
     expect(h.lastPrompt).toContain("整个应用一共 4 个模块");
   });
 
-  it("★ 反例：不点名 = 全部构建（老行为一个字节都不变）", async () => {
+  it("反例：不点名 = 全部构建（老行为一个字节都不变）", async () => {
     const { batch, h } = await run({ ids: ["m1", "m2", "m3"] });
     expect(h.calls.length).toBe(3);
     expect(batch.modules).toHaveLength(3);
   });
 
-  it("★ 反例：点名了但架构里没有这个 id → 一个都不构建（不许凭空造一个）", async () => {
+  it("反例：点名了但架构里没有这个 id → 一个都不构建（不许凭空造一个）", async () => {
     const { batch, h } = await run({ ids: ["m1", "m2"], onlyModuleIds: ["不存在"] });
     expect(h.calls.length).toBe(0);
     expect(batch.modules).toEqual([]);
@@ -815,7 +852,7 @@ describe("断点续跑 · 只构建缺的那几个", () => {
 });
 
 describe("断点续跑 · 边构建边落盘（onModuleBuilt）", () => {
-  it("【关键】每构建好一个就回调一次，且**不等整批跑完**", async () => {
+  it("每构建好一个就回调一次，且**不等整批跑完**", async () => {
     // 回调必须在整批跑完之前触发，否则中途重启会丢掉已经完成的那几个。
     // 回调里用外层先建好的 harness：解构变量 h 在 buildModules 内还是 TDZ。
     const h = makeHarness({ plan: () => ({}) });
@@ -842,7 +879,7 @@ describe("断点续跑 · 边构建边落盘（onModuleBuilt）", () => {
     expect(seen.map((s) => s.id)).toEqual(["m1", "m2", "m3"]);
   });
 
-  it("★ 反例：失败的模块**不**回调（没有产出可落盘）", async () => {
+  it("反例：失败的模块**不**回调（没有产出可落盘）", async () => {
     const seen: string[] = [];
     await run({
       ids: ["m1", "m2"],
@@ -854,7 +891,7 @@ describe("断点续跑 · 边构建边落盘（onModuleBuilt）", () => {
     expect(seen).toEqual(["m1"]);
   });
 
-  it("★ 反例：回调抛错不许把整批带崩（存不上只是下次少沿用几个）", async () => {
+  it("反例：回调抛错不许把整批带崩（存不上只是下次少沿用几个）", async () => {
     const { batch } = await run({
       ids: ["m1", "m2"],
       onModuleBuilt: () => {

@@ -22,7 +22,7 @@ interface FormFieldProps {
  * 表单输入框
  * 抽出来单独一个组件的原因：
  *   1. 登录与注册两处都要用，避免复制粘贴导致样式与行为不一致
- *   2. 密码框的「显示 / 隐藏」逻辑只写一遍
+ *   2. 密码框的“显示 / 隐藏”逻辑只写一遍
  *   3. 无障碍属性（label 关联、aria-describedby）集中处理
  */
 export function FormField({
@@ -63,7 +63,7 @@ export function FormField({
           maxLength={maxLength}
           onChange={onChange ? (e) => onChange(e.target.value) : undefined}
           aria-describedby={hint ? hintId : undefined}
-          className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3.5 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+          className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3.5 py-2.5 text-sm text-slate-100 transition outline-none placeholder:text-slate-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
         />
         {isPassword && (
           <button

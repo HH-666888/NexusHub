@@ -39,7 +39,7 @@ import { useAnimatedLayout } from "./use-animated-layout";
 /**
  * 画布上的六道工序：位置由 core/canvas 的纯函数给出，画布只画它拿到的那棵树。
  * 不用 React Flow：回退边能画成一条二次贝塞尔，节点坐标也是能断言的数。
- * 未接入的工序照画，但状态如实标「未接入」，不参与进度推算。
+ * 未接入的工序照画，但状态如实标“未接入”，不参与进度推算。
  */
 
 /** 一级 Agent 根节点。status 必须来自真实投影（core/planning/from-run.ts），调用方不许写死 */
@@ -61,15 +61,15 @@ export interface PipelineCanvasProps {
   gateOverride?: GateOverride;
   /** 摆几行。整页给 WIDE（一行六个），830 宽的工作台面板给 PANEL（三列两行） */
   geometry?: CanvasPipelineGeometry;
-  /** 每步内部的产物，画成挂在工序下的子节点。目前只有「验收与交付」的七项检查 */
+  /** 每步内部的产物，画成挂在工序下的子节点。目前只有“验收与交付”的七项检查 */
   childrenByStage?: ChildrenByStage;
   /** 一级 Agent 根节点。三个使用场景看到的树不同，由调用方决定画几层；不传时走旧路径，逐像素不变 */
   rootCard?: CanvasRootCard;
 }
 
 /**
- * 四档状态的文案与颜色。第五档「未接入」由 toneOf 单独返回，不在这张表里：
- * 它和「待执行」看着都像还没跑，但一个是代码都没写，一个只是还没轮到 ——
+ * 四档状态的文案与颜色。第五档“未接入”由 toneOf 单独返回，不在这张表里：
+ * 它和“待执行”看着都像还没跑，但一个是代码都没写，一个只是还没轮到 ——
  * 合并成一档，用户会以为再等等它就会跑。
  */
 const TONE: Record<string, { label: string; cls: string; dot: string }> = {
@@ -84,7 +84,7 @@ function toneOf(node: PipelineNode) {
     return { label: "未接入", cls: "text-slate-600", dot: "var(--ink-7)" };
   }
   const base = TONE[node.status] ?? TONE.pending;
-  // 直通模式单独标注：直接显示「已通过」会让人以为各阶段产物都在
+  // 直通模式单独标注：直接显示“已通过”会让人以为各阶段产物都在
   if (node.implementation === "direct" && node.status === "passed") {
     return { ...base, label: "已通过 · 直通" };
   }
@@ -151,8 +151,10 @@ function StageCard({
           backgroundImage: empty
             ? undefined
             : `linear-gradient(150deg, rgb(${tint} / ${active ? 0.24 : 0.14}) 0%, rgb(${tint} / 0.03) 58%, transparent 100%)`,
-          boxShadow: active ? `0 0 0 1px rgb(${tint} / 0.8), 0 0 30px -8px rgb(${tint} / 0.95)` : undefined,
-          // active 排在 empty 前：写成 empty 优先的话，点「未接入」的工序时它还是灰的，
+          boxShadow: active
+            ? `0 0 0 1px rgb(${tint} / 0.8), 0 0 30px -8px rgb(${tint} / 0.95)`
+            : undefined,
+          // active 排在 empty 前：写成 empty 优先的话，点“未接入”的工序时它还是灰的，
           // 而点它恰恰是为了看清详情
           opacity: dimmed ? 0.25 : active ? 1 : empty ? 0.55 : 1,
         } as CSSProperties
@@ -170,7 +172,9 @@ function StageCard({
         <span
           aria-hidden
           className="absolute inset-x-0 top-0 h-px"
-          style={{ background: `linear-gradient(90deg, transparent, rgb(${tint} / 0.9), transparent)` }}
+          style={{
+            background: `linear-gradient(90deg, transparent, rgb(${tint} / 0.9), transparent)`,
+          }}
         />
       )}
 
@@ -179,7 +183,10 @@ function StageCard({
           <span
             aria-hidden
             className="inline-block h-1.5 w-1.5 rounded-full"
-            style={{ background: `rgb(${tint})`, boxShadow: empty ? undefined : `0 0 9px 1px rgb(${tint} / 0.6)` }}
+            style={{
+              background: `rgb(${tint})`,
+              boxShadow: empty ? undefined : `0 0 9px 1px rgb(${tint} / 0.6)`,
+            }}
           />
           <span
             data-canvas-label="major"
@@ -228,7 +235,10 @@ function StageCard({
       >
         {node.name}
       </div>
-      <div data-canvas-label="minor" className="mt-0.5 font-mono text-[10.5px] text-slate-500">
+      <div
+        data-canvas-label="minor"
+        className="mt-0.5 font-mono text-[10.5px] text-slate-500"
+      >
         {node.artifact}
       </div>
 
@@ -310,7 +320,10 @@ function AuthorityChip({ node, dim }: { node: PipelineNode; dim: boolean }) {
           ? { border: "1px solid var(--color-border-soft)", color: "var(--ink-6)" }
           : solid
             ? { background: `rgb(${color} / 0.85)`, color: "#1c1917", fontWeight: 500 }
-            : { border: `1px solid rgb(${color} / 0.38)`, color: `rgb(${color} / 0.95)` }
+            : {
+                border: `1px solid rgb(${color} / 0.38)`,
+                color: `rgb(${color} / 0.95)`,
+              }
       }
     >
       {label}
@@ -344,7 +357,7 @@ function RootCard({
 
   return (
     <div
-      // 和工序卡的 data-pipeline-stage 分开：共用一个属性名会让「六道工序」数成七个
+      // 和工序卡的 data-pipeline-stage 分开：共用一个属性名会让“六道工序”数成七个
       data-pipeline-root={card.id}
       // 原始状态写进 DOM：便于直接断言，不必从颜色反推
       data-root-status={card.status}
@@ -363,13 +376,15 @@ function RootCard({
         backgroundColor: "var(--color-surface)",
         backgroundImage: `linear-gradient(150deg, rgb(${rgb} / 0.14) 0%, rgb(${rgb} / 0.03) 58%, transparent 100%)`,
         opacity: entering ? 0.25 : 1,
-        // 淡入与尺寸插值一起做，否则像是「弹出」而不是「长出」
+        // 淡入与尺寸插值一起做，否则像是“弹出”而不是“长出”
       }}
     >
       <span
         aria-hidden
         className="absolute inset-x-0 top-0 h-px"
-        style={{ background: `linear-gradient(90deg, transparent, rgb(${rgb} / 0.9), transparent)` }}
+        style={{
+          background: `linear-gradient(90deg, transparent, rgb(${rgb} / 0.9), transparent)`,
+        }}
       />
 
       {/* 标识 + 状态胶囊。根节点不是第 0 道工序，标识用 AGENT 而不是序号 */}
@@ -415,7 +430,11 @@ function RootCard({
         {card.title}
       </div>
       {card.subtitle && (
-        <div data-root-subtitle data-canvas-label="minor" className="mt-0.5 font-mono text-[10.5px] text-slate-500">
+        <div
+          data-root-subtitle
+          data-canvas-label="minor"
+          className="mt-0.5 font-mono text-[10.5px] text-slate-500"
+        >
           {card.subtitle}
         </div>
       )}
@@ -441,7 +460,7 @@ function RootCard({
 /**
  * 挂在工序下的子方块。工序卡是骨架，六张要在一屏里读得清；子节点是内容，
  * 可能几十个，所以只给 168×44：一行说清这一项是什么，依据留给悬停和详情。
- * 颜色只表达「过没过」这一层含义，叠上第二层之后缩小看就只剩一片花花绿绿。
+ * 颜色只表达“过没过”这一层含义，叠上第二层之后缩小看就只剩一片花花绿绿。
  */
 function ChildChip({
   rect,
@@ -471,7 +490,7 @@ function ChildChip({
         transformOrigin: "0 0",
         width: rect.w,
         height: rect.h,
-        // 尺寸插值之外还要淡入，否则像是「弹出」而不是「长出」
+        // 尺寸插值之外还要淡入，否则像是“弹出”而不是“长出”
         opacity: entering ? 0.25 : 1,
         borderColor: `rgb(${tone} / 0.45)`,
         backgroundColor: "var(--color-surface)",
@@ -481,14 +500,19 @@ function ChildChip({
       <span
         aria-hidden
         className="absolute inset-x-0 top-0 h-px"
-        style={{ background: `linear-gradient(90deg, transparent, rgb(${tone} / 0.9), transparent)` }}
+        style={{
+          background: `linear-gradient(90deg, transparent, rgb(${tone} / 0.9), transparent)`,
+        }}
       />
 
       <div className="flex items-start justify-between gap-2">
         <span
           aria-hidden
           className="mt-1 inline-block h-1.5 w-1.5 flex-none rounded-full"
-          style={{ background: `rgb(${tone})`, boxShadow: `0 0 9px 1px rgb(${tone} / 0.6)` }}
+          style={{
+            background: `rgb(${tone})`,
+            boxShadow: `0 0 9px 1px rgb(${tone} / 0.6)`,
+          }}
         />
         <span
           data-child-status
@@ -520,7 +544,7 @@ function ChildChip({
         {child.detail}
       </div>
 
-      {/* 关键字胶囊。当前是占位符「——」，见 core/pipeline/forest.ts 的 CHILD_PLACEHOLDER */}
+      {/* 关键字胶囊。当前是占位符“——”，见 core/pipeline/forest.ts 的 CHILD_PLACEHOLDER */}
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
         {child.chips.map((c, i) => (
           <span
@@ -538,7 +562,7 @@ function ChildChip({
       <div
         data-child-metric
         data-canvas-label="minor"
-        className="mt-1.5 border-t pt-1 text-[10.5px] tabular-nums text-slate-500"
+        className="mt-1.5 border-t pt-1 text-[10.5px] text-slate-500 tabular-nums"
         style={{ borderColor: `rgb(${tone} / 0.15)` }}
       >
         {child.metric}
@@ -553,7 +577,10 @@ function ChildChip({
  *
  * 根的三个值直接搬过去，所以没有子树时结果和旧布局逐像素相同。
  */
-function forestGeometryOf(g: CanvasPipelineGeometry, threeLayer: boolean): ForestGeometry {
+function forestGeometryOf(
+  g: CanvasPipelineGeometry,
+  threeLayer: boolean,
+): ForestGeometry {
   return {
     ...FOREST_GEOMETRY,
     root: { w: g.nodeW, h: g.nodeH, gapX: g.gapX, perRow: g.perRow },
@@ -585,7 +612,7 @@ export function PipelineCanvas({
 
   /*
     位置交给森林布局算。没有子节点时结果和旧的 nodeRect 逐像素相同；
-    有根节点时喂进去的是「一级 Agent → 六道工序 → 子节点」的三层树，
+    有根节点时喂进去的是“一级 Agent → 六道工序 → 子节点”的三层树，
     布局本身不用改 —— 它一直都支持任意深度，变的只是喂进去的形状。
   */
   const forest = useMemo(
@@ -614,7 +641,9 @@ export function PipelineCanvas({
   const rects = useMemo(
     () =>
       nodes.map(
-        (n) => animatedNodes.find((a) => a.id === n.id) ?? forest.byId.get(n.id) ?? { x: 0, y: 0, w: g.nodeW, h: g.nodeH },
+        (n) =>
+          animatedNodes.find((a) => a.id === n.id) ??
+          forest.byId.get(n.id) ?? { x: 0, y: 0, w: g.nodeW, h: g.nodeH },
       ),
     [nodes, animatedNodes, forest, g],
   );
@@ -622,7 +651,9 @@ export function PipelineCanvas({
   // 根卡与六道工序共用同一套坐标。换运行时整棵树都在动，
   // 用目标位置的话根卡会先落在终点，看起来和自己的孩子脱节。
   const rootRect = rootCard
-    ? (animatedNodes.find((a) => a.id === rootCard.id) ?? forest.byId.get(rootCard.id) ?? null)
+    ? (animatedNodes.find((a) => a.id === rootCard.id) ??
+      forest.byId.get(rootCard.id) ??
+      null)
     : null;
 
   const hasFocus = chain !== null;
@@ -655,7 +686,6 @@ export function PipelineCanvas({
         viewBox={`${bounds.x} ${bounds.y} ${bounds.w} ${bounds.h}`}
       >
         {nodes.map((node, i) => {
-
           if (i >= total - 1) return null;
           const a = rects[i];
           const b = rects[i + 1];
@@ -697,7 +727,7 @@ export function PipelineCanvas({
               strokeWidth={1.2}
             />
             {/* 横枝：一个孩子一根，各带 data-canvas-tree-link，用于断言条数。
-                退化情形（横枝长度为 0）也要渲染，filter 掉会让计数误报「有孤儿方块」 */}
+                退化情形（横枝长度为 0）也要渲染，filter 掉会让计数误报“有孤儿方块” */}
             {l.branches.map((b) => (
               <path
                 key={b.childId}
@@ -747,7 +777,7 @@ export function PipelineCanvas({
       ))}
 
       {/* 子节点：比 childDepthFloor 深的都是，按 id 把数据找回来。
-          坐标用动画态，新出现的带 entering 淡入 —— 只插位置会像「弹出」而不是「长出」 */}
+          坐标用动画态，新出现的带 entering 淡入 —— 只插位置会像“弹出”而不是“长出” */}
       {animatedNodes
         .filter((n) => n.depth > childDepthFloor)
         .map((n) => {

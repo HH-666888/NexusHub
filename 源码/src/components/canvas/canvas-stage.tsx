@@ -22,13 +22,13 @@ import {
  * 所以开销只跟画布上有几个东西有关，跟画布多大无关。
  * 无限真正的风险是浮点精度（平移夹在 ±100000）、找不到北（回到原点按钮）、
  * 缩放失控（倍率夹在 0.2~4，滚轮以光标为锚点），三条都便宜地处理了。
- * 「第 3 列第 2 行」靠初始视口表达，不画边框 —— 画了框就等于宣布画布有边界。
+ * “第 3 列第 2 行”靠初始视口表达，不画边框 —— 画了框就等于宣布画布有边界。
  */
 
 export interface CanvasStageProps {
   /**
    * 原点标记。它是这套 UI 自身的位置参照，不是内容 ——
-   * 没有它，「回到原点」按下去时画面没有任何可辨认的变化。
+   * 没有它，“回到原点”按下去时画面没有任何可辨认的变化。
    */
   showOrigin?: boolean;
   /**
@@ -44,7 +44,7 @@ export interface CanvasStageProps {
    * 不传就对准核心格（原来的行为）。
    */
   fitBounds?: { x: number; y: number; w: number; h: number };
-  /** 「回到原点」按钮去的地方。不传就是核心格 */
+  /** “回到原点”按钮去的地方。不传就是核心格 */
   homeBounds?: { x: number; y: number; w: number; h: number };
   /**
    * 自动适应的缩放下限。面板里给 0.62 左右：不设的话，一个 808×371 的面板
@@ -52,15 +52,18 @@ export interface CanvasStageProps {
    */
   minFitScale?: number;
   /**
-   * 聚焦到某块区域（双击一个节点时用）。传「值 + 计数器」而不是只传值：
+   * 聚焦到某块区域（双击一个节点时用）。传“值 + 计数器”而不是只传值：
    * 连点同一个节点两次，bounds 是同一个值，只看值第二次不会触发。
    * homeBounds 是状态，这个是事件。
    */
-  focusRequest?: { bounds: { x: number; y: number; w: number; h: number }; nonce: number } | null;
+  focusRequest?: {
+    bounds: { x: number; y: number; w: number; h: number };
+    nonce: number;
+  } | null;
   /**
-   * 「看全」按钮要装下的世界区域。它和 fitBounds / homeBounds 的区别是不看 minFitScale：
-   * 「看全」是用户明确说要看全局，那时读不清字是他自己选的代价，不是系统替他做的取舍。
-   * 不传就不显示这个按钮 —— 面板那类用法说不出「看全」看的是什么全。
+   * “看全”按钮要装下的世界区域。它和 fitBounds / homeBounds 的区别是不看 minFitScale：
+   * “看全”是用户明确说要看全局，那时读不清字是他自己选的代价，不是系统替他做的取舍。
+   * 不传就不显示这个按钮 —— 面板那类用法说不出“看全”看的是什么全。
    */
   fitAllBounds?: { x: number; y: number; w: number; h: number };
   /**
@@ -78,14 +81,20 @@ export interface CanvasStageProps {
  * 它和网格用同一套坐标约定（screen = world × scale + pan），写法不同、映射相同。
  * transform-origin 必须是 0 0，否则缩放绕中心转，内容会整片漂走。
  */
-function WorldLayer({ viewport, children }: { viewport: Viewport; children: React.ReactNode }) {
+function WorldLayer({
+  viewport,
+  children,
+}: {
+  viewport: Viewport;
+  children: React.ReactNode;
+}) {
   return (
     <div
       data-canvas-world
       /*
         当前倍率下文字显示到哪一档，globals.css 按它决定藏哪些字。
         放在这一层是因为它是全局显示档位：各自算的话，边界上会出现
-        「这张卡的字没了、旁边那张还在」。
+        “这张卡的字没了、旁边那张还在”。
       */
       data-label-tier={labelTier(viewport.scale)}
       className="pointer-events-none absolute top-0 left-0 origin-top-left"
@@ -100,10 +109,9 @@ function WorldLayer({ viewport, children }: { viewport: Viewport; children: Reac
 
 /**
  * 原点十字。标的是核心格中心，不是世界坐标 (0,0) ——
- * 标错时肉眼看不出来，十字确实落在网格交点上，而「回到原点」会偏 400×240。
+ * 标错时肉眼看不出来，十字确实落在网格交点上，而“回到原点”会偏 400×240。
  */
 function OriginMark() {
-
   return (
     <div
       aria-hidden
@@ -111,8 +119,14 @@ function OriginMark() {
       className="absolute"
       style={{ left: HOME_WORLD.x, top: HOME_WORLD.y, width: 1, height: 1 }}
     >
-      <span className="absolute block bg-slate-600" style={{ left: -7, top: 0, width: 15, height: 1 }} />
-      <span className="absolute block bg-slate-600" style={{ left: 0, top: -7, width: 1, height: 15 }} />
+      <span
+        className="absolute block bg-slate-600"
+        style={{ left: -7, top: 0, width: 15, height: 1 }}
+      />
+      <span
+        className="absolute block bg-slate-600"
+        style={{ left: 0, top: -7, width: 1, height: 15 }}
+      />
     </div>
   );
 }
@@ -134,7 +148,7 @@ export function CanvasStage({
   const [viewport, setViewport] = useState<Viewport>({ panX: 0, panY: 0, scale: 1 });
 
   /*
-    是否已经对准过。用 ref 而非 state：它只影响「要不要再对准」，
+    是否已经对准过。用 ref 而非 state：它只影响“要不要再对准”，
     不影响渲染结果，放进 state 会多一次重渲染。
   */
   const placedRef = useRef(false);
@@ -179,7 +193,7 @@ export function CanvasStage({
       e.preventDefault();
       const rect = el.getBoundingClientRect();
       // 指数缩放：每 100 像素滚动 ≈ 1.15 倍。
-      // 用乘法而不是加法，才不会「放大容易缩小难」
+      // 用乘法而不是加法，才不会“放大容易缩小难”
       const factor = Math.exp(-e.deltaY / 700);
       setViewport((vp) =>
         zoomAt(vp, e.clientX - rect.left, e.clientY - rect.top, factor),
@@ -220,7 +234,7 @@ export function CanvasStage({
   const endDrag = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       /*
-        真的拖过才算「用户动过视口」。指针抬起时 draggingRef 是 null 的话，
+        真的拖过才算“用户动过视口”。指针抬起时 draggingRef 是 null 的话，
         这一次只是普通点击，画布没动 —— 算进去的话，随手点一下界面就永久关掉了自动跟随。
       */
       if (draggingRef.current) onUserMoved?.();
@@ -259,10 +273,10 @@ export function CanvasStage({
 
   /*
     把整棵树装进视口，忽略 minFitScale（传 0）：按这个按钮就是一个明确的意图 ——
-    「我要看全局」，这时再拿 0.45 卡住，就成了「点了看全，还是看不全」。
+    “我要看全局”，这时再拿 0.45 卡住，就成了“点了看全，还是看不全”。
 
     代价是 1832×1064 的树装进 770×330 要缩到 20% 左右，工序名只剩 3 像素，
-    所以按钮的 title 直接写「会很小，读不清字」—— 知道代价再点和点完发现被骗是两件事。
+    所以按钮的 title 直接写“会很小，读不清字”—— 知道代价再点和点完发现被骗是两件事。
   */
   const fitAll = useCallback(() => {
     const el = shellRef.current;
@@ -275,7 +289,7 @@ export function CanvasStage({
   const step = gridStepScreen(viewport.scale);
 
   /*
-    聚焦请求：双击节点时父组件把「装下这棵子树」的区域发过来。
+    聚焦请求：双击节点时父组件把“装下这棵子树”的区域发过来。
     只认 nonce —— 连点同一个节点时 bounds 是同一个值，只看值第二次不会触发。
   */
   const lastNonceRef = useRef(0);
@@ -287,7 +301,9 @@ export function CanvasStage({
     const el = shellRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    setViewport(fitViewport(focusRequest.bounds, rect.width, rect.height, 56, minFitScale));
+    setViewport(
+      fitViewport(focusRequest.bounds, rect.width, rect.height, 56, minFitScale),
+    );
   }, [focusRequest, minFitScale]);
 
   return (
@@ -307,8 +323,8 @@ export function CanvasStage({
       onPointerCancel={endDrag}
       /*
         双击空白处回到全局视口。双击工序会聚焦到那棵树（别的都出画了），
-        进去之后只能靠找「回到原点」那个小按钮出来，这功能就会让人不敢用 ——
-        进去容易出来难的功能没人用。双击空白是和「进去」完全对称的「出来」。
+        进去之后只能靠找“回到原点”那个小按钮出来，这功能就会让人不敢用 ——
+        进去容易出来难的功能没人用。双击空白是和“进去”完全对称的“出来”。
       */
       onDoubleClick={goHome}
     >
@@ -330,7 +346,7 @@ export function CanvasStage({
           backgroundPosition: `${viewport.panX}px ${viewport.panY}px`,
         }}
       >
-        {/* 原点标记。极淡的一个十字，只为让「回到原点」有可见的落点 */}
+        {/* 原点标记。极淡的一个十字，只为让“回到原点”有可见的落点 */}
       </div>
 
       {/* 世界坐标层：画布上的内容都长在这一层里 */}
@@ -364,13 +380,13 @@ export function CanvasStage({
           onClick={goHome}
           title="回到原点（第 3 列第 2 行）"
           data-canvas-zoom
-          className="min-w-[52px] rounded-full px-2 py-1 text-[11.5px] tabular-nums text-slate-300 transition-colors duration-150 hover:bg-slate-700/50 hover:text-slate-100"
+          className="min-w-[52px] rounded-full px-2 py-1 text-[11.5px] text-slate-300 tabular-nums transition-colors duration-150 hover:bg-slate-700/50 hover:text-slate-100"
         >
           {formatScale(viewport.scale)}
         </button>
 
         {/*
-          挨着倍率按钮放。它和「回到原点」是一对相反的出口：一个看得清但看不全，
+          挨着倍率按钮放。它和“回到原点”是一对相反的出口：一个看得清但看不全，
           一个装下整棵树但读不清字。把代价写在 title 里 —— 知道了再点和被骗着点是两件事。
         */}
         {fitAllBounds && (

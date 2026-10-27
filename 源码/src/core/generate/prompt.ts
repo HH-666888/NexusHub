@@ -14,7 +14,7 @@ export interface InspectOptions {
 
 /**
  * 系统提示词。单文件自包含是刻意收紧的第一步：排除环境故障，能直接预览与下载。
- * 「只输出 HTML」是因为模型爱在代码块前后加说明，会污染产物提取。
+ * “只输出 HTML”是因为模型爱在代码块前后加说明，会污染产物提取。
  */
 export const SYSTEM_PROMPT = `你是一名资深前端工程师。用户会用一句话描述他要的软件，你直接产出可运行的成品。
 
@@ -44,7 +44,10 @@ export function extractHtml(text: string): string {
 }
 
 /** 只判机器可判的硬事实，不判美观：二值判断可重复、可解释，也便于失败归因 */
-export function inspectArtifact(html: string, options: InspectOptions = {}): CheckResult[] {
+export function inspectArtifact(
+  html: string,
+  options: InspectOptions = {},
+): CheckResult[] {
   const results: CheckResult[] = [];
   const add = (name: string, pass: boolean, detail: string) =>
     results.push({ name, pass, detail });
@@ -85,10 +88,10 @@ export function inspectArtifact(html: string, options: InspectOptions = {}): Che
   add("中文界面", cjk >= 10, `含 ${cjk} 个中文字符`);
 
   /*
-    第八项：模块代码确实进入了产物，防的是「表演式并行」——
+    第八项：模块代码确实进入了产物，防的是“表演式并行”——
     并行调用了但产物照旧单次生成，前七项照样能全绿。
     做法是从每个 ModuleBuild 取一段特征片段，逐条在最终 HTML 里找；
-    模块数为 0 一律不通过（没产出就没证据），有单测断言「不含片段」必须红。
+    模块数为 0 一律不通过（没产出就没证据），有单测断言“不含片段”必须红。
 
     没传 batch 时这一项不出现，而不是标成未做并计入通过数：
     旧路径的 passed/total 一个字都不变。
@@ -115,11 +118,13 @@ export function inspectArtifact(html: string, options: InspectOptions = {}): Che
           ? `；另有 ${batch.failed.length} 个模块构建失败，它们本来就没有产出可核对`
           : "");
     } else {
-      const parts = missing.slice(0, 3).map((p) =>
-        p.candidates.length > 0
-          ? `模块 ${p.moduleId} 的特征片段「${p.candidates[0]}」在产物里找不到`
-          : `模块 ${p.moduleId} 提不出任何可核对的代码特征（html/css/js 都是空的？）`,
-      );
+      const parts = missing
+        .slice(0, 3)
+        .map((p) =>
+          p.candidates.length > 0
+            ? `模块 ${p.moduleId} 的特征片段“${p.candidates[0]}”在产物里找不到`
+            : `模块 ${p.moduleId} 提不出任何可核对的代码特征（html/css/js 都是空的？）`,
+        );
       if (missing.length > 3) parts.push(`另有 ${missing.length - 3} 个模块同样没找到`);
       detail = parts.join("；");
     }

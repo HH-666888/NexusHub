@@ -33,7 +33,7 @@ describe("检查结果 → 子节点", () => {
     expect(checksToChildren(SEVEN)).toHaveLength(7);
   });
 
-  it("每一项都归到「验收与交付」名下", () => {
+  it("每一项都归到“验收与交付”名下", () => {
     expect(checksToChildren(SEVEN).every((c) => c.stage === "verify")).toBe(true);
   });
 
@@ -44,7 +44,7 @@ describe("检查结果 → 子节点", () => {
     expect(kids[4].label).toBe("有事件处理");
   });
 
-  it("每项都带着自己的依据 —— 界面上要能说出「凭什么」", () => {
+  it("每项都带着自己的依据 —— 界面上要能说出“凭什么”", () => {
     for (const k of checksToChildren(SEVEN)) {
       expect(k.detail.length, `${k.label} 没有依据`).toBeGreaterThan(0);
     }
@@ -111,7 +111,9 @@ describe("拼森林", () => {
 
   it("子节点的 id 原样带进布局", () => {
     const verify = toLayoutNodes(SIX, byStage).find((n) => n.id === "verify")!;
-    expect(verify.children!.map((c) => c.id)).toEqual(checksToChildren(SEVEN).map((c) => c.id));
+    expect(verify.children!.map((c) => c.id)).toEqual(
+      checksToChildren(SEVEN).map((c) => c.id),
+    );
   });
 
   it("没有子节点的工序不会因为别人有子树而错位", () => {

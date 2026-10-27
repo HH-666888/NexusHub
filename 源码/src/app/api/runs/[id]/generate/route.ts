@@ -209,9 +209,7 @@ export async function GET(
         if (closed) return;
         try {
           // 用 JSON 承载事件，使内容里的换行不影响 SSE 分帧，前端也能直接 parse
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
-          );
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
         } catch {
           // 客户端断开后 enqueue 会抛错，标记关闭即可
           closed = true;
@@ -241,7 +239,7 @@ export async function GET(
           send({
             kind: "error",
             message: `自定义模型接入配置不完整：${resolved.reason ?? "请到设置页补全"}`,
-            hint: "到「设置 → 模型接入」补齐，或切回「使用平台默认接入」",
+            hint: "到“设置 → 模型接入”补齐，或切回“使用平台默认接入”",
           });
           send({ kind: "phase", phase: "failed", label: "配置不完整" });
           return;
@@ -303,7 +301,12 @@ export async function GET(
           if (callbackNote) {
             // phase 用 "spec"：GeneratePhase 是封闭联合，为一个提示语不值当扩展类型。
             // note: "callback" 是界面标记位，让这句话留在固定位置而不被后续 phase 顶掉。
-            yield { kind: "phase", phase: "spec", label: callbackNote, note: "callback" };
+            yield {
+              kind: "phase",
+              phase: "spec",
+              label: callbackNote,
+              note: "callback",
+            };
           }
 
           // 第一道：规格化。产出 spec 事件并落 spec.json。
@@ -340,7 +343,11 @@ export async function GET(
             storedSpec !== null &&
             (storedAnswers.answers ?? []).some((a) => a.answer.trim().length > 0);
 
-          if (!wantsRevision && isGateResume(storedSpec, storedAnswers, storedAck) && storedSpec) {
+          if (
+            !wantsRevision &&
+            isGateResume(storedSpec, storedAnswers, storedAck) &&
+            storedSpec
+          ) {
             specFromStage = storedSpec;
             // 规格读自盘上，兜底与否现判
             specFallbackFromStage = isFallbackSpec(storedSpec);
@@ -350,11 +357,10 @@ export async function GET(
             const answered = (storedAnswers?.answers ?? []).filter(
               (a) => a.answer.trim().length > 0,
             ).length;
-              // 说明按两种情况分开：答过疑问与知悉并继续走的不是同一条路。
-              // 混成"已答 N 个疑问"时，知悉那条会读作什么都没发生。
-            const viaAck = answered === 0 && isAcknowledged(storedAck, [
-              ...storedSpec.questions,
-            ]);
+            // 说明按两种情况分开：答过疑问与知悉并继续走的不是同一条路。
+            // 混成"已答 N 个疑问"时，知悉那条会读作什么都没发生。
+            const viaAck =
+              answered === 0 && isAcknowledged(storedAck, [...storedSpec.questions]);
 
             yield {
               kind: "phase",
@@ -366,8 +372,8 @@ export async function GET(
                   `重跑会换一批新疑问，你刚答过的就对不上了`,
             };
 
-              // 每次生成开始时事件日志会被清空，规格事件要重发一次，工作台才有规格面板。
-              // gate 由 reviewSpec 现算：纯函数、不花钱、不改规格。
+            // 每次生成开始时事件日志会被清空，规格事件要重发一次，工作台才有规格面板。
+            // gate 由 reviewSpec 现算：纯函数、不花钱、不改规格。
             yield {
               kind: "spec",
               spec: storedSpec,
@@ -428,7 +434,7 @@ export async function GET(
           }
 
           if (decision.pause) {
-              // 放行但要说清两件事：模型在替用户猜哪些地方，以及这覆盖了工序自身的声明。
+            // 放行但要说清两件事：模型在替用户猜哪些地方，以及这覆盖了工序自身的声明。
             yield {
               kind: "phase",
               phase: "spec",
@@ -494,8 +500,8 @@ export async function GET(
           const spentBeforeUi = await sqliteCostStore.totalByRun(runId);
 
           if (specFromStage && archFromStage) {
-              // 续跑时界面设计一并沿用：dataNeeds 与设计变量都建立在模块划分上，
-              // 换了架构留旧界面会两边对不上，反之则是白花一次钱重画。
+            // 续跑时界面设计一并沿用：dataNeeds 与设计变量都建立在模块划分上，
+            // 换了架构留旧界面会两边对不上，反之则是白花一次钱重画。
             const storedUi = resumedSpec
               ? await readJsonArtifact<UiSpec>(runId, UI_ARTIFACT_NAME)
               : null;
@@ -503,7 +509,8 @@ export async function GET(
               yield {
                 kind: "phase",
                 phase: "ui",
-                label: "界面设计沿用上次的（架构与需求都没变）—— 不重跑，视觉与变量表保持一致",
+                label:
+                  "界面设计沿用上次的（架构与需求都没变）—— 不重跑，视觉与变量表保持一致",
               };
               yield {
                 kind: "ui",
@@ -545,17 +552,21 @@ export async function GET(
           // 口径与前三道一致：宁可拒绝，也不要花完才说超了。
           // 钱到顶时 batch 保持 null，第四道走单次路径，由它自己的闸门停下并说明原因。
           let batch: BuildBatch | null = null;
-          if (specFromStage && archFromStage && spentBeforeBuild < env.run.costLimitCny) {
+          if (
+            specFromStage &&
+            archFromStage &&
+            spentBeforeBuild < env.run.costLimitCny
+          ) {
             // 断点续跑：已构建且校验通过的模块不再重跑。判据是内容哈希，不是文件是否存在；
             // 对不上就重建：钱可以再花一次，把半截代码装配进产物不行。
-          // 并行构建也最容易被打断：关浏览器、dev server 重启、网络断一下。
+            // 并行构建也最容易被打断：关浏览器、dev server 重启、网络断一下。
             const resume = await planResumeFromArtifacts(
               runId,
               archFromStage.modules.map((m) => m.id),
             );
 
-              // 只有真的沿用了东西才提示；一个都没有时是首次运行的正常情况。
-              // 沿用与重建的数量分开报，用户才知道这次花了多少。
+            // 只有真的沿用了东西才提示；一个都没有时是首次运行的正常情况。
+            // 沿用与重建的数量分开报，用户才知道这次花了多少。
             if (resume.reason) {
               yield {
                 kind: "phase",
@@ -579,7 +590,9 @@ export async function GET(
               label:
                 `正在并行构建 ${resume.build.length} 个模块` +
                 `（并发上限 ${concurrency}）` +
-                (resume.reuse.length > 0 ? ` · 另有 ${resume.reuse.length} 个沿用上次的产出` : ""),
+                (resume.reuse.length > 0
+                  ? ` · 另有 ${resume.reuse.length} 个沿用上次的产出`
+                  : ""),
             };
 
             batch = await buildModules(
@@ -589,7 +602,9 @@ export async function GET(
                 // 在模块刚构建好时写，中途被打断时已完成的不必再次计费。
                 // 落盘时机是刚构建好，不是整批跑完。
                 onModuleBuilt: async (built) => {
-                  const mod = archFromStage?.modules.find((x) => x.id === built.moduleId);
+                  const mod = archFromStage?.modules.find(
+                    (x) => x.id === built.moduleId,
+                  );
                   await fsArtifactStore.save({
                     runId,
                     kind: "json",
@@ -617,15 +632,16 @@ export async function GET(
                 arch: archFromStage,
                 concurrency,
                 // 只补缺的那几个；全都要建时是 undefined，行为与从前一致
-                onlyModuleIds: resume.build.length === archFromStage.modules.length
-                  ? undefined
-                  : resume.build,
+                onlyModuleIds:
+                  resume.build.length === archFromStage.modules.length
+                    ? undefined
+                    : resume.build,
               },
             );
 
-              // 沿用那几份并回批次：装配与 modules 事件只认 batch.modules。
-              // 它们的 totalCostCny / totalUsage 不并入，那些钱上次已记流水。
-              // 不并进 modules 的话，沿用的模块在产物里、清单上都会消失。
+            // 沿用那几份并回批次：装配与 modules 事件只认 batch.modules。
+            // 它们的 totalCostCny / totalUsage 不并入，那些钱上次已记流水。
+            // 不并进 modules 的话，沿用的模块在产物里、清单上都会消失。
             const reusedBuilds = await loadReusedBuilds(
               runId,
               archFromStage.modules.map((m) => m.id),
@@ -633,7 +649,8 @@ export async function GET(
             );
             if (reusedBuilds.length > 0) {
               const byId = new Map<string, ModuleBuild>();
-              for (const b of [...reusedBuilds, ...batch.modules]) byId.set(b.moduleId, b);
+              for (const b of [...reusedBuilds, ...batch.modules])
+                byId.set(b.moduleId, b);
               // 顺序跟架构走，不跟完成顺序走
               batch = {
                 ...batch,
@@ -644,10 +661,10 @@ export async function GET(
             }
 
             // 落盘已在 onModuleBuilt 里做过，这里不再补写
-              // 记账：每次模块调用一行流水，含失败的那几次 —— 钱确实花了，
-              // 也要能回答花在哪个模块，这正是成本流水的用途。
-              // nodeId 与树上任务点同 id；记账失败不影响主流程。
-              // 调用成功但解析失败的同样花了钱，不记会让这条运行的账比实际少。
+            // 记账：每次模块调用一行流水，含失败的那几次 —— 钱确实花了，
+            // 也要能回答花在哪个模块，这正是成本流水的用途。
+            // nodeId 与树上任务点同 id；记账失败不影响主流程。
+            // 调用成功但解析失败的同样花了钱，不记会让这条运行的账比实际少。
             try {
               for (const m of batch.modules) {
                 // 沿用来的模块不写新流水：那笔钱上次已记
@@ -685,9 +702,9 @@ export async function GET(
               // 记账失败不影响主流程
             }
 
-              // 模块调用的 token 并进本条运行的累计用量（界面右侧实时成本的数据源），
-              // 不并的话这部分用量会凭空消失；累加由 run-repo 的 update 负责。
-              // runs 那一行是界面实时成本的唯一来源，模块调用的 token 都在这里。
+            // 模块调用的 token 并进本条运行的累计用量（界面右侧实时成本的数据源），
+            // 不并的话这部分用量会凭空消失；累加由 run-repo 的 update 负责。
+            // runs 那一行是界面实时成本的唯一来源，模块调用的 token 都在这里。
             try {
               await sqliteRunStore.update(runId, { usage: batch.totalUsage });
             } catch {
@@ -695,8 +712,8 @@ export async function GET(
               // 用量累加同样如此，失败时界面只是少一点数字。
             }
 
-              // 因截断重试过就要说出来：重试是内部动作，但用户应看到模块顶满过长度上限，
-              // 那意味着它比预想的大，下次该从架构上拆。
+            // 因截断重试过就要说出来：重试是内部动作，但用户应看到模块顶满过长度上限，
+            // 那意味着它比预想的大，下次该从架构上拆。
             if (batch.retriedModules.length > 0) {
               yield {
                 kind: "phase",
@@ -707,10 +724,10 @@ export async function GET(
               };
             }
 
-              // 并行构建同样会思考（effort = high），按架构顺序逐条发出，前面标模块 id。
-              // 那是归属不是时序；失败的也要发，截断的模块往往想得最多。
-              // 用 reasoning 事件而不是新类型：它天然归入当前步骤，也不进规划日志。
-              // 不发的话，这一步的思考 tab 会永远写着没有返回内容。
+            // 并行构建同样会思考（effort = high），按架构顺序逐条发出，前面标模块 id。
+            // 那是归属不是时序；失败的也要发，截断的模块往往想得最多。
+            // 用 reasoning 事件而不是新类型：它天然归入当前步骤，也不进规划日志。
+            // 不发的话，这一步的思考 tab 会永远写着没有返回内容。
             for (const m of batch.modules) {
               if (m.reasoning.trim().length > 0) {
                 yield {
@@ -728,9 +745,9 @@ export async function GET(
               }
             }
 
-              // modules 事件的唯一来源：清单里 build:<模块id> 那批任务点由它投影，
-              // 失败模块在那里呈红色；载荷是摘要，不带代码片段。
-              // 完整内容在各模块产物里，摘要只够画卡片。
+            // modules 事件的唯一来源：清单里 build:<模块id> 那批任务点由它投影，
+            // 失败模块在那里呈红色；载荷是摘要，不带代码片段。
+            // 完整内容在各模块产物里，摘要只够画卡片。
             yield { kind: "modules", batch: summarizeBatch(batch, archFromStage) };
 
             yield {

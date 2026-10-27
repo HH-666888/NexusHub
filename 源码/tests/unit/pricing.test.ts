@@ -75,7 +75,10 @@ describe("价格表", () => {
   it("空闲价是高峰价的一半 —— 这是官方口径，必须成立", () => {
     for (const [model, p] of Object.entries(PRICING)) {
       expect(p.offPeak.cacheHitInput * 2, model).toBeCloseTo(p.peak.cacheHitInput, 10);
-      expect(p.offPeak.cacheMissInput * 2, model).toBeCloseTo(p.peak.cacheMissInput, 10);
+      expect(p.offPeak.cacheMissInput * 2, model).toBeCloseTo(
+        p.peak.cacheMissInput,
+        10,
+      );
       expect(p.offPeak.output * 2, model).toBeCloseTo(p.peak.output, 10);
     }
   });
@@ -98,7 +101,12 @@ describe("成本计算", () => {
   it("输出按输出单价计费：100 万 tokens 输出 = 4 元（flash 空闲）", () => {
     const r = computeCost(
       "deepseek-flash",
-      { inputTokens: 0, outputTokens: 1_000_000, cacheHitTokens: 0, cacheMissTokens: 0 },
+      {
+        inputTokens: 0,
+        outputTokens: 1_000_000,
+        cacheHitTokens: 0,
+        cacheMissTokens: 0,
+      },
       offPeak,
     );
     // 注意：cacheMissTokens 为 0 时按 inputTokens 兜底，所以这里要把它设对
@@ -136,16 +144,21 @@ describe("成本计算", () => {
     expect(off.tier).toBe("offPeak");
   });
 
-  it("未提供缓存拆分时，按「全部未命中」保守估算", () => {
+  it("未提供缓存拆分时，按“全部未命中”保守估算", () => {
     const r = computeCost(
       "deepseek-flash",
-      { inputTokens: 1_000_000, outputTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 },
+      {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        cacheHitTokens: 0,
+        cacheMissTokens: 0,
+      },
       offPeak,
     );
     expect(r.breakdown.cacheMissInput).toBeCloseTo(1, 10);
   });
 
-  it("【实测复核】探测脚本那次真实的调用，成本能对上", () => {
+  it("实测复核探测脚本那次真实的调用，成本能对上", () => {
     // 来自 grep 到的真实数据：关闭思考那次，输入 198、输出 6961、空闲时段
     const r = computeCost(
       "deepseek-flash",

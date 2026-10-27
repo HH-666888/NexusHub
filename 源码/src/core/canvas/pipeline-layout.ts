@@ -48,7 +48,6 @@ export interface NodeRect {
   h: number;
 }
 
-
 /** 一行放几道。至少 1，不然除零 */
 function colsOf(g: CanvasPipelineGeometry): number {
   return Math.max(1, Math.floor(g.perRow));
@@ -60,7 +59,10 @@ export function rowCount(total: number, g = PIPELINE_GEOMETRY): number {
 }
 
 /** 第 index 道在第几列第几行（都从 0 起） */
-export function slotOf(index: number, g = PIPELINE_GEOMETRY): { col: number; row: number } {
+export function slotOf(
+  index: number,
+  g = PIPELINE_GEOMETRY,
+): { col: number; row: number } {
   const cols = colsOf(g);
   return { col: index % cols, row: Math.floor(index / cols) };
 }
@@ -79,7 +81,11 @@ export function pipelineHeight(total: number, g = PIPELINE_GEOMETRY): number {
 }
 
 /** 整条以核心格 x 居中，打开画布即可看全整条，不必额外对准视口 */
-export function nodeRect(index: number, total: number, g = PIPELINE_GEOMETRY): NodeRect {
+export function nodeRect(
+  index: number,
+  total: number,
+  g = PIPELINE_GEOMETRY,
+): NodeRect {
   const { col, row } = slotOf(index, g);
   const left = HOME_WORLD.x - pipelineWidth(total, g) / 2;
   return {
@@ -90,7 +96,7 @@ export function nodeRect(index: number, total: number, g = PIPELINE_GEOMETRY): N
   };
 }
 
-/** 整条流水线占的世界范围，「缩放到全部」用 */
+/** 整条流水线占的世界范围，“缩放到全部”用 */
 export function pipelineBounds(
   total: number,
   g = PIPELINE_GEOMETRY,
@@ -98,7 +104,7 @@ export function pipelineBounds(
   if (total === 0) return { x: HOME_WORLD.x, y: HOME_WORLD.y, w: 0, h: 0 };
   const first = nodeRect(0, total, g);
   const last = nodeRect(total - 1, total, g);
-  // 高度要算上回退边下绕那段，否则「缩放到全部」后回退边被切在屏幕外
+  // 高度要算上回退边下绕那段，否则“缩放到全部”后回退边被切在屏幕外
   return {
     x: first.x,
     y: first.y,
@@ -107,7 +113,6 @@ export function pipelineBounds(
     h: last.y + last.h - first.y + FALLBACK_DROP,
   };
 }
-
 
 /** 回退边从节点底边往下绕多远 */
 export const FALLBACK_DROP = 96;
@@ -128,13 +133,13 @@ export function bottomOf(r: NodeRect) {
 }
 
 /**
- * 顺序流转：右中点 → 左中点。换行那条走「下出上进」，
+ * 顺序流转：右中点 → 左中点。换行那条走“下出上进”，
  * 照直画会从最右横穿整行，穿过几个节点就盖住几段正文。
  */
 export function flowPath(from: NodeRect, to: NodeRect, g = PIPELINE_GEOMETRY): string {
   const pad = 10;
 
-  // 换行：走「下出上进」
+  // 换行：走“下出上进”
   if (to.y > from.y + from.h / 2) {
     const a = bottomOf(from);
     // 横走线摆在行间空隙里，但在回退弧线之上
@@ -153,7 +158,7 @@ export function flowPath(from: NodeRect, to: NodeRect, g = PIPELINE_GEOMETRY): s
  * 失败回退：下边出去、下边回来，走二次贝塞尔。
  * 画直线会横穿中间几个节点，往下绕是从空白处走；弧线中段也比折线分得清。
  * 跨行走整条流水线左边的空白带，否则回升段会竖着穿过第二行的节点。
- * laneX 必须由调用方给：单个节点不知道「整条流水线左边在哪」。
+ * laneX 必须由调用方给：单个节点不知道“整条流水线左边在哪”。
  */
 export function fallbackPath(
   from: NodeRect,
@@ -181,13 +186,21 @@ export function fallbackPath(
  * 回退边标签位置。stagger 给跨行边错位用：跨行边的中点算出来完全一样，
  * 不岔开会精确叠在一个点上。
  */
-export function fallbackLabelAt(from: NodeRect, to: NodeRect, laneX?: number, stagger = 0) {
+export function fallbackLabelAt(
+  from: NodeRect,
+  to: NodeRect,
+  laneX?: number,
+  stagger = 0,
+) {
   // 跨行标签挂在左边竖线上，弧顶与线对不上
   if (to.y < from.y - from.h / 2) {
     const lane = laneX ?? Math.min(from.x, to.x) - 32;
     return { x: lane, y: (leftOf(from).y + leftOf(to).y) / 2 + stagger * 24 };
   }
-  return { x: (bottomOf(from).x + bottomOf(to).x) / 2, y: bottomOf(from).y + FALLBACK_DROP };
+  return {
+    x: (bottomOf(from).x + bottomOf(to).x) / 2,
+    y: bottomOf(from).y + FALLBACK_DROP,
+  };
 }
 
 /** 跨行竖线的 x，调用方算一次共用；每条边各算会偏进节点范围 */
@@ -200,7 +213,12 @@ export function flowArrowAt(from: NodeRect, to: NodeRect, g = PIPELINE_GEOMETRY)
   // 换行：箭头在横走段中间
   if (to.y > from.y + from.h / 2) {
     const busY = from.y + from.h + g.gapY * 0.34;
-    return { x: (from.x + from.w / 2 + to.x + to.w / 2) / 2, y: busY, dir: "right" as const, width: g.gapX };
+    return {
+      x: (from.x + from.w / 2 + to.x + to.w / 2) / 2,
+      y: busY,
+      dir: "right" as const,
+      width: g.gapX,
+    };
   }
   const a = rightOf(from);
   const b = leftOf(to);
