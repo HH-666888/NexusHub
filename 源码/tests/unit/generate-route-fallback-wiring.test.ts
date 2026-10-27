@@ -84,3 +84,26 @@ describe("生成接口 · 续跑的接线", () => {
     expect(src).toContain("isFallbackSpec(storedSpec)");
   });
 });
+
+/**
+ * 模块思考的接线（还是同一类"接线"问题）
+ * ============================================================
+ * 数据那一头有单测（build-modules.test.ts 的「模块的思考」那一组），
+ * 这里钉的是"编排层真的把它发成了 reasoning 事件、并且只发非空的"。
+ * 少了这一跳，界面上并行构建那一步的「思考」tab 就永远是空的 ——
+ * 而真实运行里单个模块的思考量到过 12706 tokens。
+ */
+describe("生成接口 · 模块思考的接线", () => {
+  it("成功的模块：按 arch 顺序逐条发，每条标出归属", () => {
+    expect(src).toContain("【${m.moduleId}】");
+  });
+
+  it("失败的模块也要发 —— 截断的那些往往正是想得最多的", () => {
+    expect(src).toContain("这个模块没构建成功】");
+  });
+
+  it("只有非空思考才发 —— 空思考不许占一条事件", () => {
+    expect(src).toContain("if (m.reasoning.trim().length > 0) {");
+    expect(src).toContain("if (f.reasoning.trim().length > 0) {");
+  });
+});

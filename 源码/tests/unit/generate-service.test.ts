@@ -88,6 +88,7 @@ function moduleBuild(over: Partial<ModuleBuild> & { moduleId: string }): ModuleB
     priceTier: "offPeak",
     latencyMs: 5,
     truncated: false,
+    reasoning: "",
     ...over,
   };
 }
@@ -354,6 +355,7 @@ describe("⑨ 传 batch → 装配的用户消息里带上了各模块的代码�
           model: null,
           priceTier: null,
           latencyMs: 3,
+          reasoning: "",
         },
       ],
     };
@@ -455,6 +457,7 @@ describe("⑪ ★ 探针：产物里没有模块代码 → 新检查必须不通
           model: null,
           priceTier: null,
           latencyMs: 1,
+          reasoning: "",
         },
       ],
     };
@@ -484,6 +487,7 @@ describe("⑪ ★ 探针：产物里没有模块代码 → 新检查必须不通
           model: "fake-model",
           priceTier: "offPeak",
           latencyMs: 9,
+          reasoning: "",
         },
       ],
     };

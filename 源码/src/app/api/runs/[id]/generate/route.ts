@@ -609,6 +609,46 @@ export async function GET(
             }
 
             /*
+              ---------- 把各模块的思考发出来 ----------
+              并行构建也是"会思考的写码"（GENERATE_DEFAULT_EFFORT = "high"）。
+              真实运行里单个模块的思考量到过 12706 tokens，而它原先躺在
+              批次结果里没人取 —— 界面上这一步的「思考」tab 永远写着
+              "这一步没有返回思考内容"，模型其实想了很多。
+              这和 spec / arch / ui 那三道是同一个毛病（修法 2），只是发生在
+              第四道；"看得见的思考"是这个产品的卖点，这一道不能缺席。
+
+              ── 顺序与归属 ──
+                并行调用没有"谁先谁后"的时序可言，所以按 arch 顺序逐条发
+                （与下面 modules 事件里的顺序一致），每条前面标出模块 id。
+                那是**归属**，不是时序 —— 标成时序就是编。
+                失败的那几个也要发：截断的模块往往正是想得最多的
+                （实测思考 13997 把预算吃光、正文一个字没吐出来），
+                不发的话用户只看到"失败"两个字，不知道它其实认真想过。
+
+              ── 为什么用 reasoning 事件而不是新造一种 ──
+                它天然属于"当前步骤"，界面会收进「思考」tab；
+                而且它**不进规划日志**（planning/from-run.ts 里
+                text / reasoning / usage / artifact 一律交给画布），
+                所以清单和树不会因此多出节点。
+            */
+            for (const m of batch.modules) {
+              if (m.reasoning.trim().length > 0) {
+                yield {
+                  kind: "reasoning",
+                  delta: `【${m.moduleId}】\n${m.reasoning}\n\n`,
+                };
+              }
+            }
+            for (const f of batch.failed) {
+              if (f.reasoning.trim().length > 0) {
+                yield {
+                  kind: "reasoning",
+                  delta: `【${f.moduleId} · 这个模块没构建成功】\n${f.reasoning}\n\n`,
+                };
+              }
+            }
+
+            /*
               ★ 把这一批的结果发出去 ★
               这是 modules 事件的唯一来源。清单里 `build:<模块id>` 那批任务点
               就是由它投影出来的（planning/from-run.ts 的 modulePoints），

@@ -694,6 +694,8 @@ function moduleBuildFixture(moduleId: string, costCny: number): ModuleBuild {
     priceTier: "offPeak",
     latencyMs: 2100,
     truncated: false,
+    // 这一条夹具不验"模块的思考"，给空串 —— 界面该显示"没有返回思考内容"
+    reasoning: "",
   };
 }
 
@@ -714,6 +716,7 @@ const MODULES_BATCH: BuildBatch = {
       model: "e2e-fixture-model",
       priceTier: "offPeak",
       latencyMs: 900,
+      reasoning: "",
     },
   ],
   concurrency: 3,

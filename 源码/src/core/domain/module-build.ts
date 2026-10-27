@@ -116,6 +116,20 @@ export interface ModuleBuild {
   latencyMs: number;
   /** 输出被长度上限截断 —— 片段可能不完整 */
   truncated: boolean;
+  /**
+   * 这一次调用模型想的东西（complete() 一次性返回，可能很长）。
+   *
+   * ── 为什么它必须跟着结果走出来 ──
+   *   和 spec / arch / ui 那三道是同一个道理（修法 2）：并行构建开着思考，
+   *   真实运行里单个模块的思考量到过 12706 tokens ——
+   *   而它原先丢在 ModelResult 里没人取，于是界面上并行构建那一步的
+   *   「思考」tab 永远写着"这一步没有返回思考内容"，模型其实想了很多。
+   *   一个不显示思考的构建步骤，配上"思考"这个页签，是不自洽的。
+   *
+   *   并行调用没有"谁先谁后"的时序可言，所以编排层是按 arch 顺序
+   *   逐条发出去的（每条前面标出模块 id）—— 那是**归属**，不是时序。
+   */
+  reasoning: string;
 }
 
 /**
@@ -140,6 +154,16 @@ export interface ModuleBuildFailure {
   /** 计价档位。调用没成功时为 null（而不是随手写一个档位糊弄账本） */
   priceTier: "peak" | "offPeak" | null;
   latencyMs: number;
+  /**
+   * 失败那次调用模型想的东西。
+   *
+   * 解析失败的那一类**照样要带**：截断的模块往往正是想得最多的那些
+   * （实测有一次思考 13997 把预算吃光、正文一个字没吐出来）。
+   * 把它们想的内容藏起来，用户就只看到"这个模块失败了"，
+   * 不知道为什么失败，也看不到它其实认真想过。
+   * 调用直接抛错时没有思考，给空串。
+   */
+  reasoning: string;
 }
 
 /** 一次并行构建的全貌 */
@@ -355,7 +379,25 @@ export function buildModulePrompt(
    ============================================================ */
 
 export type ModuleParseResult =
-  | { ok: true; build: Omit<ModuleBuild, "costCny" | "usage" | "model" | "priceTier" | "latencyMs" | "truncated"> }
+  | {
+      ok: true;
+      /*
+        parseModuleBuild 只解析模型给的 JSON 正文，所以它拿不到
+        「这一次调用的账与思考」—— costCny / usage / model / priceTier /
+        latencyMs / truncated / reasoning 都由调用方补上（见 build-modules.ts）。
+        reasoning 必须留在这个 Omit 里：它来自 ModelResult，不在正文里。
+      */
+      build: Omit<
+        ModuleBuild,
+        | "costCny"
+        | "usage"
+        | "model"
+        | "priceTier"
+        | "latencyMs"
+        | "truncated"
+        | "reasoning"
+      >;
+    }
   | { ok: false; reason: string };
 
 function asString(v: unknown): string {

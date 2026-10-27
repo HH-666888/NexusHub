@@ -163,8 +163,14 @@ export async function buildModules(
     try {
       result = await model.complete({
         tier: "execute", // 写码是执行级任务，不是决策级
-        // 写页面这类任务实测"不思考"又快又便宜（见 prompt.ts 里那段实测数据），
-        // 模块片段比整页更小，更没有理由把预算花在思考上
+        /*
+          思考档位用生成阶段那一个默认值（现在是 "high"）。
+          这里曾经写着"写页面这类任务实测不思考又快又便宜"——
+          那个结论已经被推翻了：并行构建是**创造性写码**（这块功能怎么切、
+          接口怎么留、和别的模块怎么接），不是样板代码；
+          而且真实运行里这一道的思考量到过 12706 tokens，
+          说明模型自己认为这里有值得想的东西。见 prompt.ts 的实测记录。
+        */
         effort: GENERATE_DEFAULT_EFFORT,
         messages: [
           { role: "system", content: MODULE_SYSTEM_PROMPT },
@@ -188,6 +194,8 @@ export async function buildModules(
           model: null,
           priceTier: null,
           latencyMs: Date.now() - callStartedAt,
+          // 调用都没成功，自然没有思考
+          reasoning: "",
         },
       };
     }
@@ -210,6 +218,8 @@ export async function buildModules(
           model: result.model,
           priceTier: result.priceTier,
           latencyMs: result.latencyMs,
+          // 想过了就是想过了 —— 解析失败不代表它没想，也不代表没必要让人看见
+          reasoning: result.reasoning,
         },
       };
     }
@@ -224,6 +234,9 @@ export async function buildModules(
         priceTier: result.priceTier,
         latencyMs: result.latencyMs,
         truncated: result.truncated,
+        // 带上思考：编排层要把它发成 reasoning 事件（见 route.ts），
+        // 否则界面上这一步的「思考」tab 永远是空的
+        reasoning: result.reasoning,
       },
     };
   }
@@ -273,6 +286,8 @@ export async function buildModules(
           model: null,
           priceTier: null,
           latencyMs: Date.now() - startedAt,
+          // 非预期错误发生在拿到模型返回之前（或过程中），没有思考可取
+          reasoning: "",
         };
         outcomes[index] = { ok: false, failure };
         if (!continueOnError && !abortError) {

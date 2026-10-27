@@ -1337,6 +1337,7 @@ function moduleBuildFixture(moduleId: string, costCny = 0.01): ModuleBuild {
     priceTier: "offPeak",
     latencyMs: 20,
     truncated: false,
+    reasoning: "",
   };
 }
 
@@ -1357,6 +1358,7 @@ const BUILD_BATCH: BuildBatch = {
       model: "fake-model",
       priceTier: "offPeak",
       latencyMs: 30,
+      reasoning: "",
     },
   ],
   concurrency: 2,
@@ -1450,6 +1452,7 @@ describe("并行构建 → 模块构建任务点（含失败那一栏）", () =>
           model: null,
           priceTier: null,
           latencyMs: 5,
+          reasoning: "",
         },
       ],
     };
@@ -1528,6 +1531,7 @@ describe("并行构建 → 模块构建任务点（含失败那一栏）", () =>
           model: null,
           priceTier: null,
           latencyMs: 3,
+          reasoning: "",
         },
         {
           moduleId: "board-ui",
@@ -1537,6 +1541,7 @@ describe("并行构建 → 模块构建任务点（含失败那一栏）", () =>
           model: "fake-model",
           priceTier: "offPeak",
           latencyMs: 9,
+          reasoning: "想了不少，但输出被截断了",
         },
       ],
     };

@@ -121,6 +121,8 @@ interface Plan {
   costCny?: number;
   usage?: Partial<ModelResult["usage"]>;
   truncated?: boolean;
+  /** 这一次调用模型想的东西（complete() 一次性返回） */
+  reasoning?: string;
 }
 
 interface Harness {
@@ -175,7 +177,7 @@ function makeHarness(opts: {
         if (plan.throws) throw new Error(plan.throws);
         return {
           text: plan.text ?? moduleJson(call.moduleId),
-          reasoning: "",
+          reasoning: plan.reasoning ?? "",
           usage: {
             inputTokens: 100,
             outputTokens: 200,
@@ -697,5 +699,74 @@ describe("装配提示词带上了各模块的代码片段", () => {
     expect(prompt).toContain('data-module="m-1"'); // 头部保住了
     expect(prompt).toContain("已截断"); // 丢了多少写出来了
     expect(prompt.length).toBeLessThan(huge.length + 4000);
+  });
+});
+
+/* ============================================================
+   ⑧ 模块的思考要跟着结果走出来
+   ------------------------------------------------------------
+   并行构建开着思考（GENERATE_DEFAULT_EFFORT = "high"），真实运行里
+   单个模块的思考量到过 12706 tokens。但思考原先丢在 ModelResult 里没人取，
+   于是界面上这一步的「思考」tab 永远写着"没有返回思考内容"——
+   模型其实想了很多，产品却在说没想。编排层（route.ts）拿到它之后
+   会发成 reasoning 事件；这里钉的是**它确实被带出来了**。
+   ============================================================ */
+
+describe("模块的思考", () => {
+  it("【关键】成功的模块要把这一次的思考原样带出来（一字不改）", async () => {
+    const thought = "先把状态存哪儿想清楚：用绝对时间戳，避免 setInterval 漂移";
+    const { batch } = await run({
+      ids: ["m-1"],
+      plan: () => ({ reasoning: thought }),
+    });
+    expect(batch.modules[0].reasoning).toBe(thought);
+  });
+
+  it("★ 反例：没有思考时是空串 —— 编排层据此不发 reasoning 事件", async () => {
+    const { batch } = await run({ ids: ["m-1"], plan: () => ({ reasoning: "" }) });
+    expect(batch.modules[0].reasoning).toBe("");
+    // 空思考必须能被"不发光"的判据识别出来（route.ts 用的是 trim 后长度）
+    expect(batch.modules[0].reasoning.trim().length).toBe(0);
+  });
+
+  it("★ 反例：只有空白字符也算没思考", async () => {
+    const { batch } = await run({ ids: ["m-1"], plan: () => ({ reasoning: "  \n " }) });
+    expect(batch.modules[0].reasoning.trim().length).toBe(0);
+  });
+
+  it("【关键】解析失败的模块**也要**带出思考 —— 想了就是想了", async () => {
+    /*
+      这一类失败恰恰最该让人看见：截断的模块往往正是想得最多的那些
+      （实测有一次思考 13997 把预算吃光、正文一个字都没吐出来）。
+      不带出来的话，用户只看到"这个模块失败了"，不知道它认真想过。
+    */
+    const { batch } = await run({
+      ids: ["m-1"],
+      plan: () => ({ text: "我不想输出 JSON", reasoning: "想了很多但没写成 JSON" }),
+    });
+    expect(batch.failed).toHaveLength(1);
+    expect(batch.failed[0].reasoning).toBe("想了很多但没写成 JSON");
+    // 该记的账也照样记着（与思考的可见性无关，但同一条分支，顺手钉住）
+    expect(batch.failed[0].usage.reasoningTokens).toBe(0);
+  });
+
+  it("★ 反例：调用直接抛错时没有思考（压根没有返回），给空串", async () => {
+    const { batch } = await run({
+      ids: ["m-1"],
+      plan: () => ({ throws: "网络断了" }),
+    });
+    expect(batch.failed).toHaveLength(1);
+    expect(batch.failed[0].reasoning).toBe("");
+  });
+
+  it("每个模块带的是**自己**的思考，不会串台", async () => {
+    const { batch } = await run({
+      ids: ["m-1", "m-2"],
+      plan: (call) => ({ reasoning: `我是 ${call.moduleId} 的思考` }),
+    });
+    expect(batch.modules.map((m) => m.reasoning)).toEqual([
+      "我是 m-1 的思考",
+      "我是 m-2 的思考",
+    ]);
   });
 });
