@@ -248,7 +248,30 @@ export const STAGES: readonly StageDef[] = [
     access: "write",
     scope: "internal",
     watches: [{ label: "功能条目" }, { label: "设计变量引用" }],
-    implementation: "planned",
+    /*
+      改为 wired：执行与三条本地检查都接上了。
+
+      执行：调用模型、解析、产出 ui-spec.json（core/generate/ui-stage.ts），
+            并且**兜底那一份也落盘**、以 fallback 标记自报家门。
+            编排层把它排在架构定型之后、并行构建之前（route.ts 第三道那一段）：
+            变量表必须在并行开工**之前**定下来，否则几个模块会各写各的配色。
+      检查：core/generate/ui-check.ts 逐条对应上面三条验收标准，
+            结果随 ui 事件发出，并决定清单里各页面任务点的状态。
+
+      ⚠️ 第三条要如实说明它的边界：
+        上面写的是「页面用到的数据都能在**接口契约**里找到」，而**这张代码库里
+        现在没有"接口契约"这个东西** —— domain/arch.ts 的 ArchModule 只有
+        id / name / responsibility / dependsOn / coversFeatures，没有任何一栏
+        描述"这个模块导出什么接口"。所以那一条检查实际做的是：把每个页面的
+        dataNeeds 逐项拿去和架构里模块的 **id / 名称**做字面比对，名字也写成
+        「页面声明的数据需求都能对应到架构里的某个模块（按模块 id/名称匹配，
+        未核实接口契约）」—— 界面上照实这么显示。
+        把"指得到某个模块"说成"接口都对上了"比不查更糟：
+        用户会据此省掉自己该做的接口核对。
+        真要做到那一步，得先给 ArchModule 加上接口契约字段、并让第二道真的
+        产出它 —— 那是另一件事，也该由那次改动自己声明。
+    */
+    implementation: "wired",
   },
   {
     id: "build",

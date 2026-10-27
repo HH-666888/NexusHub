@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { summarizeChecks, type CheckResult } from "@/core/domain/check";
 import { fallbackSpec, reviewSpec } from "@/core/domain/spec";
 import type { ArchSpec } from "@/core/domain/arch";
+import type { UiSpec } from "@/core/domain/ui-spec";
 import { inspectArch } from "@/core/generate/arch-check";
+import { inspectUi } from "@/core/generate/ui-check";
 import { inspectArtifact } from "@/core/generate/prompt";
 import { STAGES } from "@/core/pipeline/stages";
 import {
@@ -44,9 +46,9 @@ import { childrenOf, hasOrphans, type TaskPoint } from "@/core/planning/task-poi
 const STAGE_INPUT = STAGES.map((s) => ({ id: s.id, name: s.name }));
 
 /**
- * 未接入的三道工序。
+ * 还没接入的工序。
  * 从 STAGES 自己的 implementation 字段算出来（progress.ts 用的是同一个判断），
- * 而不是在这里写死 "arch"/"ui"/"assemble" —— 写死的话，
+ * 而不是在这里写死 "assemble" —— 写死的话，
  * 哪天某道工序接上了，这条测试会继续拿旧名单去断言，越测越错。
  */
 const PLANNED_IDS = STAGES.filter((s) => s.implementation === "planned").map((s) => s.id);
@@ -233,7 +235,7 @@ describe("骨架：一级 Agent 与六道工序一次全生成", () => {
    ============================================================ */
 
 describe("★ 诚实底线：没有真实事件的工序必须停在 pending", () => {
-  it("只有 spec 和 check 事件时，arch / ui / assemble 仍是 pending，且一个子节点都没有", () => {
+  it("只有 spec 和 check 事件时，还没接入的工序仍是 pending，且一个子节点都没有", () => {
     /*
       这是整个文件最要紧的一条断言。
 
@@ -243,7 +245,7 @@ describe("★ 诚实底线：没有真实事件的工序必须停在 pending", (
         · 状态还是 pending（没有进展，也没有完成）；
         · 名下一个执行点都没有（不是「有计划但还没跑」，是**压根没接入**）。
       第二件比第一件更狠：状态可以被一次误算改掉，而「一个点都没长出来」
-      说明这次运行里确实没有任何东西能支撑起这三道工序。
+      说明这次运行里确实没有任何东西能支撑起这些工序。
     */
     const log = planningFromRun(src([specEvent(10), checkEvent(20)]));
     const now = projectAt(log, maxSeq(log));
@@ -260,28 +262,29 @@ describe("★ 诚实底线：没有真实事件的工序必须停在 pending", (
       expect(statusEventsFor(log, id), `${id} 被写过状态事件`).toHaveLength(0);
     }
 
-    // 这三道未接入的工序，正是 STAGES 自己声明为 planned 的那三道
+    // 还没接入的工序，正是 STAGES 自己声明为 planned 的那些
     /*
-      ⚠️ 这一条是**必须改**的（本期改动的现有断言之二，另一条在
+      ⚠️ 这一条是**必须改**的（本期改动的现有断言之一，另一条在
          pipeline-stages.test.ts 的「运行完成时…」里）。
 
-      原来期望 ["arch", "ui", "assemble"]。这一期「架构定型」接上了
+      原来期望 ["ui", "assemble"]。这一期「界面设计」接上了
       （stages.ts 里 implementation 从 planned 改成 wired），
-      所以按 implementation 动态取出来的未接入名单里不再有 arch。
+      所以按 implementation 动态取出来的未接入名单里不再有 ui。
 
       这不是放松：**动态取名单**这个写法本身没变 ——
-      哪天 ui/assemble 接上了，这里会自动少一个，而不是继续拿旧名单断言。
-      而 arch 那条底线一点没丢：下面新增的那组用例单独守着
-      「已接入、但这一次没有留下任何痕迹的工序」同样必须停在 pending。
+      哪天 assemble 也接上了，这里会自动变成空数组，而不是继续拿旧名单断言。
+      而 ui 那条底线一点没丢：下面新增的那组用例单独守着
+      「已接入、但这一次没有留下任何痕迹的工序」同样必须停在 pending
+      （见文件末尾「★ 诚实底线也适用于已接入的 ui」那一条）。
     */
-    expect(PLANNED_IDS).toEqual(["ui", "assemble"]);
+    expect(PLANNED_IDS).toEqual(["assemble"]);
   });
 
-  it("runStatus 为 done 时，未接入的三道仍然 pending —— 有产出的才配 done", () => {
+  it("runStatus 为 done 时，还没接入的工序仍然 pending —— 有产出的才配 done", () => {
     /*
       单独一条用例，因为这是最容易写错的地方：
       「run 都成功了，那六道肯定都跑完了吧」—— 这个推断看起来无害，
-      实际上会让三道从没跑过的工序显示成已完成。
+      实际上会让从没跑过的工序显示成已完成。
       这条规则和 core/pipeline/progress.ts 里那行
       `if (s.implementation === "planned") return [s.id, "pending"];` 是同一条。
     */
@@ -302,12 +305,12 @@ describe("★ 诚实底线：没有真实事件的工序必须停在 pending", (
       build 也停在 pending —— 这条值得说一句：
       这次事件流里没有任何属于 build 的事件，所以它对这次运行是「没动过」。
       规则是**看证据**而不是看位置（不搞「第 4 道之前都算完成」那一套），
-      所以它和 arch/ui/assemble 一样停在 pending。
+      所以它和还没接入的 assemble 一样停在 pending。
     */
     expect(find(now, "build").status).toBe("pending");
   });
 
-  it("runStatus 为 failed 时，未接入的三道仍然是 pending（失败也不许波及无关工序）", () => {
+  it("runStatus 为 failed 时，还没接入的工序仍然是 pending（失败也不许波及无关工序）", () => {
     const log = planningFromRun(
       src([phaseEvent(10, "spec"), phaseEvent(20, "generating"), phaseEvent(30, "failed")], "failed"),
     );
@@ -518,7 +521,7 @@ describe("产物是结果，不是任务点", () => {
    ============================================================ */
 
 describe("串起现成函数：projectAt → toOutline", () => {
-  it("六道工序是 level 1，检查项是 level 2，没接的三道出现 placeholder 的待规划行", () => {
+  it("六道工序是 level 1，检查项是 level 2，还没接入的工序出现 placeholder 的待规划行", () => {
     /*
       这条测的不是某一个函数，而是**两层能不能对上**：
       画布和左侧清单是同一棵树的两种视图，清单里有的画布上一定找得到。
@@ -548,7 +551,7 @@ describe("串起现成函数：projectAt → toOutline", () => {
       expect(rows.filter((r) => r.placeholder && r.id.startsWith(id))).toEqual([]);
     }
 
-    // 没接入的三道：一行「待规划」的占位行，界面画成浅色虚线
+    // 还没接入的工序：一行「待规划」的占位行，界面画成浅色虚线
     for (const id of PLANNED_IDS) {
       const placeholders = rows.filter((r) => r.placeholder && r.id.startsWith(id));
       expect(placeholders, `${id} 没有待规划占位行`).toHaveLength(1);
@@ -557,7 +560,7 @@ describe("串起现成函数：projectAt → toOutline", () => {
     }
   });
 
-  it("一级行的状态就是工序自己的状态 —— 没接入的三道在清单上如实显示 pending", () => {
+  it("一级行的状态就是工序自己的状态 —— 还没接入的工序在清单上如实显示 pending", () => {
     const log = planningFromRun(src([specEvent(10), checkEvent(20)], "done"));
     const rows = toOutline(projectAt(log, maxSeq(log)));
 
@@ -584,7 +587,7 @@ describe("工序状态：按 phase 归属，失败要浮上来", () => {
     expect(find(now, "spec").status).toBe("running");
     expect(find(now, "build").status).toBe("running");
     expect(find(now, "verify").status).toBe("running");
-    // 没出现过 phase 的那三道，仍然是 pending
+    // 没出现过 phase 的工序，仍然是 pending
     for (const id of PLANNED_IDS) expect(find(now, id).status).toBe("pending");
   });
 
@@ -972,5 +975,327 @@ describe("★ 串一遍 projectAt → toOutline：清单里 arch 那道自己长
     expect(childrenOf(now, "arch")).toHaveLength(0);
     // 而且日志里根本没有针对它的状态事件 —— 我们从未碰过它
     expect(statusEventsFor(log, "arch")).toHaveLength(0);
+  });
+});
+
+/* ============================================================
+   ⑩ 界面设计 → 页面子树（「清单**继续**自己长」就在这里）
+   ============================================================
+   这一组与上面那组（架构 → 模块子树）是同一件事的第二次发生：
+   数据侧多投影了一种事件，清单上就多长出一层子树 ——
+   一行界面代码都不用改。
+
+   它成立的全部原因还是那两条：
+     一、from-run.ts 把 ui 事件投影成 `ui:<页面id>` 的任务点
+         （parentId="ui"、depth=2 —— 正是 toOutline 认的二级行）；
+     二、outline.ts 本来就有的规则：一级行**有二级子节点时不再补占位行**。
+
+   ── 取材 ──
+     界面设计是真的能被检查器接受的那种（页面覆盖规格里每一条功能、
+     组件只引用定义过的变量、dataNeeds 写的是架构里真实的模块 id），
+     而 check 用**真的 inspectUi 现算**，不手抄一份结果 ——
+     手抄的 check 迟早和检查器漂开，那时候这些断言验的就是另一件事了。
+   ============================================================ */
+
+/** 一份能被三条检查全过的界面设计。条目 id 从 SPEC 里取，模块从 ARCH 里取 */
+const UI_SPEC: UiSpec = {
+  tokens: [
+    { name: "--color-surface", value: "#0f172a" },
+    { name: "--space-1", value: "8px" },
+  ],
+  pages: [
+    {
+      id: "board",
+      name: "看板页",
+      route: "/",
+      coversFeatures: SPEC.acceptance.slice(0, 2).map((a) => a.id),
+      // 按模块 **id** 匹配
+      dataNeeds: [ARCH.modules[0].id],
+    },
+    {
+      id: "archive",
+      name: "归档页",
+      route: "/archive",
+      coversFeatures: SPEC.acceptance.slice(2).map((a) => a.id),
+      // 按模块 **名称** 匹配 —— 两种写法都要算对上
+      dataNeeds: [ARCH.modules[1].name],
+    },
+  ],
+  components: [
+    {
+      id: "task-card",
+      name: "任务卡",
+      usedOn: ["board"],
+      usesTokens: ["--color-surface"],
+    },
+  ],
+};
+
+/** 现算的三条检查（全过） */
+const UI_CHECK = inspectUi(UI_SPEC, SPEC, ARCH);
+
+/** ui 事件：界面设计产物落地。结构照 ui-stage.ts 真正发出的那条写 */
+function uiEvent(seq: number, check: unknown = UI_CHECK): RawEvent {
+  return {
+    seq,
+    kind: "ui",
+    payload: { kind: "ui", ui: UI_SPEC, check, fallback: false },
+  };
+}
+
+/** 此刻 ui 名下的页面点 */
+function uiPointsAt(log: readonly PlanningEvent[], seq: number): TaskPoint[] {
+  return projectAt(log, seq).filter((p) => p.id.startsWith("ui:"));
+}
+
+describe("界面设计 → 页面任务点", () => {
+  it("夹具自身成立：三条本地检查全过（由真的 inspectUi 现算）", () => {
+    // 夹具要是过不了检查，下面"状态是 done"那条验到的就是另一档
+    expect(UI_CHECK.total).toBe(3);
+    expect(UI_CHECK.passed).toBe(3);
+  });
+
+  it("每个页面长出一个 depth 2 的点，挂在 ui 下面，标题就是页面名", () => {
+    const log = planningFromRun(src([uiEvent(30)]));
+    const kids = uiPointsAt(log, 30);
+
+    expect(kids).toHaveLength(UI_SPEC.pages.length);
+    expect(ids(kids)).toEqual(UI_SPEC.pages.map((p) => `ui:${p.id}`));
+
+    for (const kid of kids) {
+      expect(kid.parentId).toBe("ui");
+      expect(kid.depth).toBe(2);
+      expect(kid.kind).toBe("exec");
+      expect(kid.bornAtSeq).toBe(30);
+    }
+    // 标题是人可读的页面名，而不是 id
+    expect(kids.map((k) => k.title)).toEqual(UI_SPEC.pages.map((p) => p.name));
+    expect(hasOrphans(projectAt(log, 30))).toBe(false);
+  });
+
+  it("到点生成：第 29 刻一个页面点都没有，第 30 刻全在 —— 出生时刻就是那条 ui 事件的 seq", () => {
+    /*
+      不另算一个序号（比如 maxSeq+1）：那种算法在乱序追加时会给出
+      「早于自己声明的出生时刻」的点，而 projectAt 的到点语义按 bornAtSeq 判。
+    */
+    const log = planningFromRun(src([uiEvent(30)]));
+
+    expect(ids(uiPointsAt(log, 29))).toEqual([]);
+    expect(uiPointsAt(log, 30).map((p) => p.bornAtSeq)).toEqual(
+      new Array(UI_SPEC.pages.length).fill(30),
+    );
+
+    const other = planningFromRun(src([uiEvent(77)]));
+    for (const p of uiPointsAt(other, 100)) expect(p.bornAtSeq).toBe(77);
+  });
+
+  it("三条检查全过 → done；有不过的 → failed（★ 页面没有「执行」过，绝不给 running）", () => {
+    /*
+      ── 状态口径与理由（这一期自定的一处口径，写在这里免得下一个人猜）──
+        页面是**将来**第四道要去做的事，此刻没有任何人在做它，
+        所以 running 是错的（用户会坐着等一件没人开始的事）。
+        而三条本地检查是**真的判过**的：
+          · 全过 → done：这个页面划分被界面设计接受了；
+          · 有不过的 → failed：保守方向不能反 —— 显示成没过，用户最多多看一眼。
+        这和上面 arch 模块点的口径是同一档，理由也同一档：两者都是
+        "第四道要干的活"，都在产出的那一刻就已经被判过了。
+    */
+    const passing = planningFromRun(src([uiEvent(30)]));
+    for (const kid of uiPointsAt(passing, 30)) {
+      expect(kid.status, `${kid.id} 三条检查全过却没显示成 done`).toBe("done");
+    }
+
+    // 造一份**真的过不了**检查的界面设计（页面漏掉了两条功能），检查结果用真检查器现算
+    const broken: UiSpec = {
+      ...UI_SPEC,
+      pages: [
+        {
+          ...UI_SPEC.pages[0],
+          coversFeatures: [SPEC.acceptance[0].id],
+        },
+      ],
+    };
+    const brokenCheck = inspectUi(broken, SPEC, ARCH);
+    expect(brokenCheck.passed).toBeLessThan(brokenCheck.total); // 前提：这份夹具确实没过
+
+    const log = planningFromRun(
+      src([{ seq: 30, kind: "ui", payload: { kind: "ui", ui: broken, check: brokenCheck } }]),
+    );
+    const kids = uiPointsAt(log, 30);
+    expect(kids).toHaveLength(broken.pages.length);
+    for (const kid of kids) {
+      expect(kid.status, `${kid.id} 检查没过却显示成 ${kid.status}`).toBe("failed");
+      // 无论哪一档，都不许是 running —— 这一条是本节的口径本身
+      expect(kid.status).not.toBe("running");
+    }
+  });
+
+  it("读不到检查结果时不硬说它过了：按 failed（保守方向不能反）", () => {
+    /*
+      事件是从数据库那行 JSON 还原出来的，payload 残缺是可能的。
+      读不出"三条都过了"就说"过了"，等于替一个来路不明的产物背书。
+
+      ⚠️ 这里逐个手写 payload，**不用上面那个 uiEvent 助手** ——
+         它给 check 了一个默认值（全过的那份），走它的话
+         "完全没有 check 字段"这种情况根本造不出来，这条测试就永远绿着。
+    */
+    const payloads: Array<{ label: string; payload: unknown }> = [
+      { label: "完全没有 check 字段", payload: { kind: "ui", ui: UI_SPEC } },
+      { label: "check 是 null", payload: { kind: "ui", ui: UI_SPEC, check: null } },
+      { label: "check 是空对象", payload: { kind: "ui", ui: UI_SPEC, check: {} } },
+      { label: "results 是 null", payload: { kind: "ui", ui: UI_SPEC, check: { results: null } } },
+      { label: "results 是空数组", payload: { kind: "ui", ui: UI_SPEC, check: { results: [] } } },
+      { label: "check 是一个数字", payload: { kind: "ui", ui: UI_SPEC, check: 42 } },
+    ];
+
+    for (const { label, payload } of payloads) {
+      const log = planningFromRun(src([{ seq: 30, kind: "ui", payload }]));
+      const kids = uiPointsAt(log, 30);
+      expect(kids, `${label} 时页面点没长出来`).toHaveLength(UI_SPEC.pages.length);
+      for (const kid of kids) {
+        expect(kid.status, `${label} 时被当成通过了`).toBe("failed");
+      }
+    }
+  });
+
+  it("ui 事件让那一道工序真的动起来：运行结束时它是 done，而不是停在 pending", () => {
+    const running = planningFromRun(src([uiEvent(30)]));
+    expect(find(projectAt(running, 30), "ui").status).toBe("running");
+
+    const doneLog = planningFromRun(src([uiEvent(30), phaseEvent(50, "done")]));
+    const now = projectAt(doneLog, maxSeq(doneLog));
+    expect(find(now, "ui").status).toBe("done");
+    expect(childrenOf(now, "ui")).toHaveLength(UI_SPEC.pages.length);
+  });
+
+  it("phase:ui 也归 ui 那道工序（不是只在产出事件时才认它）", () => {
+    const log = planningFromRun(src([phaseEvent(12, "ui")]));
+    const now = projectAt(log, 12);
+
+    expect(find(now, "ui").status).toBe("running");
+    // 只报阶段、还没有产出：此刻一个页面点都不该有
+    expect(uiPointsAt(log, 12)).toEqual([]);
+  });
+
+  it("同一条 ui 事件到来两次：页面点只出生一次（appendBorn 幂等）", () => {
+    const log = planningFromRun(src([uiEvent(30), uiEvent(45)]));
+    const kids = uiPointsAt(log, 100);
+
+    expect(kids).toHaveLength(UI_SPEC.pages.length);
+    expect(kids.map((k) => k.bornAtSeq)).toEqual(new Array(UI_SPEC.pages.length).fill(30));
+  });
+
+  it("payload 残缺时不硬造任务点：没有 pages 就一个点都不生成", () => {
+    const cases: unknown[] = [
+      null,
+      {},
+      { ui: null },
+      { ui: { pages: null } },
+      { ui: { pages: "两个页面" } },
+      42,
+    ];
+
+    for (const payload of cases) {
+      const log = planningFromRun(src([{ seq: 30, kind: "ui", payload }]));
+      expect(uiPointsAt(log, 100), `payload=${JSON.stringify(payload)} 时凭空造了点`).toEqual(
+        [],
+      );
+    }
+  });
+
+  it("没有 id 的页面不生成点 —— 宁可少一行，也不要拿下标凑一个会漂的 id", () => {
+    const log = planningFromRun(
+      src([
+        {
+          seq: 30,
+          kind: "ui",
+          payload: {
+            kind: "ui",
+            ui: { ...UI_SPEC, pages: [{ name: "没写 id 的页面" }, UI_SPEC.pages[0]] },
+            check: UI_CHECK,
+          },
+        },
+      ]),
+    );
+    const kids = uiPointsAt(log, 30);
+
+    expect(ids(kids)).toEqual([`ui:${UI_SPEC.pages[0].id}`]);
+  });
+});
+
+describe("★ 串一遍 projectAt → toOutline：清单里 ui 那道也自己长出了子树", () => {
+  it("有 ui 事件时：不再有「待规划」占位行，而是逐个列出页面", () => {
+    /*
+      ★★★ 这就是「清单继续自己长出子树」的硬证据 ★★★
+
+      三件事一起断言，缺一条这个证据就不成立：
+        ① 清单里 ui 那一道**一个占位行都没有**了；
+        ② 它下面**真的列出了每个页面**（id / 标题 / 层级都对得上）；
+        ③ 二级行的状态是 done（三条检查全过）—— 不是随手的绿点。
+
+      注意①必须和下面那条"没有 ui 事件时占位行还在"的对照一起看：
+      否则"没有占位行"也可能是因为规则被改掉了，而不是因为长出了子树。
+    */
+    const log = planningFromRun(src([specEvent(10), archEvent(20), uiEvent(30)]));
+    const rows = toOutline(projectAt(log, maxSeq(log)));
+
+    // ① 占位行没了
+    const uiPlaceholders = rows.filter((r) => r.placeholder && r.id.startsWith("ui"));
+    expect(uiPlaceholders, "ui 那道还有待规划占位行 —— 子树没长出来").toEqual([]);
+
+    // ② 列出来的就是那几个页面
+    const uiRows = rows.filter((r) => r.id.startsWith("ui:"));
+    expect(uiRows.map((r) => r.id)).toEqual(UI_SPEC.pages.map((p) => `ui:${p.id}`));
+    expect(uiRows.map((r) => r.title)).toEqual(UI_SPEC.pages.map((p) => p.name));
+    for (const row of uiRows) {
+      expect(row.level).toBe(2);
+      expect(row.placeholder).toBe(false);
+      expect(row.status).toBe("done");
+      // 二级实体行是可点的：canvasNodeId 就是它自己的 id
+      expect(row.canvasNodeId).toBe(row.id);
+    }
+
+    // ui 那一级行本身照旧在场，顺序不变（六道工序的位置不该被新子树动到）
+    const level1 = rows.filter((r) => r.level === 1);
+    expect(level1.map((r) => r.id)).toEqual(STAGE_INPUT.map((s) => s.id));
+
+    // 两棵子树同时在：arch 的模块行也没被挤掉
+    expect(rows.filter((r) => r.id.startsWith("arch:")).length).toBe(ARCH.modules.length);
+  });
+
+  it("对照：没有 ui 事件的运行，ui 那道**仍然是**「待规划」占位行", () => {
+    /*
+      这一条是上一条的对照组，防的是"断言永远为真"：
+      如果 outline.ts 哪天被改成"一级行一律不补占位行"，
+      上面那条会照样绿，而它想守的"子树长出来了"其实什么都没验到。
+    */
+    const log = planningFromRun(src([specEvent(10), checkEvent(20)]));
+    const rows = toOutline(projectAt(log, maxSeq(log)));
+
+    const uiPlaceholders = rows.filter((r) => r.placeholder && r.id.startsWith("ui"));
+    expect(uiPlaceholders).toHaveLength(1);
+    expect(uiPlaceholders[0].title).toBe("待规划");
+    expect(uiPlaceholders[0].level).toBe(2);
+    // 而且一个页面点都没有 —— 没有事件就是没有，不是"有计划但没跑"
+    expect(rows.filter((r) => r.id.startsWith("ui:"))).toEqual([]);
+  });
+
+  it("★ 诚实底线也适用于已接入的 ui：这一次没跑过就仍然是 pending、名下无子点", () => {
+    /*
+      ui 这一期从 planned 改成 wired 了（stages.ts）。
+      「已接入」描述的是**这道工序有没有实现**，不是"这一次跑没跑过"。
+      所以拿一条只有 spec + arch + check 事件的运行去问它，答案必须是 pending ——
+      这正是 progress.ts 里那条规则在投影层的同一条（见文件头那段）。
+
+      这一条单独写，是因为它是"接线之后最容易顺手破坏"的一处：
+      「都接上了，那把六道工序都标成跑过了吧」这种推断看起来无害。
+    */
+    const log = planningFromRun(src([specEvent(10), archEvent(20), checkEvent(25)], "done"));
+    const now = projectAt(log, maxSeq(log));
+
+    expect(find(now, "ui").status).toBe("pending");
+    expect(childrenOf(now, "ui")).toHaveLength(0);
+    // 而且日志里根本没有针对它的状态事件 —— 我们从未碰过它
+    expect(statusEventsFor(log, "ui")).toHaveLength(0);
   });
 });

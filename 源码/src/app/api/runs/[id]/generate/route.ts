@@ -29,12 +29,14 @@ import { recordRunEvents } from "@/core/generate/recorder";
 import { generateApp, type GenerateEvent } from "@/core/generate/service";
 import { runSpecStage, SPEC_ARTIFACT_NAME } from "@/core/generate/spec-stage";
 import { runArchStage } from "@/core/generate/arch-stage";
+import { runUiStage } from "@/core/generate/ui-stage";
 import {
   ANSWERS_ARTIFACT_NAME,
   decideGate,
   type SpecAnswers,
 } from "@/core/generate/gate";
 import type { AppSpec } from "@/core/domain/spec";
+import type { ArchSpec } from "@/core/domain/arch";
 import { resolveGatePolicy } from "@/core/pipeline/gate-policy";
 import {
   CALLBACK_ARTIFACT_NAME,
@@ -351,6 +353,7 @@ export async function GET(
             那时候没有规格可依据，架构**不许硬造**一份出来 ——
             跳过它，让第四道的预算闸门去说那句"已花费达到上限"。
           */
+          let archFromStage: ArchSpec | null = null;
           if (specFromStage) {
             for await (const e of runArchStage(ports, {
               runId,
@@ -360,24 +363,70 @@ export async function GET(
               costLimitCny: env.run.costLimitCny,
               spentCny: spentBeforeArch,
             })) {
+              /*
+                ⚠️ 这一段顺手把架构**接下来**（archFromStage）。
+                第三道「界面设计」的第三条验收标准（页面用到的数据
+                都能对应到架构里的模块）没有架构根本判不了 ——
+                理由同上面"规格为什么不回头读盘"：多三个不可达的失败分支
+                只会让人以为它们会真的发生。
+              */
+              if (e.kind === "arch") archFromStage = e.arch;
               // 和上面同一个做法：ArchStageEvent 与 GenerateEvent 结构一致，直接透传
+              yield e as GenerateEvent;
+            }
+          }
+
+          // ---------- 第三道：界面设计 ----------
+          /*
+            ── 为什么它排在架构之后、并行构建之前 ──
+              `stages.ts:238-239` 说这道工序的理由是「设计变量是并行开发时
+              视觉一致性的唯一保障。没有它，N 个执行 Agent 会做出 N 种风格」。
+              也就是说它**必须**排在第四道之前：等并行构建开跑之后再定变量表，
+              那几个模块早就各自写完自己的配色了。
+              而它又要排在架构之后：页面划分与 dataNeeds 都建立在模块划分上
+              （第三条验收标准判的就是"页面要的数据指不指得到某个模块"）。
+
+            ── 为什么先查一次钱 ──
+              架构那一道花完之后，钱可能已经到顶了。这里把最新的累计值查出来
+              交给界面闸门 —— 同一条理由：宁可拒绝，也不要花完才说超了。
+              同一次查询的结果**不复用**给第四道：界面自己也会花钱。
+
+            ── archFromStage 为空时为什么不硬造一份 ──
+              与上面 specFromStage 为空时同一条规矩。只有两种可能：
+              规格那一道被闸门挡了，或者架构那一道被闸门挡了 ——
+              两种情况下界面设计都没有可依据的上游产物。
+              这时候跳过它，让第四道的预算闸门去说那句话。
+          */
+          const spentBeforeUi = await sqliteCostStore.totalByRun(runId);
+
+          if (specFromStage && archFromStage) {
+            for await (const e of runUiStage(ports, {
+              runId,
+              prompt: runPrompt,
+              // 两份上游产物一起带上：第一条检查要 spec，第三条检查要 arch
+              spec: specFromStage,
+              arch: archFromStage,
+              costLimitCny: env.run.costLimitCny,
+              spentCny: spentBeforeUi,
+            })) {
+              // UiStageEvent 的几种事件与 GenerateEvent 结构一致，直接透传
               yield e as GenerateEvent;
             }
           }
 
           // ---------- 第四道：并行构建（当前是直通模式） ----------
           /*
-            ⚠️ 这一行必须在架构定型**之后**重新查一次。
-            复用规格那一步的旧值的话，第四道拿到的 spentCny 会少掉架构那一笔，
+            ⚠️ 这一行必须在架构定型与界面设计**之后**重新查一次。
+            复用上一步的旧值的话，第四道拿到的 spentCny 会少掉后面那两笔，
             于是"总花费已经到了上限、第四道却还在花钱"——
             这种账要等到对账时才看得出来（runs.totalCostCny 对不上流水总额）。
           */
-          const spentAfterArch = await sqliteCostStore.totalByRun(runId);
+          const spentAfterUi = await sqliteCostStore.totalByRun(runId);
           yield* generateApp(ports, {
             runId,
             prompt: runPrompt,
             costLimitCny: env.run.costLimitCny,
-            spentCny: spentAfterArch,
+            spentCny: spentAfterUi,
             // 07 回流：上一轮没过的地方，这一段会作为一条 system 消息发给模型
             callbackContext,
           });

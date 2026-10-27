@@ -22,8 +22,10 @@ import Database from "better-sqlite3";
 import type { GeneratePhase } from "@/core/generate/service";
 import { PLANNING_ROOT_ID } from "@/core/planning/from-run";
 import { inspectArch } from "@/core/generate/arch-check";
+import { inspectUi } from "@/core/generate/ui-check";
 import { reviewSpec, type AppSpec } from "@/core/domain/spec";
 import type { ArchSpec } from "@/core/domain/arch";
+import type { UiSpec } from "@/core/domain/ui-spec";
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
 import { fitFloor } from "@/core/canvas/viewport";
 import { expect_, finish, heading, info, ok, signUp } from "./e2e-kit";
@@ -484,6 +486,82 @@ const ARCH_ARTIFACT: ArchSpec = {
 /** 三条本地检查的真实结果 —— 用真的检查器算，不手抄 */
 const ARCH_CHECK = inspectArch(ARCH_ARTIFACT, ARCH_SPEC);
 
+/* ============================================================
+   第三道工序「界面设计」（第二十四步）用的夹具
+   ------------------------------------------------------------
+   这一步验的是**清单继续自己长出子树**：ui 事件到来之后，
+   「界面设计」那一道下面应该逐个列出它的页面，而不再是「待规划」占位行。
+
+   ⚠️ 造出来的必须是"真的可能出现"的形状：
+     · 页面覆盖 ARCH_SPEC 里**全部**验收标准（第一条检查要它）；
+     · 组件只引用 UI_TOKENS 里定义过的变量（第二条检查要它）；
+     · dataNeeds 写的是 ARCH_ARTIFACT 里**真实存在**的模块 id 或名称（第三条检查要它）；
+     · check **由真的 inspectUi 现算**，不是手抄一份结果 ——
+       手抄的话，检查器改了而这里没改，夹具就会变成一份
+       "现实里不可能出现"的产物，底下那些断言也跟着失去意义。
+
+   ── 为什么必须让检查全过 ──
+     页面点的状态就是由它决定的（全过 → done，有不过的 → failed）。
+     这里要验的是"清单长出了子树"，所以夹具得是那个正常形状；
+     用一条检查不过的夹具，验到的会是另一档状态。
+   ============================================================ */
+
+/** 设计变量：组件引用的名字必须都在这里 */
+const UI_TOKENS: UiSpec["tokens"] = [
+  { name: "--color-surface", value: "#0f172a" },
+  { name: "--color-text", value: "#e2e8f0" },
+  { name: "--space-1", value: "8px" },
+];
+
+/** 三个页面，合起来覆盖 ARCH_SPEC 的 ac-1…ac-4 */
+const UI_PAGES: UiSpec["pages"] = [
+  {
+    id: "board",
+    name: "看板页",
+    route: "/",
+    coversFeatures: ["ac-1", "ac-2"],
+    dataNeeds: ["task-store"], // 按模块 **id** 匹配
+  },
+  {
+    id: "archive",
+    name: "归档页",
+    route: "/archive",
+    coversFeatures: ["ac-4"],
+    dataNeeds: ["任务存储"], // 按模块 **名称** 匹配 —— 两种写法都要算对上
+  },
+  {
+    id: "settings",
+    name: "设置页",
+    route: "/settings",
+    coversFeatures: ["ac-3"],
+    dataNeeds: ["local-persistence"],
+  },
+];
+
+const UI_COMPONENTS: UiSpec["components"] = [
+  {
+    id: "task-card",
+    name: "任务卡",
+    usedOn: ["board", "archive"],
+    usesTokens: ["--color-surface", "--space-1"],
+  },
+  {
+    id: "page-header",
+    name: "页头",
+    usedOn: ["board", "archive", "settings"],
+    usesTokens: ["--color-text"],
+  },
+];
+
+const UI_ARTIFACT: UiSpec = {
+  tokens: UI_TOKENS,
+  pages: UI_PAGES,
+  components: UI_COMPONENTS,
+};
+
+/** 三条本地检查的真实结果 —— 用真的检查器算，不手抄 */
+const UI_CHECK = inspectUi(UI_ARTIFACT, ARCH_SPEC, ARCH_ARTIFACT);
+
 /**
  * 一条「刚跑完架构定型」的运行：规格 + 架构两条产物事件都在。
  *
@@ -513,6 +591,54 @@ function seedArchRun(username: string): string {
       ],
       ["phase", stepPhase("arch", "正在把规格切分成模块")],
       ["arch", { kind: "arch", arch: ARCH_ARTIFACT, check: ARCH_CHECK, fallback: false }],
+    ];
+
+    const ins = db.prepare(
+      `INSERT INTO run_events (run_id, seq, at, kind, payload) VALUES (?, ?, ?, ?, ?)`,
+    );
+    rows.forEach(([kind, payload], seq) => {
+      ins.run(runId, seq, now + seq, kind, JSON.stringify(payload));
+    });
+
+    return runId;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * 一条「刚跑完界面设计」的运行：规格 + 架构 + 界面三条产物事件都在。
+ *
+ * stage 取 'ui'、status 取 'done' —— 那正是这一阶段跑完时库里的真实取值
+ * （route.ts 里第三道跑完之后，run 的阶段就停在 ui 上）。
+ */
+function seedUiRun(username: string): string {
+  const db = new Database("./data/nexus.db");
+  try {
+    const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
+      | { id: number }
+      | undefined;
+    if (!user) throw new Error(`找不到测试账号 ${username}`);
+
+    const runId = `e2e-ui-${Date.now().toString(36)}`;
+    const now = Date.now();
+
+    db.prepare(
+      `INSERT INTO runs (id, user_id, prompt, stage, status, workflow_version, created_at, updated_at)
+       VALUES (?, ?, ?, 'ui', 'done', 'e2e-fixture', ?, ?)`,
+    ).run(runId, user.id, "端到端夹具：刚跑完界面设计的运行", now, now);
+
+    const rows: Array<[string, unknown]> = [
+      ["phase", stepPhase("spec", "正在把你的需求整理成规格")],
+      [
+        "spec",
+        { kind: "spec", spec: ARCH_SPEC, gate: reviewSpec(ARCH_SPEC), fallback: false },
+      ],
+      ["phase", stepPhase("arch", "正在把规格切分成模块")],
+      ["arch", { kind: "arch", arch: ARCH_ARTIFACT, check: ARCH_CHECK, fallback: false }],
+      // 这一条的 label 照 ui-stage.ts 真正 yield 的那句写
+      ["phase", stepPhase("ui", "正在把架构变成页面与设计变量")],
+      ["ui", { kind: "ui", ui: UI_ARTIFACT, check: UI_CHECK, fallback: false }],
     ];
 
     const ins = db.prepare(
@@ -1175,9 +1301,11 @@ async function main() {
     */
     /*
       点一道，它就该有选中态。
-      这里点的是「界面设计」—— 它是**未接入**的一道，
-      正好顺带验一件事：点灰的工序时它要**亮起来**，
-      因为点它恰恰是想看清它的详情。最需要看清的时候它最暗，是反的。
+      这里点的是「界面设计」。
+      ⚠️ 措辞更正（第三道工序接上之后）：这道工序这一期从「未接入」改成了「已接入」，
+         所以它现在在画布上是正常亮度，不再有"点灰的工序时它要亮起来"那一层含义。
+         断言本身一个字没改（选中态 = 有外发光 + 亮度不被压暗），
+         压暗那一档现在由仍未接入的 assemble 承担（见下一条）。
     */
     await clickAndRead("ui");
 
@@ -1199,8 +1327,8 @@ async function main() {
     );
     expect_(
       sel.opacity > 0.9,
-      `未接入的工序被点中时亮起来（opacity=${sel.opacity}）`,
-      `点中之后还是灰的（opacity=${sel.opacity}）—— 最需要看清的时候它最暗`,
+      `点中的那一道没有被压暗（opacity=${sel.opacity}）`,
+      `点中之后它是暗的（opacity=${sel.opacity}）—— 最需要看清的时候它最暗，是反的`,
     );
 
     /* ---------- 10. 详情面板 ---------- */
@@ -4985,6 +5113,208 @@ async function main() {
         `这种运行里 ${ARCH_MODULES.length} 个模块各一行、id 形如 arch:*、` +
         "三条本地检查全过所以是 done（不是 running）；" +
         "而没有 arch 事件的运行那一道仍是「待规划」占位行（对照组验过，不是恒真的）—— 全部通过",
+    );
+
+    /* ---------- 24. ★ 第三道工序接上之后：清单**继续**长出页面子树 ---------- */
+    /*
+      ★ 这一期交付的第三道工序「界面设计」，在界面上唯一的可见变化就在这里 ★
+
+      ── 要验的是什么 ──
+        一条运行跑过界面设计之后，左侧清单里「界面设计」那一道下面
+        **逐个列出它的页面**，而不再是那条「待规划」占位行。
+
+      ── 为什么它值得一步常驻回归 ──
+        这是"数据变多 → 界面自动长出子树"这条设计的**第二次发生**：
+        上一次是 arch → 模块，这一次是 ui → 页面。
+        它坏起来和上次一样安静：
+          · from-run.ts 不再投影 ui 事件 → 清单上那道工序写着 done、
+            下面却是一行「待规划」——字面上不矛盾，只是少了一整棵子树；
+          · 任务点的 id 规则漂了（比如写成下标）→ 行还在，
+            但点下去聚焦到一个画布上不存在的节点，"点了没反应"；
+          · 状态口径漂了（给页面点写 running）→ 用户坐着等一件没人开始的事。
+        三种都不会抛异常。所以要用断言把"结构 + id + 状态"三件一起钉住。
+
+      ── 为什么还要一条**对照**运行 ──
+        只验"有子树"的话，"占位行规则被整个删掉"也能让它变绿 ——
+        那就成了一条永远为真的断言。所以下面同时跑一条**没有 ui 事件**的运行：
+        它的 ui 那道**必须还是**「待规划」。
+        这一对放在一起，才说明"子树是因为那条 ui 事件长出来的"。
+        对照组直接复用第二十三步那条只有 phase:spec 的运行（没有任何 ui 事件）。
+
+      ── 夹具与现实的关系 ──
+        seedUiRun 插的是 runs 一行 + 六条事件，事件形状逐字段照
+        spec-stage.ts / arch-stage.ts / ui-stage.ts 真正发出的那几条写
+        （ui 的 check 更是由真的 inspectUi 现算的）。
+        真跑一次要调模型、花钱、几十秒 —— e2e 不该为了验一棵树去生成应用。
+    */
+    heading("第二十四步 · 界面设计：清单里 ui 那道自己长出页面子树");
+
+    /*
+      先在地面上把夹具自身验一遍：三条检查必须真的全过。
+      少了这一条，夹具哪天悄悄变成"检查不过"的形状，
+      下面"状态是 done"那条会红，而红的原因看起来像界面错了 ——
+      实际上是夹具变了。夹具的形状要由夹具自己负责。
+    */
+    expect_(
+      UI_CHECK.total === 3 && UI_CHECK.passed === 3,
+      `夹具自身成立：三条本地检查 ${UI_CHECK.passed}/${UI_CHECK.total} 通过（由真的 inspectUi 现算）`,
+      `夹具不成立：三条检查只有 ${UI_CHECK.passed}/${UI_CHECK.total} 通过 —— 下面的断言会验到另一档状态`,
+    );
+
+    const uiRun = seedUiRun(username);
+    info(
+      `造了一条运行 ${uiRun.slice(0, 8)}（stage=ui、status=done，带 ` +
+        `${UI_PAGES.length} 个页面：${UI_PAGES.map((p) => p.id).join(" ")}）`,
+    );
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${uiRun}` });
+    await sleep(4200);
+
+    /** 只读某一组工序（ui / arch）的二级行、每行的 id / 状态 / 标题 / 色点，以及它自己的状态 */
+    const readGroupSub = async (stageId: string): Promise<ArchSubSnap> => {
+      const expr = `(() => {
+        const q = (s) => [...document.querySelectorAll(s)];
+        const group = document.querySelector('[data-outline-group="${stageId}"]');
+        const kids = group
+          ? [...group.querySelectorAll('[data-outline-row][data-outline-level="2"]')]
+          : [];
+        const countEl = group ? group.querySelector('[data-outline-count]') : null;
+        const summary = group ? group.querySelector('summary') : null;
+        const level1 = q('[data-outline-row][data-outline-level="1"]').find(
+          (el) => el.getAttribute('data-outline-focus') === '${stageId}',
+        );
+        return JSON.stringify({
+          exists: !!group,
+          open: group ? group.open === true : false,
+          summaryText: summary ? summary.textContent.trim() : '',
+          countText: countEl ? countEl.textContent.trim() : null,
+          level1Status: level1 ? level1.getAttribute('data-outline-status') : null,
+          kids: kids.map((el) => {
+            const dot = el.querySelector('[data-outline-dot]');
+            return {
+              focus: el.getAttribute('data-outline-focus'),
+              status: el.getAttribute('data-outline-status'),
+              placeholder: el.hasAttribute('data-outline-placeholder'),
+              text: el.textContent.trim(),
+              dot: dot ? getComputedStyle(dot).backgroundColor : null,
+            };
+          }),
+        });
+      })()`;
+
+      const r = await cdp.send("Runtime.evaluate", { expression: expr, returnByValue: true });
+      return JSON.parse(r.result!.value!) as ArchSubSnap;
+    };
+
+    const uiSub = await readGroupSub("ui");
+    info(
+      `「界面设计」那一组：存在=${uiSub.exists} · 组内二级行 ${uiSub.kids.length} 个 · ` +
+        `占位 ${uiSub.kids.filter((k) => k.placeholder).length} 个 · 计数「${uiSub.countText}」`,
+    );
+    info(
+      `组里的行：` +
+        uiSub.kids
+          .map((k) => `${k.focus}[${k.status}]${k.text}${k.placeholder ? "(占位)" : ""}`)
+          .join(" · "),
+    );
+
+    /* ★ 1. ui 那道下面有 N 个二级行（N = 页面数）★ */
+    expect_(
+      uiSub.exists && uiSub.kids.length === UI_PAGES.length,
+      `「界面设计」下面有 ${UI_PAGES.length} 个二级行（每个页面一行）`,
+      `「界面设计」下面只有 ${uiSub.kids.length} 个二级行，期望 ${UI_PAGES.length}` +
+        `（那一组存在=${uiSub.exists}）—— ui 事件没有投影成任务点？`,
+    );
+    /* ★ 2. 而且**没有**待规划占位行 ★ */
+    expect_(
+      uiSub.kids.length > 0 && uiSub.kids.every((k) => !k.placeholder),
+      "这几行里一个「待规划」占位行都没有 —— 那道工序这次真的跑过",
+      `还有 ${uiSub.kids.filter((k) => k.placeholder).length} 行占位：` +
+        uiSub.kids.filter((k) => k.placeholder).map((k) => k.text).join("、"),
+    );
+    /* ★ 3. 行 id 形如 ui:*（data-outline-focus）★ */
+    expect_(
+      uiSub.kids.map((k) => k.focus).join(",") === UI_PAGES.map((p) => `ui:${p.id}`).join(","),
+      `行 id 形如 ui:*，且顺序就是页面顺序（${uiSub.kids.map((k) => k.focus).join(" ")}）`,
+      `行 id 不对：读到的 ${JSON.stringify(uiSub.kids.map((k) => k.focus))}，` +
+        `期望 ${JSON.stringify(UI_PAGES.map((p) => `ui:${p.id}`))}`,
+    );
+    /* 4. 每行的标题就是页面名（人可读的那一列） */
+    expect_(
+      uiSub.kids.map((k) => k.text).join(",") === UI_PAGES.map((p) => p.name).join(","),
+      `每行的标题就是页面名（${uiSub.kids.map((k) => k.text).join("、")}）`,
+      `标题不对：${JSON.stringify(uiSub.kids.map((k) => k.text))}`,
+    );
+    /* ★ 5. 状态口径：三条检查全过 → done（蓝），绝不是 running ★ */
+    expect_(
+      uiSub.kids.every((k) => k.status === "done") &&
+        uiSub.kids.every((k) => k.dot === "rgb(96, 165, 250)"),
+      "三条检查全过，所以每个页面行都是 done（蓝色 96 165 250）—— 页面没有被说成「正在跑」",
+      `状态不对：${JSON.stringify(uiSub.kids.map((k) => `${k.status}/${k.dot}`))}` +
+        ` —— 期望全是 done 且色点为 rgb(96, 165, 250)`,
+    );
+    /* 6. 收起之后还看得见计数，它得等于页面数 */
+    expect_(
+      uiSub.countText === String(UI_PAGES.length),
+      `summary 上的计数是 ${uiSub.countText}（收起时也看得出这一组下面有几个点）`,
+      `计数是「${uiSub.countText}」，期望 ${UI_PAGES.length}`,
+    );
+    /*
+      7. ui 那一级行自己的状态：这条运行 status=done，而 ui 确实留下了痕迹，
+         所以它是 done —— 顺带证明"长出子树"没有把工序自己的状态带偏。
+    */
+    expect_(
+      uiSub.level1Status === "done",
+      "「界面设计」那一级行自己是 done（这条运行跑完了，而它确实留下了产物）",
+      `一级行状态是 ${uiSub.level1Status}，期望 done`,
+    );
+    /*
+      8. 两棵子树同时在：同一条运行里，上面第二道（架构）的模块子树没被挤掉。
+         用同一个读法再读一遍 arch 那一组 —— 只加不减。
+    */
+    const archStillThere = await readGroupSub("arch");
+    expect_(
+      archStillThere.kids.length === ARCH_MODULES.length &&
+        archStillThere.kids.every((k) => !k.placeholder),
+      `同一页上「架构定型」那道仍是 ${ARCH_MODULES.length} 个模块行 —— 新子树没有挤掉老子树`,
+      `「架构定型」那组现在是 ${archStillThere.kids.length} 行（期望 ${ARCH_MODULES.length}）`,
+    );
+
+    /* ---- 对照：没有 ui 事件的运行，那一道**必须还是**「待规划」 ---- */
+    const noUiRun = seedRunningRun(username);
+    info(`对照：造了一条只有 phase:spec 的运行 ${noUiRun.slice(0, 8)}（没有任何 ui 事件）`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${noUiRun}` });
+    await sleep(4200);
+
+    const noUiSub = await readGroupSub("ui");
+    info(
+      `对照组「界面设计」那一组：二级行 ${noUiSub.kids.length} 个 · ` +
+        `占位 ${noUiSub.kids.filter((k) => k.placeholder).length} 个 · ` +
+        `文字 ${JSON.stringify(noUiSub.kids.map((k) => k.text))}`,
+    );
+
+    expect_(
+      noUiSub.kids.length === 1 && noUiSub.kids[0].placeholder,
+      "★ 对照：没有 ui 事件时，那一道下面是一行「待规划」占位行（子树不是白给的）",
+      `对照组的二级行是 ${JSON.stringify(noUiSub.kids.map((k) => ({ text: k.text, placeholder: k.placeholder })))}` +
+        ` —— 期望恰好 1 行占位`,
+    );
+    expect_(
+      noUiSub.kids.every((k) => !(k.focus ?? "").startsWith("ui:")),
+      "对照：一个 ui:* 的点都没有 —— 没有事件就是没有，不是「有计划但没跑」",
+      `对照组里出现了页面行：${JSON.stringify(noUiSub.kids.map((k) => k.focus))}`,
+    );
+
+    cleanupVerifyRun(uiRun);
+    cleanupVerifyRun(noUiRun);
+    info("夹具已清理");
+
+    ok(
+      "界面设计（第三道工序）接上之后：清单里「界面设计」那道**自己长出**页面子树 ——" +
+        `这种运行里 ${UI_PAGES.length} 个页面各一行、id 形如 ui:*、` +
+        "三条本地检查全过所以是 done（不是 running）、同一页上第二道的模块子树照旧在；" +
+        "而没有 ui 事件的运行那一道仍是「待规划」占位行（对照组验过，不是恒真的）—— 全部通过",
     );
 
     cdp.close();

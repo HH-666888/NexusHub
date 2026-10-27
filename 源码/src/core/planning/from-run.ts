@@ -119,6 +119,16 @@ const PHASE_OWNER: Record<GeneratePhase, PhaseOwner> = {
   arch: { kind: "stage", stageId: "arch" },
 
   /*
+    ui 是界面设计自己的 phase：
+      · ui-stage.ts    `| { kind: "phase"; phase: "ui"; label: string }`
+        —— UiStageEvent 的类型定义，phase 取值被钉死成 "ui"；
+      · ui-stage.ts    `yield { kind: "phase", phase: "ui", label: "正在把架构变成页面与设计变量" };`
+      · ui-stage.ts    `stage: "ui"` —— 这一阶段的记账也记在 ui 名下。
+    三处同指第三道工序，归属没有歧义。
+  */
+  ui: { kind: "stage", stageId: "ui" },
+
+  /*
     awaiting 是规格化的**人工门禁**，不是新的一道工序：
       · route.ts:286  `const policy = resolveGatePolicy("spec", env.run.specGate);`
         —— 问的是 spec 这道工序要不要人点头；
@@ -189,6 +199,7 @@ const PHASE_OWNER: Record<GeneratePhase, PhaseOwner> = {
 /** 工序 id 字面量。用常量是为了和 phase 表里的取值保持一个来源 */
 const SPEC_STAGE_ID = "spec";
 const ARCH_STAGE_ID = "arch";
+const UI_STAGE_ID = "ui";
 const VERIFY_STAGE_ID = "verify";
 
 /**
@@ -202,6 +213,7 @@ const VERIFY_STAGE_ID = "verify";
 const PRODUCT_STAGE: Record<string, string> = {
   spec: SPEC_STAGE_ID,
   arch: ARCH_STAGE_ID,
+  ui: UI_STAGE_ID,
   check: VERIFY_STAGE_ID,
 };
 
@@ -403,7 +415,7 @@ function archPoints(payload: Record<string, unknown> | null, seq: number): TaskP
 }
 
 /**
- * arch 事件里那三条本地检查是不是全过了。
+ * 产出事件里那三条本地检查是不是全过了（arch 与 ui 两道共用这一个判据）。
  *
  * 逐项读 `pass === true`，而不是读汇总的 `passed === total`：
  * 汇总数字是**算出来的**，逐项才是原始事实；两者万一不一致
@@ -416,6 +428,68 @@ function didAllChecksPass(payload: Record<string, unknown> | null): boolean {
   const results = asRecord(payload?.check)?.results;
   if (!Array.isArray(results) || results.length === 0) return false;
   return results.every((r) => asRecord(r)?.pass === true);
+}
+
+/**
+ * ★ 界面设计产物 → 页面任务点（左侧清单的又一层二级子树从这儿长出来）★
+ *
+ * ── 为什么一个页面配得上一个任务点 ──
+ *   理由与模块**逐字相同**（见 archPoints）：页面不是"设计稿里的一个名词"，
+ *   它是第三道交给第四道的活儿 —— 一个页面就是一块要做的界面。
+ *   清单里「界面设计」下面列出几个页面，回答的是"这次要做几个界面"。
+ *
+ *   ⚠️ 顺带守住了那条诚实底线：**没有 ui 事件的运行，这里一个点都长不出来。**
+ *      清单上「界面设计」那一道下面是「待规划」占位行 —— 不是"页面待定"，
+ *      而是"这道工序这次根本没跑过"。
+ *
+ * ── 状态口径（★ 与模块同一档，理由也同一档）★ ──
+ *   页面自己**没有"执行"过** —— 真正去把它做出来的是第四道并行构建，
+ *   而那时候还没有发生。所以：
+ *     · **不给 running**：那会显示成"正在做"，而这一刻没有任何人在做它。
+ *       这是最容易顺手写错的一档（"界面设计阶段在跑，那它的页面也在跑吧"），
+ *       而它撒谎的方向最坏：用户会坐着等一件没人开始的事。
+ *     · 三条本地检查**全过** → `done`：
+ *       我们确实知道的事情是"这个页面被界面设计接受了"——
+ *       它有功能归属、它引用的变量全都定义过、它要的数据指得到模块。
+ *     · **有不过的** → `failed`：
+ *       一份没过检查的界面设计产出的页面，不该显示成"已就绪"。
+ *       保守的方向不能反 —— 显示成没过，用户最多多看一眼；
+ *       显示成过了，他会拿着一个没验证过的页面划分往下走。
+ *
+ *   这两档都是**出生时就定下的**（理由同 checkPoints / archPoints）：
+ *   检查结果是跟着 ui 事件一起来的，页面没有"先出生、再慢慢被判定"的过程。
+ */
+function uiPoints(payload: Record<string, unknown> | null, seq: number): TaskPoint[] {
+  const ui = asRecord(payload?.ui);
+  const pages = ui?.pages;
+  if (!Array.isArray(pages)) return [];
+
+  const allPassed = didAllChecksPass(payload);
+
+  const points: TaskPoint[] = [];
+  for (const raw of pages) {
+    const page = asRecord(raw);
+    /*
+      id 是稳定标识，也是这个点的身份（`ui:<页面id>`）。
+      没有它就凑不出一个不会漂的 id —— 拿下标凑的话，
+      页面顺序一变，清单里那一行指向的就是另一个页面了
+      （和 checkPoints / archPoints 里"宁可不要这个点"是同一条理由）。
+    */
+    const id = asString(page?.id);
+    if (!id) continue;
+
+    points.push({
+      id: `ui:${id}`,
+      parentId: UI_STAGE_ID,
+      depth: 2,
+      kind: "exec",
+      // 标题取页面名：那是这个页面里唯一一句人话，id 是给机器引用的
+      title: asString(page?.name) || id,
+      status: allPassed ? "done" : "failed",
+      bornAtSeq: seq,
+    });
+  }
+  return points;
 }
 
 /* ============================================================
@@ -570,12 +644,14 @@ export function planningFromRun(src: PlanningSource): PlanningEvent[] {
     if (!stageIds.has(ownerStage)) return;
 
     /*
-      产出 → 它名下的执行点。三种产出各有一套派生规则：
+      产出 → 它名下的执行点。四种产出各有一套派生规则：
         · check → 七个检查项（verify 名下）
-        · arch  → 每个模块一个点（arch 名下）—— 清单的二级子树从这儿长出来
+        · arch  → 每个模块一个点（arch 名下）  —— 清单的二级子树从这儿长出来
+        · ui    → 每个页面一个点（ui 名下）    —— 清单再多一层二级子树
         · spec  → 每条验收标准一个点（spec 名下）
-      规则分开写而不是合并成一个"万能函数"：三者的字段名、id 约定、
-      状态口径都不一样（pending / done|failed / done|failed），
+      规则分开写而不是合并成一个"万能函数"：四者的字段名、id 约定、
+      状态口径都不一样（pending / done|failed / done|failed / done|failed，
+      而且 arch 读的是 modules、ui 读的是 pages），
       硬凑成一个只会让每条规则都变得难读、也难改。
     */
     const born =
@@ -583,7 +659,9 @@ export function planningFromRun(src: PlanningSource): PlanningEvent[] {
         ? checkPoints(payload, event.seq)
         : event.kind === "arch"
           ? archPoints(payload, event.seq)
-          : specPoints(payload, event.seq);
+          : event.kind === "ui"
+            ? uiPoints(payload, event.seq)
+            : specPoints(payload, event.seq);
     for (const point of born) {
       log = appendBorn(log, point);
     }

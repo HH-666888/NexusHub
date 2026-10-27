@@ -18,7 +18,9 @@ import type { Artifact } from "../domain/artifact";
 import { summarizeChecks, type CheckResult, type CheckSummary } from "../domain/check";
 import type { ArchSpec } from "../domain/arch";
 import type { AppSpec, SpecGate } from "../domain/spec";
+import type { UiSpec } from "../domain/ui-spec";
 import type { ArchCheck } from "./arch-check";
+import type { UiCheck } from "./ui-check";
 import type { ArtifactStore } from "../ports/artifact-store";
 import type { CostStore } from "../ports/cost-store";
 import type { ModelEffort, ModelPort, TokenUsage } from "../ports/model";
@@ -49,6 +51,13 @@ export type GeneratePhase =
       新事件的话，工序归属就得靠别处再判一次，两处迟早漂开。
   */
   | "arch" // 架构定型：把规格切分成模块并定下依赖
+  /*
+    ui —— 界面设计：把架构变成页面与设计变量。
+    理由和 arch 一模一样：它也是「一道工序开工了」，
+    而 from-run.ts 的 PHASE_OWNER 是个穷尽的 Record —— 加一个值，
+    编译器就会逼着人在那里当场回答"这条 phase 算谁的"。
+  */
+  | "ui" // 界面设计：定下设计变量、页面与组件
   | "awaiting" // 人工门禁：停下等用户回答规格里的疑问
   | "generating" // 模型正在写
   | "checking" // 正在做产物检查
@@ -110,6 +119,21 @@ export type GenerateEvent =
       arch: ArchSpec;
       check: ArchCheck;
       /** 是不是降级来的。兜底架构必须自报家门 */
+      fallback: boolean;
+    }
+  /**
+   * 界面设计阶段的产出（第三道工序）。
+   *
+   * 和 arch 事件同构：那三条本地检查的结果**跟着产物一起发出来** ——
+   * 左侧清单上那些页面任务点的状态直接由它决定
+   * （全过 → done，有不过的 → failed，见 planning/from-run.ts）。
+   * 让界面各算一遍的话，同一件事就有两个口径了。
+   */
+  | {
+      kind: "ui";
+      ui: UiSpec;
+      check: UiCheck;
+      /** 是不是降级来的。兜底界面必须自报家门 */
       fallback: boolean;
     }
   | {
