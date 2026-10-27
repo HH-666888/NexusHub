@@ -1,10 +1,6 @@
 /**
- * 站点配置服务
- * ============================================================
- * 职责：把「数据库里的 JSON 文本」与「内核认识的类型」互相转换，
- * 并在入口处做一次性收窄。上层拿到的永远是一个合法对象，不需要再判空。
- *
- * 只依赖 SettingsStore 接口，因此可以用内存假存储做单测。
+ * 站点配置服务：库里的 JSON 文本与内核类型互转，入口处一次性收窄。
+ * 上层拿到的永远是合法对象，不需要再判空；只依赖 SettingsStore，可用内存假存储单测。
  */
 
 import {
@@ -22,15 +18,11 @@ import {
 } from "../domain/model-config";
 import type { SettingsStore } from "../ports/settings-store";
 
-/** 配置的键名。集中在这里，避免各处手写字符串导致拼错 */
+/** 键名集中在这里，避免各处手写字符串拼错。modelConfig 的落库键是 model_config */
 export const SETTINGS_KEYS = {
   appearance: "appearance",
   modelConfig: "model_config",
 } as const;
-
-/* ============================================================
-   外观
-   ============================================================ */
 
 export async function loadAppearance(
   store: SettingsStore,
@@ -41,8 +33,7 @@ export async function loadAppearance(
   try {
     return normalizeAppearance(JSON.parse(raw));
   } catch {
-    // 库里的内容坏了不该让整站打不开 —— 退回默认外观并继续。
-    // 这比抛异常好：用户看到的是一张正常的页面，而不是 500。
+    // 库里内容坏了不该让整站打不开：退回默认外观，用户看到一张正常页面而不是 500
     return DEFAULT_APPEARANCE;
   }
 }
@@ -61,16 +52,12 @@ export async function saveAppearance(
   return config;
 }
 
-/** 读配置并直接翻译成 CSS 变量，供布局层使用 */
+/** 读配置并翻译成 CSS 变量，布局层用 */
 export async function loadAppearanceVars(
   store: SettingsStore,
 ): Promise<Record<string, string>> {
   return appearanceToCssVars(await loadAppearance(store));
 }
-
-/* ============================================================
-   模型接入
-   ============================================================ */
 
 export async function loadModelConfig(
   store: SettingsStore,
@@ -86,15 +73,9 @@ export async function loadModelConfig(
 }
 
 /**
- * 保存模型配置。
- *
- * 这里有一个必须处理的细节：**密钥的「留空即不改」语义**。
- *   配置界面上显示的是掩码（sk-****3f2a），用户不动它直接保存时，
- *   表单提交上来的密钥是空串。如果照单全收，就把真密钥覆盖成空了 ——
- *   用户只是改了个模型名，密钥却没了，而且他不会立刻发现。
- *
- * 所以规则是：**提交的密钥为空时，保留库里已有的那一份。**
- * 想真正清空密钥，得把接入方式切回「平台默认」。
+ * 保存模型配置。必须处理密钥的留空即不改：界面显示的是掩码，用户不动它直接保存时
+ * 提交上来的是空串，照单全收就把真密钥覆盖成空，而他不会立刻发现。
+ * 所以提交的密钥为空时保留库里那一份；真要清空得把接入方式切回平台默认。
  */
 export async function saveModelConfig(
   store: SettingsStore,
@@ -110,8 +91,7 @@ export async function saveModelConfig(
 
   const check = checkModelConfig(incoming);
   if (!check.ok) {
-    // 校验没过就不写库 —— 存一份半成品进去，
-    // 下次读到它时还要再判一次合法性，等于把问题往后推
+    // 校验没过就不写库：存半成品进去，下次读到还要再判一次合法性，等于把问题往后推
     return { config: incoming, check };
   }
 
@@ -124,8 +104,8 @@ export async function saveModelConfig(
 }
 
 /**
- * 判断当前是否在用自定义接入，以及是否配全了。
- * 供界面显示状态用，也让「生成」链路知道该不该拒绝执行。
+ * 当前是否在用自定义接入、是否配全了。
+ * 界面显示状态用，也让生成链路知道该不该拒绝执行。
  */
 export function describeModelSource(config: ModelConfig): {
   using: "platform" | "custom";

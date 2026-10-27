@@ -1,44 +1,33 @@
 /**
- * 运行事件
- * ============================================================
- * 生成过程中流过的事件，落库之后用来回放。
- *
- * ── 为什么要有这个文件，而不是直接用 generate/service 里的 GenerateEvent ──
- *   两者的职责不同：
- *     GenerateEvent 是**推给浏览器看的**，实时、逐片段、不落库；
- *     RunEvent      是**存下来回放的**，需要序号、时间、以及合并后的粒度。
- *   混用会导致一件事：为了让存储更省，你会去改生成器的吐法，
- *   而那会伤到实时体验（用户就是要看逐字蹦出来的效果）。
- *   分开之后，两边各按自己的需要来，中间由一个记录器衔接。
+ * 运行事件：生成过程中流过、落库之后用来回放的事件。
+ * GenerateEvent 是实时推给浏览器的逐片段事件、不落库；RunEvent 要序号、时间与合并后的粒度。
+ * 混用会逼着为省存储去改生成器的吐法，那会伤到实时体验。
  */
 
 import type { GenerateEvent } from "../generate/service";
 
-/** 落库后的事件种类，与 GenerateEvent 的 kind 一一对应 */
+/** 与 GenerateEvent 的 kind 一一对应 */
 export type RunEventKind = GenerateEvent["kind"];
 
 /**
  * 一条已落库的事件。
- *
- * `at` 是**绝对** Unix 毫秒（不是相对偏移）。
- * 为什么不存相对偏移：绝对时间还能顺带回答「这次生成发生在几点」，
- * 而相对偏移可以随时算出来 —— 存绝对、算相对，反过来做不到。
+ * at 是绝对 Unix 毫秒：绝对时间还能回答生成发生在几点，相对偏移随时可算，反过来做不到。
  */
 export interface RunEvent {
   id: number;
   runId: string;
-  /** 同一次运行内的序号，从 0 开始且连续 */
+  /** 运行内序号，从 0 开始且连续 */
   seq: number;
   at: number;
   kind: RunEventKind;
-  /** 事件原始内容。结构由 kind 决定，读取时收窄 */
+  /** 结构由 kind 决定，读取时收窄 */
   payload: GenerateEvent;
 }
 
-/** 写入时用的一半 —— 还没有自增 id */
+/** 还没有自增 id */
 export type NewRunEvent = Omit<RunEvent, "id">;
 
-/** 把数据库里那行 JSON 文本还原成事件对象 */
+/** 库里那行 JSON 文本还原成事件对象 */
 export function parseRunEvent(row: {
   id: number;
   runId: string;
@@ -57,47 +46,39 @@ export function parseRunEvent(row: {
   };
 }
 
-/** 序列化成数据库里的文本 */
+/** 只序列化 payload，seq 与 at 由落库方补 */
 export function serializeRunEvent(event: GenerateEvent): string {
   return JSON.stringify(event);
 }
 
-/* ============================================================
-   回放：把一串事件还原成「某一刻的画面」
-   ------------------------------------------------------------
-   纯函数，因此可以单测 —— 回放最容易出的错不是渲染，
-   而是「拖到某一秒，画面和当时对不上」。
-   ============================================================ */
+// 回放：把一串事件还原成某一刻的画面。纯函数，可单测
 
 export interface ReplayFrame {
   /** 相对生成开始的毫秒偏移 */
   offsetMs: number;
-  /** 到这一刻为止，模型已经写出的正文 */
+  /** 到这一刻为止写出的正文 */
   text: string;
-  /** 到这一刻为止的思考过程 */
+  /** 到这一刻为止的思考 */
   reasoning: string;
-  /** 当前阶段标签。还没收到 phase 事件时为 null */
+  /** 还没收到 phase 事件时为 null */
   phaseLabel: string | null;
-  /** 已产生的花费。还没收到 usage 事件时为 null —— 不显示 0 冒充已知 */
+  /** 还没收到 usage 事件时为 null，不拿 0 冒充已知 */
   costCny: number | null;
-  /** 已通过 / 总检查项。还没做检查时为 null */
+  /** 还没做检查时为 null */
   checks: { passed: number; total: number } | null;
-  /** 产物大小。还没落盘时为 null */
+  /** 还没落盘时为 null */
   artifactBytes: number | null;
-  /** 规格化产出的验收标准条数。还没到规格阶段时为 null */
+  /** 还没到规格阶段时为 null */
   specAcceptance: { total: number; must: number } | null;
-  /** 这一刻之前的错误信息 */
+  /** 到这一刻为止的错误信息 */
   error: string | null;
-  /** 已经被消费掉的事件条数，用于界面上标刻度 */
+  /** 界面标刻度用 */
   consumed: number;
 }
 
 /**
- * 计算「时间轴停在 offsetMs 这一刻」的画面。
- *
- * 时间基准是**第一条事件**，不是运行创建时间 ——
- * 从一句话到模型开口之间隔着一次网络往返，把它算进回放里，
- * 用户拖到开头会看到一段没有任何变化的空白。
+ * 时间轴停在 offsetMs 这一刻的画面。
+ * 基准取第一条事件而不是运行创建时间：中间隔着一次网络往返，算进去开头会是一段空白。
  */
 export function frameAt(events: readonly RunEvent[], offsetMs: number): ReplayFrame {
   const frame: ReplayFrame = {
@@ -161,18 +142,15 @@ export function frameAt(events: readonly RunEvent[], offsetMs: number): ReplayFr
   return frame;
 }
 
-/** 整段回放的总时长（毫秒）。没有事件时为 0 */
+/** 回放总时长（毫秒），没有事件时为 0 */
 export function replayDurationMs(events: readonly RunEvent[]): number {
   if (events.length < 2) return 0;
   return events[events.length - 1].at - events[0].at;
 }
 
 /**
- * 事件条数到时间轴的换算。
- *
- * 时间轴用「事件序号」而不是毫秒来定位更稳：
- * 模型吐字的速度不是均匀的，按毫秒拖会在某些段落上
- * 怎么拖都不动、在另一些段落上一拖就跳过一大段。
+ * 事件序号到时间轴的换算。
+ * 按事件序号定位比按毫秒稳：模型吐字速度不均匀，按毫秒拖会有些段落怎么拖都不动。
  */
 export function offsetOfSeq(events: readonly RunEvent[], seq: number): number {
   if (events.length === 0) return 0;

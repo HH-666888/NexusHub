@@ -1,20 +1,7 @@
 /**
- * 模型接入配置的领域模型
- * ============================================================
- * 目标：用户可以用自己的模型额度，也可以继续用平台默认的。
- *
- * 两条设计纪律：
- *
- *   ① **默认永远指向平台自己的配置**（来自 .env.local）。
- *      自定义是可选项，不是必经之路。用户什么都不配也能跑通，
- *      这决定了第一次使用的体验是「打开就能用」还是「先填一堆东西」。
- *
- *   ② **密钥不出服务器**。
- *      配置界面拿到的永远是掩码后的形式（sk-****abcd），
- *      原文只存在于数据库和服务端调用里。
- *      这样即使有人截图、或者页面被查看源代码，也不会泄露密钥。
- *      注意：这是「不回传」，不是「加密存储」——
- *      数据库里目前仍是明文，加密是后续要补的。
+ * 模型接入配置：用户可以用自己的额度，也可以沿用平台默认。
+ * 两条纪律：默认永远指向平台配置（.env.local），什么都不配也能跑通；
+ * 密钥不回传浏览器，界面只拿掩码（库里仍是明文，加密待补）。
  */
 
 export const PROVIDER_PRESETS = [
@@ -65,14 +52,14 @@ export type ProviderId = (typeof PROVIDER_PRESETS)[number]["id"];
 export interface CustomEndpoint {
   provider: ProviderId;
   baseUrl: string;
-  /** 密钥原文。只存在于服务端与数据库，绝不回传给浏览器 */
+  /** 原文只存在于服务端与数据库，绝不回传浏览器 */
   apiKey: string;
   decideModel: string;
   executeModel: string;
 }
 
 export interface ModelConfig {
-  /** platform = 用平台自己的；custom = 用用户填的 */
+  /** platform 用平台配置，custom 用用户填的 */
   source: "platform" | "custom";
   custom: CustomEndpoint;
 }
@@ -88,7 +75,7 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = Object.freeze({
   },
 }) as ModelConfig;
 
-/** 回传给浏览器的形态：密钥被掩码 */
+/** 回传浏览器的形态，密钥已掩码 */
 export interface ModelConfigView {
   source: "platform" | "custom";
   custom: {
@@ -103,9 +90,8 @@ export interface ModelConfigView {
 }
 
 /**
- * 掩码：只保留前缀与最后四位。
- * 前缀通常能看出是哪家（sk- / sk-ant- 等），对排查问题有用；
- * 中间一律打掉，长度也一并隐藏 —— 密钥长度本身也是信息。
+ * 掩码：保留前 3 位与后 4 位，中间打掉，长度也一并隐掉（长度本身是信息）。
+ * 前缀能看出是哪家（sk- / sk-ant-），排查问题时有用。
  */
 export function maskApiKey(key: string): string {
   const trimmed = key.trim();
@@ -130,10 +116,6 @@ export function toModelConfigView(config: ModelConfig): ModelConfigView {
   };
 }
 
-/* ============================================================
-   校验（纯函数，可单测）
-   ============================================================ */
-
 export interface ConfigCheck {
   ok: boolean;
   /** 字段名 → 中文错误原因 */
@@ -145,12 +127,7 @@ const KEY_APIKEY = "apiKey";
 const KEY_DECIDE = "decideModel";
 const KEY_EXECUTE = "executeModel";
 
-/**
- * 校验自定义接入信息。
- *
- * 只在 source = "custom" 时才校验 —— 用平台默认配置时，
- * 用户没填任何东西是完全正常的，不该报错。
- */
+/** 只在 source = "custom" 时校验：用平台配置时用户什么都没填是正常的 */
 export function checkModelConfig(config: ModelConfig): ConfigCheck {
   const errors: Record<string, string> = {};
 
@@ -181,7 +158,7 @@ export function checkModelConfig(config: ModelConfig): ConfigCheck {
   return { ok: Object.keys(errors).length === 0, errors };
 }
 
-/** 收窄任意输入为合法配置，并为缺失字段补上预设值 */
+/** 收窄任意输入为合法配置，缺失字段用预设补齐 */
 export function normalizeModelConfig(input: unknown): ModelConfig {
   const raw = (input ?? {}) as Partial<ModelConfig>;
   const customRaw = (raw.custom ?? {}) as Partial<CustomEndpoint>;
@@ -201,7 +178,7 @@ export function normalizeModelConfig(input: unknown): ModelConfig {
   };
 }
 
-/** 套用某个预设，返回一份新的 custom 配置（已填的密钥保留） */
+/** 套用预设，返回新的 custom 配置（已填的密钥保留） */
 export function applyPreset(
   current: CustomEndpoint,
   providerId: ProviderId,
@@ -213,7 +190,7 @@ export function applyPreset(
   return {
     provider: providerId,
     baseUrl: preset.baseUrl,
-    apiKey: current.apiKey, // 换服务商时保留密钥输入，避免让用户重打一遍
+    apiKey: current.apiKey, // 换服务商时保留密钥，免得重打一遍
     decideModel: preset.decideModel,
     executeModel: preset.executeModel,
   };

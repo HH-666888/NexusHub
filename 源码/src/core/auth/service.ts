@@ -1,10 +1,6 @@
 /**
- * 认证服务
- * ============================================================
- * 注册、登录、登出、会话解析的全部业务规则都在这里。
- *
- * 它只依赖 AuthStore 接口，不依赖任何数据库。
- * 因此可以注入一个「假存储」来做单元测试，无需真的连库。
+ * 认证服务：注册、登录、登出、会话解析的业务规则。
+ * 只依赖 AuthStore 接口，可以注入假存储做单测。
  */
 
 import {
@@ -20,13 +16,13 @@ import { hashPassword, needsRehash, verifyPassword } from "./password";
 import { createSessionToken, hashSessionToken } from "./session";
 import type { AuthStore } from "../ports/auth-store";
 
-/** 统一的结果类型：要么成功带值，要么失败带一句可以直接显示给用户的中文原因 */
+/** 成功带值，失败带一句可直接显示的中文原因 */
 export type AuthResult<T> =
   | { ok: true; value: T }
   | { ok: false; reason: string };
 
 export interface AuthContext {
-  /** 用于记录登录设备 */
+  /** 记录登录设备用 */
   userAgent?: string | null;
   ip?: string | null;
 }
@@ -35,20 +31,12 @@ export interface SessionGrant {
   user: User;
   /** 放进 Cookie 的原文令牌 */
   token: string;
-  /** 入库的会话记录（其中 id 是令牌哈希） */
+  /** 入库的会话，id 是令牌哈希 */
   session: Session;
 }
 
-/* ============================================================
-   注册
-   ============================================================ */
-/**
- * 注册。
- *
- * 只需要两样东西：用户名 + 密码。
- * 昵称不单独问 —— 默认就等于用户名，以后想改再改。
- * 每多问一个字段，就多一次「用户填错但我不知道为什么」的摩擦。
- */
+// 注册只需要用户名 + 密码：昵称默认等于用户名，每多问一个字段就多一次摩擦。
+// 注册成功直接签发会话，调用方不必再登录一次。
 export async function registerUser(
   store: AuthStore,
   input: { username: string; password: string },
@@ -65,14 +53,13 @@ export async function registerUser(
     return { ok: false, reason: strength.reason ?? "密码不符合要求" };
   }
 
-  // 先查重，给用户明确提示；数据库的唯一约束是第二道防线
+  // 先查重给明确提示，唯一约束是第二道防线
   const existing = await store.findUserByUsername(username);
   if (existing) {
     return { ok: false, reason: "该用户名已被占用" };
   }
 
-  // 哈希计算放在插入之前 —— 它是耗时的（约 100 毫秒），
-  // 绝不能放进数据库事务里占着写锁
+  // 哈希约 100 毫秒，放在插入之前：不能塞进事务里占着写锁
   const passwordHash = await hashPassword(input.password);
 
   let user: User;
@@ -83,7 +70,7 @@ export async function registerUser(
       passwordHash,
     });
   } catch (err) {
-    // 并发注册同一用户名时，唯一约束会在这里拦下来
+    // 并发注册时唯一约束会在这里拦下
     if (String(err).includes("UNIQUE")) {
       return { ok: false, reason: "该用户名已被占用" };
     }
@@ -94,21 +81,16 @@ export async function registerUser(
   return { ok: true, value: grant };
 }
 
-/* ============================================================
-   登录
-   ============================================================ */
 export async function loginUser(
   store: AuthStore,
   input: { username: string; password: string },
   ctx: AuthContext = {},
 ): Promise<AuthResult<SessionGrant>> {
-  // 登录时也走一次归一化 —— 否则用户注册时用了大小写混合、
-  // 登录时换了写法就登不上，而他自己完全不知道为什么
+  // 登录也要归一化，否则注册时大小写混合、登录换个写法就登不上
   const username = normalizeUsername(input.username);
   const user = await store.findUserByUsername(username);
 
-  // 无论账号是否存在，都走一次等价的密码校验，
-  // 避免通过响应时间判断「这个用户名注册过没有」
+  // 账号不存在时也走一次等价校验，避免用响应时间判断用户名是否存在
   const storedHash = user?.passwordHash ?? "";
   const passed = await verifyPassword(input.password, storedHash);
 
@@ -116,7 +98,7 @@ export async function loginUser(
     return { ok: false, reason: "用户名或密码不正确" };
   }
 
-  // 静默升级：老哈希用的强度参数偏低时，趁这次登录顺手换掉
+  // 老哈希强度参数偏低，就趁这次登录换掉
   if (needsRehash(user.passwordHash)) {
     const upgraded = await hashPassword(input.password);
     await store.updateUserPasswordHash(user.id, upgraded);
@@ -125,10 +107,6 @@ export async function loginUser(
   const grant = await issueSession(store, user, ctx);
   return { ok: true, value: grant };
 }
-
-/* ============================================================
-   会话
-   ============================================================ */
 
 /** 签发一个新会话 */
 async function issueSession(
@@ -173,7 +151,7 @@ export async function resolveSession(
   return store.findUserById(session.userId);
 }
 
-/** 登出：删除该会话 */
+/** 登出：删掉该会话 */
 export async function logout(
   store: AuthStore,
   token: string | undefined | null,
@@ -182,7 +160,7 @@ export async function logout(
   await store.deleteSession(hashSessionToken(token));
 }
 
-/** 踢掉该用户的所有设备（改密码、发现异常登录时使用） */
+/** 改密码、发现异常登录时用 */
 export async function logoutAllDevices(
   store: AuthStore,
   userId: number,

@@ -1,36 +1,23 @@
 /**
- * 按阶段归集花费
- * ============================================================
- * cost_records 表每一行都带 stage 字段 —— 也就是说分阶段的花费
- * **本来就记着**，只是界面上没用上。
- *
- * ── 为什么这件事值得单独一个文件 ──
- *   之前界面上有两个假数字，都出在这里：
- *     一、每道工序旁边写死「¥0.0000」
- *     二、把整次运行的总数挂在某一个阶段旁边，
- *        让人以为那笔钱是这一道工序花的
- *
- *   两个问题的根子是同一个：**没有真的去读分阶段的账**。
- *   抽成纯函数之后，「哪笔钱算在哪道工序」这件事可以被测试钉住，
- *   而不是靠在界面上摆一个看起来像模像样的数字。
+ * 按阶段归集花费。cost_records 每行都带 stage，分阶段的账本来就记着。
+ * 界面上曾把 ¥0.0000 写死、也把总数挂在某一阶段旁边，根子都是没真去读这份账。
+ * 抽成纯函数之后，哪笔钱算在哪道工序可以被测试钉住。
  */
 
 import type { CostRecord } from "./cost";
 import type { StageId } from "../pipeline/stages";
 
 export interface StageCost {
-  /** 该阶段累计花费（元） */
+  /** 累计花费（元） */
   costCny: number;
-  /** 该阶段发生了多少次模型调用 */
+  /** 模型调用次数 */
   calls: number;
-  /** 该阶段累计输出 token。用来解释「为什么这一步贵」 */
+  /** 累计输出 token，用来解释这一步为什么贵 */
   outputTokens: number;
-  /** 该阶段累计耗时（毫秒） */
+  /** 累计耗时（毫秒） */
   latencyMs: number;
   /**
-   * 记账时用的计价档位。
-   * 高峰与空闲价差一倍，不记下来的话，事后复盘会以为
-   * 「同样的活儿这次怎么贵了一倍」是模型变笨了。
+   * 记账时的计价档位。高峰与空闲价差一倍，不记下来复盘时会以为模型变笨了。
    */
   tiers: Array<"peak" | "offPeak">;
 }
@@ -46,12 +33,8 @@ const EMPTY: StageCost = {
 };
 
 /**
- * 把成本流水按阶段归集。
- *
- * 认不出的阶段名直接丢掉而不是塞进一个「其它」桶：
- * 那些多半是探测脚本这类没有运行归属的调用，
- * 混进来会让「这次运行各阶段花了多少」对不上总数，
- * 而账对不上比少几个数字更麻烦。
+ * 按阶段归集。认不出的阶段名直接丢掉而不是塞进其它桶：
+ * 那些多是探测脚本这类没有运行归属的调用，混进来会让各阶段对不上总数。
  */
 export function groupCostByStage(records: readonly CostRecord[]): CostByStage {
   const known = new Set<string>([
@@ -74,12 +57,11 @@ export function groupCostByStage(records: readonly CostRecord[]): CostByStage {
     out[key] = {
       costCny: prev.costCny + r.costCny,
       calls: prev.calls + 1,
-      // 用量是嵌套的 —— 成本记录的形状是「一次调用 → 一行账」，
-      // 用量整体作为一个字段存着
+      // 用量整体作为一个字段存着（一次调用对应一行账）
       outputTokens: prev.outputTokens + r.usage.outputTokens,
       latencyMs: prev.latencyMs + r.latencyMs,
-      // priceTier 在类型上是 string（数据库里也是文本列），
-      // 这里收窄成两档；认不出的当作空闲价，宁可少报也不虚报
+      // priceTier 在类型与库里都是字符串，这里收窄成两档；
+      // 认不出的按空闲价算：宁可少报也不虚报
       tiers: [...prev.tiers, r.priceTier === "peak" ? "peak" : "offPeak"],
     };
   }
@@ -87,16 +69,14 @@ export function groupCostByStage(records: readonly CostRecord[]): CostByStage {
   return out;
 }
 
-/** 某道工序花了多少。没花过就是 0 —— 调用方据此决定显不显示 */
+/** 某道工序花了多少，没花过就是 0 */
 export function costOf(stage: StageId, byStage: CostByStage): number {
   return byStage[stage]?.costCny ?? 0;
 }
 
 /**
- * 归集出来的总额。
- *
- * 用来和 runs.totalCostCny 对账：两者不等就说明有流水漏了或者阶段名对不上。
- * 界面上不显示这个数，它是给测试和排查用的。
+ * 归集总额，用来和 runs.totalCostCny 对账：不等就说明有流水漏了或阶段名对不上。
+ * 界面不显示，给测试与排查用。
  */
 export function totalOf(byStage: CostByStage): number {
   let sum = 0;
@@ -104,16 +84,9 @@ export function totalOf(byStage: CostByStage): number {
   return sum;
 }
 
-/* ============================================================
-   显示文案
-   ============================================================ */
-
 /**
- * 阶段花费的一行字。
- *
- * 没花过钱就返回 null，**不返回「¥0.0000」**——
- * 「这一步不花钱」和「花了零元」在界面上长得一样，
- * 但前者是事实，后者是编的。
+ * 阶段花费的一行字。没花过钱返回 null，不返回 ¥0.0000：
+ * 这一步不花钱与花了零元在界面上长得一样，但只有前者是事实。
  */
 export function describeStageCost(byStage: CostByStage, stage: StageId): string | null {
   const s = byStage[stage];
@@ -123,7 +96,7 @@ export function describeStageCost(byStage: CostByStage, stage: StageId): string 
   return parts.join(" · ");
 }
 
-/** 这个阶段所处的是高峰还是空闲计价。混着出现过就说明有跨段 */
+/** 高峰还是空闲计价；混着出现说明跨峰谷 */
 export function describePriceTier(byStage: CostByStage, stage: StageId): string | null {
   const s = byStage[stage];
   if (!s || s.tiers.length === 0) return null;

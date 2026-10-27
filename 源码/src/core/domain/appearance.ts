@@ -1,17 +1,6 @@
 /**
- * 外观配置的领域模型
- * ============================================================
- * 设计要点：**所有可配置项都映射到一组 CSS 变量**，而不是让组件去判断配置值。
- *
- * 为什么这么做：
- *   如果每个组件都写 `config.accent === "blue" ? "bg-blue-600" : ...`，
- *   那配置一变，整棵组件树都要重新渲染和比对。
- *   改成 CSS 变量之后，切换配置只是祖先节点上几个变量值变了，
- *   组件本身完全不需要知道配置的存在，也不会重渲染。
- *
- * 另一个刻意选择：**只提供系统字体，不加载网络字体**。
- *   一个中文字体包动辄几 MB，为了「好看一点」让首屏多等几秒，
- *   在 2 核 4G 的目标环境上是本末倒置。
+ * 外观配置：所有可配置项都映射到一组 CSS 变量，组件不判断配置值 ——
+ * 否则配置一变整棵组件树都要重渲染。只提供系统字体：中文字体包几 MB，首屏不值得。
  */
 
 export const FONT_OPTIONS = [
@@ -45,9 +34,8 @@ export const FONT_OPTIONS = [
 export type FontId = (typeof FONT_OPTIONS)[number]["id"];
 
 /**
- * 字号档位。
- * 刻意收窄区间（0.92 ~ 1.12）：根字号会成比例影响全站所有 rem 尺寸，
- * 放得太开会让驾驶舱那种固定布局的页面错位。
+ * 字号档位。区间收窄在 0.92 ~ 1.12：根字号成比例影响全站 rem，
+ * 放太开会让驾驶舱那种固定布局错位。
  */
 export const SCALE_OPTIONS = [
   { id: "sm", label: "小", factor: 0.92 },
@@ -58,31 +46,17 @@ export const SCALE_OPTIONS = [
 
 export type ScaleId = (typeof SCALE_OPTIONS)[number]["id"];
 
-/* ============================================================
-   主题：黑 / 白
-   ------------------------------------------------------------
-   只给两档，而不是给一串色号。
-   理由：主题要改的不是「一个背景色」，而是**整套语义颜色** ——
-   文字、边框、卡片层、分隔线全都得跟着翻转。
-   如果只换背景不换文字，浅色下会出现「白底浅灰字」这种读不清的组合，
-   比不提供更糟。所以这里选择的是「一整套配色」，不是一个色值。
-   ============================================================ */
+// 主题只给两档而不是一串色号：要改的是整套语义颜色（文字、边框、卡片层、分隔线），
+// 只换背景不换文字会出现白底浅灰字这种读不清的组合，比不提供更糟。
 export const THEME_OPTIONS = [
   {
     id: "dark",
     label: "黑色",
     hint: "深色底，演示与长时间观看更舒服",
     /*
-      ⚠️ 这两个值要和 globals.css 的 --color-canvas 保持一致。
-
-      为什么是 #171922 而不是更黑的：#08090c（亮度 9）被说过「全黑」，
-      抬到 #0c0d11（亮度 13）**还是**被说「一片黑色」。同一句话说了两次，
-      说明 13 仍然落在「接近纯黑」那一段里。现在是 #171922（亮度约 25），
-      明确离开了那一段，但和正文的亮度仍差近十倍 —— 所以还是黑色界面，
-      只是不再是一块黑洞。
-
-      色卡上尤其看得出来：旁边就是白色的对比，
-      色卡若还是 #08090c，会显得这一档根本没颜色。
+      与 globals.css 的 --color-canvas 保持一致。
+      #08090c 与 #0c0d11 都被评价为一片黑色，抬到 #171922（亮度约 25）才明确离开那一段，
+      但和正文亮度仍差近十倍，所以仍是黑色界面。
     */
     swatch: "#171922",
     /** 浏览器 UI（地址栏、滚动条）跟着变的提示色 */
@@ -99,7 +73,7 @@ export const THEME_OPTIONS = [
 
 export type ThemeId = (typeof THEME_OPTIONS)[number]["id"];
 
-/** 主色。强调色、它的浅版、以及用于透明发光的 RGB 分量 */
+/** 强调色、它的浅版、以及透明发光用的 RGB 分量 */
 export const ACCENT_OPTIONS = [
   { id: "blue", label: "蓝", base: "#2563eb", soft: "#60a5fa", glow: "37 99 235" },
   { id: "violet", label: "紫", base: "#7c3aed", soft: "#a78bfa", glow: "124 58 237" },
@@ -110,40 +84,17 @@ export const ACCENT_OPTIONS = [
 
 export type AccentId = (typeof ACCENT_OPTIONS)[number]["id"];
 
-/* ============================================================
-   辅助色方案
-   ------------------------------------------------------------
-   要的是「多种颜色分别用在不同的卡片或位置上」——
-   所以这不是「挑一个颜色」，而是「挑一套分配规则」。
-   颜色按位置依次分配，每张卡片拿到光谱里的下一个颜色。
-   ============================================================ */
+// 辅助色要的是多种颜色分给不同卡片，所以给的是分配规则而不是一个颜色：
+// 按位置依次取，每张卡片拿光谱里的下一个。
 export interface TintPalette {
   id: string;
   label: string;
   hint: string;
   /**
-   * 最多六个 RGB 三元组，按位置依次分配。
-   *
-   * ⚠️ **必须是空格分隔，不能写逗号。** ⚠️
-   *
-   * 这些值最终会被拼进 `rgb(var(--tint-N) / 0.4)` 这样的表达式。
-   * 而 CSS Color 4 只认两种写法：
-   *     现代：rgb(34 211 238 / 0.4)   ← 空格分隔，可带斜杠透明度
-   *     传统：rgb(34, 211, 238)       ← 逗号分隔，**不能**带斜杠透明度
-   * 写成逗号就成了非法值。而且变量是**计算值阶段**才替换进去的，
-   * 静态检查发现不了 —— 浏览器替换后判定非法，把整条声明丢掉：
-   *     border-color     → 回落到 currentColor（变成文字色）
-   *     box-shadow       → 回落到 none（发光没了）
-   *     background-image → 回落到 none（渐变没了）
-   *
-   * 这不是理论风险：项目里 33 处写成逗号，导致整套「辅助色透明发光」
-   * 一直是没生效的 —— 卡片渲染成普通灰框，而代码看起来完全正常。
-   * 是拿 CDP 去读计算样式才发现的（边框色等于文字色，发光是 none）。
-   *
-   * 空格分隔的好处是**两种用法都合法**：
-   *     rgb(34 211 238)          不带透明度
-   *     rgb(34 211 238 / 0.16)   带透明度
-   * 所以统一成空格，不需要为有没有 alpha 分别处理。
+   * 最多六个 RGB 三元组，按位置依次分配。必须空格分隔，不能写逗号：
+   * 这些值会拼进 rgb(var(--tint-N) / 0.4)，CSS Color 4 的逗号写法不允许带斜杠透明度，
+   * 而变量在计算值阶段才替换，非法值会把整条声明丢掉且不报错（边框变文字色、发光变 none）。
+   * 项目里曾 33 处写成逗号，整套辅助色发光一直没生效，是读 CDP 计算样式才发现的。
    */
   colors: readonly string[];
 }
@@ -153,7 +104,7 @@ export const TINT_OPTIONS: readonly TintPalette[] = [
     id: "neon",
     label: "霓虹",
     hint: "青紫品红，AI 科技感最强的一档",
-    // 取自参考图：深蓝底上的霓虹青、亮蓝、紫、品红、洋红
+    // 参考图：深蓝底上的霓虹青、亮蓝、紫、品红、洋红
     colors: [
       "34 211 238",
       "59 130 246",
@@ -231,17 +182,11 @@ export const RADIUS_OPTIONS = [
 
 export type RadiusId = (typeof RADIUS_OPTIONS)[number]["id"];
 
-/* ============================================================
-   配置对象
-   ============================================================ */
-
 export interface AppearanceConfig {
   font: FontId;
   scale: ScaleId;
-  /** 黑 / 白 */
   theme: ThemeId;
   accent: AccentId;
-  /** 辅助色分配方案 */
   tint: TintId;
   backdrop: BackdropId;
   radius: RadiusId;
@@ -250,16 +195,12 @@ export interface AppearanceConfig {
 export const DEFAULT_APPEARANCE: AppearanceConfig = Object.freeze({
   font: "system",
   scale: "md",
-  theme: "dark", // 默认黑色
+  theme: "dark",
   accent: "blue",
   tint: "neon",
   backdrop: "glow",
   radius: "soft",
 }) as AppearanceConfig;
-
-/* ============================================================
-   校验与归一化（纯函数，可单测）
-   ============================================================ */
 
 function pick<T extends { id: string }>(
   options: readonly T[],
@@ -271,13 +212,8 @@ function pick<T extends { id: string }>(
 }
 
 /**
- * 把任意输入收窄成合法配置。
- *
- * 为什么要处理 canvas 这个已经不存在的旧字段：
- *   库里可能存着上一版的配置（那时背景是「深蓝/墨黑/石板/深紫」四选一）。
- *   直接读会得到一个没有 theme 的对象 → 丢掉用户原本的选择。
- *   但旧配置里选过深色底，语义上就等于选了黑主题，
- *   所以只要那个旧字段存在就认定 theme = "dark"，把选择保住。
+ * 收窄任意输入成合法配置。库里可能存着上一版的 canvas 字段（那时背景四选一），
+ * 直接读会丢掉用户原本选过的深色底，所以那个字段存在就认定 theme = "dark"。
  */
 export function normalizeAppearance(input: unknown): AppearanceConfig {
   const raw = (input ?? {}) as Partial<
@@ -300,14 +236,9 @@ export function normalizeAppearance(input: unknown): AppearanceConfig {
 }
 
 /**
- * 把配置翻译成一组 CSS 变量。
- *
- * 这是整个配置功能的核心：上层只需要把这些变量挂到 <html> 上，
- * 组件样式里用 var(--...) 引用即可，谁都不用知道当前配的是什么。
- *
- * 注意 theme 不在这里翻译 —— 它是通过 <html data-theme> 交给样式表的。
- * 原因是 CSS 没法按变量值选规则（没有「如果 --x 等于 y 就怎样」），
- * 而主题要切换的是**一整套**语义颜色，必须用属性选择器。
+ * 配置翻译成一组 CSS 变量：上层挂到 <html> 上，组件用 var(--...) 引用即可。
+ * theme 不在这里翻译，走 <html data-theme>：CSS 没法按变量值选规则，
+ * 而换主题要换一整套语义颜色，只能用属性选择器。
  */
 export function appearanceToCssVars(
   config: AppearanceConfig,
@@ -330,9 +261,7 @@ export function appearanceToCssVars(
     "--app-radius": radius.value,
   };
 
-  // 辅助色铺满六个位置。
-  // 单色方案只给了一个值，这里把它填满全部位置 ——
-  // 这样组件侧永远可以按「第 N 个位置取 --tint-N」来写，不必判断方案。
+  // 铺满六个位置：单色方案只给一个值，组件侧才能一律按第 N 个位置取 --tint-N
   const colors = tint.colors;
   for (let i = 0; i < 6; i++) {
     vars[`--tint-${i + 1}`] = colors[i] ?? colors[colors.length - 1];
@@ -341,7 +270,7 @@ export function appearanceToCssVars(
   return vars;
 }
 
-/** 第 index 个位置（从 0 开始）的辅助色。超出六个则循环 */
+/** 第 index 个位置（从 0 开始）的辅助色，超出六个循环取 */
 export function tintVarAt(index: number): string {
   return `var(--tint-${(index % 6) + 1})`;
 }

@@ -1,8 +1,5 @@
 /**
- * 运行的领域模型
- * ============================================================
- * 「运行」是整套系统的主线对象：它记住用户要做什么、现在走到哪、
- * 花了多少钱。六个阶段都是围绕它展开的。
+ * 运行的领域模型：一句话需求、当前阶段、累计花费。
  */
 
 import { randomUUID } from "node:crypto";
@@ -10,18 +7,17 @@ import type { StageId } from "../pipeline/stages";
 import type { TokenUsage } from "../ports/model";
 
 export type RunStatus =
-  | "running" // 正在自动执行
-  | "paused" // 停在人工确认点，等用户回答
-  | "done" // 全部验收标准通过，已交付
-  | "failed" // 失败且无法自动恢复
+  | "running"
+  | "paused" // 停在人工确认点
+  | "done"
+  | "failed"
   | "cancelled"; // 用户主动中止
 
 export interface Run {
   id: string;
   userId: number;
-  /** 用户输入的那一句话 —— 全流程的起点 */
+  /** 用户原话，全流程的起点 */
   prompt: string;
-  /** 当前所处阶段 */
   stage: StageId;
   status: RunStatus;
   /** 工作流版本，失效传播的判据 */
@@ -34,16 +30,11 @@ export interface Run {
 
 export type NewRun = Pick<Run, "userId" | "prompt" | "workflowVersion">;
 
-/* ============================================================
-   规则与工具（纯函数，可单测）
-   ============================================================ */
-
-/** 主键：随机串，对外不可枚举 */
+/** 随机串，对外不可枚举 */
 export function newRunId(): string {
   return randomUUID();
 }
 
-/** 一句话输入的上下限 */
 export const PROMPT_MIN = 4;
 export const PROMPT_MAX = 500;
 
@@ -55,11 +46,8 @@ export interface PromptCheck {
 }
 
 /**
- * 校验并归一化用户输入。
- *
- * 归一化做三件事：去首尾空白、合并连续空白、去掉控制字符。
- * 最后一条容易被忽略 —— 从别处粘贴进来时经常夹带零宽字符或换行，
- * 它们会让后续的字符串比较与去重出现莫名其妙的失败。
+ * 校验并归一化用户输入：去首尾空白、合并连续空白、去控制字符。
+ * 粘贴进来的零宽字符与换行会破坏后续的字符串比较与去重。
  */
 export function checkPrompt(raw: string): PromptCheck {
   const cleaned = raw
@@ -76,7 +64,7 @@ export function checkPrompt(raw: string): PromptCheck {
   return { ok: true, value: cleaned };
 }
 
-/** 空的用量，用于新建运行时的初值 */
+/** 新建运行时的初值 */
 export function emptyUsage(): TokenUsage {
   return {
     inputTokens: 0,
@@ -87,7 +75,7 @@ export function emptyUsage(): TokenUsage {
   };
 }
 
-/** 中文状态标签（界面用） */
+/** 界面标签 */
 export const RUN_STATUS_LABEL: Record<RunStatus, string> = {
   running: "构建中",
   paused: "等你确认",
@@ -96,10 +84,7 @@ export const RUN_STATUS_LABEL: Record<RunStatus, string> = {
   cancelled: "已中止",
 };
 
-/**
- * 把时间戳转成「刚刚 / 3 分钟前 / 昨天 14:30」这种人话。
- * 放在领域层而不是组件里：它是一段纯计算，可以被单测覆盖。
- */
+/** 时间戳转成人话：刚刚 / 3 分钟前 / 昨天。纯计算，放领域层是为了能单测 */
 export function describeTime(ts: number, now: number): string {
   const diff = now - ts;
   if (diff < 0) return "刚刚";

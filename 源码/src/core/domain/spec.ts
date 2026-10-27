@@ -1,76 +1,42 @@
 /**
- * 应用规格（spec）
- * ============================================================
- * 六道工序的第一道：把一句人话变成一份**可机器校验的验收依据**。
- *
- * ── 为什么这一阶段必须存在 ──
- *   没有它，最后一步「验收」就没有判定依据，只能让模型自己说
- *   「我觉得做好了」—— 那不叫验收，那叫自评。
- *   整条流水线的闭环靠的就是：①产出验收标准，⑥拿它逐条对。
- *
- * ── 为什么把「追问」做成一等公民 ──
- *   用户说「做一个任务看板」，这里面的空白比字面多得多：
- *   给谁用？单机还是多人？要不要登录？
- *   直接往下走的话，模型会替你猜，而猜错要等到最后一步才暴露 ——
- *   那时已经花完钱了。
- *   所以规格化阶段允许**停下来问**，而且问之前不进入下一道工序。
- *
- * ── 为什么是纯函数 ──
- *   这一整套判断（够不够格往下走、模型给的 JSON 合不合法）
- *   不该依赖网络。抽出来之后可以用几十条单测把所有边界钉死，
- *   包括「模型返回了一坨不是 JSON 的东西」这种情况。
+ * 应用规格（spec）：把一句话需求变成可机器校验的验收依据，含提示词、解析、校验与兜底。
+ * 没有验收标准，最后一步就只能让模型自评；questions 非空时这道工序不算完成。
  */
 
-/* ============================================================
-   类型
-   ============================================================ */
-
-/** 一条验收标准 */
 export interface AcceptanceCriterion {
-  /** 稳定标识，供后续阶段与验收报告引用 */
+  /** 供后续阶段与验收报告引用 */
   id: string;
-  /** 用一句可判断真假的话说清楚「做到什么算做到」 */
+  /** 一句话说清做到什么算做到，且能判真假 */
   statement: string;
-  /** 怎么验证它。必须是可执行的，不能是「看起来对」 */
+  /** 必须是可执行的动作，不能是看起来对 */
   verifyBy: string;
   /**
-   * 必需 / 期望。
-   * 区分这两档是为了让验收能给出「通过但有保留」，
-   * 而不是非黑即白 —— 现实里的交付大多是前者。
+   * 分两档是为了让验收能给出通过但有保留，而不是非黑即白。
    */
   level: "must" | "should";
 }
 
-/** 清晰的边界：明确不做什么 */
+/** 明确不做什么 */
 export interface SpecScope {
   inScope: string[];
   outOfScope: string[];
 }
 
 export interface AppSpec {
-  /** 用户原始那一句话，一字不改地留着 */
+  /** 一字不改地留着 */
   prompt: string;
-  /** 归一化后的目标陈述 */
+  /** 目标陈述 */
   goal: string;
-  /** 给谁用 */
   audience: string;
-  /** 核心使用场景，按重要性排序 */
+  /** 按重要性排序 */
   scenarios: string[];
   acceptance: AcceptanceCriterion[];
   scope: SpecScope;
-  /**
-   * 需要向用户确认的疑点。
-   * **非空时这道工序不能算完成** —— 见下面 isSpecReady。
-   */
+  /** 非空时这道工序不算完成，见 reviewSpec */
   questions: string[];
-  /** 产出这份规格的模型 */
   model: string;
   generatedAt: number;
 }
-
-/* ============================================================
-   提示词
-   ============================================================ */
 
 export const SPEC_SYSTEM_PROMPT = `你是一位需求分析师。用户会用一句话描述他想做的软件，
 你的任务是把这句话变成一份可执行的规格。
@@ -105,24 +71,18 @@ export const SPEC_SYSTEM_PROMPT = `你是一位需求分析师。用户会用一
    但要在 goal 或 audience 里写出你的推断。问一堆无关紧要的问题比不问更糟
 5. outOfScope 至少写 1 条。写不出不做的范围，通常说明需求本身还没想清楚`;
 
-/** 把用户那句话包成用户消息 */
+/** 用户消息 */
 export function buildSpecPrompt(userInput: string): string {
   return `用户的一句话需求：\n\n${userInput.trim()}\n\n请产出规格 JSON。`;
 }
 
-/* ============================================================
-   解析
-   ------------------------------------------------------------
-   模型返回的东西不可信：可能带代码块围栏、可能带前后解释、
-   可能字段类型不对。这里逐层剥，剥不出来就明确失败，
-   不做「尽力而为」的猜测 —— 猜错会一路错到最后一步。
-   ============================================================ */
+// 模型输出不可信：可能带围栏、带前后解释、字段类型不对。逐层剥，剥不出来就明确失败
 
 export type SpecParseResult =
   | { ok: true; spec: AppSpec }
   | { ok: false; reason: string; raw: string };
 
-/** 从模型输出里抠出 JSON 文本 */
+/** 从输出里抠出 JSON 文本 */
 export function extractJsonText(raw: string): string | null {
   const text = raw.trim();
   if (!text) return null;
@@ -130,18 +90,15 @@ export function extractJsonText(raw: string): string | null {
   // 先试整体就是 JSON 对象
   if (text.startsWith("{")) {
     const end = text.lastIndexOf("}");
-    // 有闭合括号就截到那里
     if (end > 0) return escapeRawControlChars(text.slice(0, end + 1));
     /*
-      起了头却没有闭合 —— 输出被截断了。
-      这时候**不能返回 null**：那会让上层报「找不到 JSON」，
-      而真实情况是「JSON 写坏了」，两者的排查方向完全不同。
-      原样返回，让 JSON.parse 给出具体的语法错误位置。
+      起了头却没有闭合说明输出被截断。这里不能返回 null：上层会报找不到 JSON，
+      而真实情况是 JSON 写坏了，两者的排查方向完全不同。
     */
     return escapeRawControlChars(text);
   }
 
-  // 顶层是数组：也要抠出来，好让上层给出「不是对象」这个准确结论
+  // 顶层是数组也抠出来，好让上层报出不是对象
   if (text.startsWith("[")) {
     const end = text.lastIndexOf("]");
     if (end > 0) return escapeRawControlChars(text.slice(0, end + 1));
@@ -155,7 +112,7 @@ export function extractJsonText(raw: string): string | null {
     if (inner.startsWith("{") || inner.startsWith("[")) return escapeRawControlChars(inner);
   }
 
-  // 最后试「第一个 { 到最后一个 }」
+  // 最后试第一个 { 到最后一个 }
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start >= 0 && end > start) {
@@ -173,24 +130,11 @@ export function extractJsonText(raw: string): string | null {
 }
 
 /**
- * 把 JSON **字符串里面**的裸控制字符转义掉。
- * ============================================================
- * ── 为什么需要它（真实故障，不是设想）──
- *   实测一条真运行里，一个模块栽在这里：
- *     "产出无法使用：JSON 解析失败：Bad control character in string literal
- *      in JSON at position 3122 (line 1 column 3123)"
- *   模块的产出是 {html, css, js} 三段代码，模型很容易在字符串里**直接换行**，
- *   而不是写 \n —— 那不是合法 JSON，于是整个模块被丢弃：
- *   钱花了、产物里少一整块功能，而它本可以救回来。
- *
- * ── 修复的边界（这一条比修复本身更重要）──
- *   · 只动**字符串字面量内部**的控制字符（U+0000–U+001F）；
- *   · 字符串外面的一律不动 —— 缩进用的换行、逗号后的空格都是合法 JSON，
- *     动了它们反而会把好数据弄坏（反例测试钉着这一条）；
- *   · 已经转义过的（\n、\"、\\）原样保留，不重复转义。
- *
- * 正确性靠"逐字符判断是否在字符串里"，而不是正则 ——
- * 正则分不清 `"a\":\"b"` 这种带转义引号的串，判断错一次就会把结构改坏。
+ * 把 JSON 字符串内部的裸控制字符（U+0000–U+001F）转义掉。
+ * 模型常在字符串里直接换行而不是写 \n，那不是合法 JSON，整个模块会被丢弃：
+ * 钱花了、产物里少一整块功能，而它本可以救回来。
+ * 只动字符串字面量内部：外面的缩进换行是合法 JSON，动了反而把好数据弄坏；
+ * 已转义的（\n、\"、\\）原样保留。逐字符判断而不是正则：正则分不清带转义引号的串。
  */
 export function escapeRawControlChars(text: string): string {
   let out = "";
@@ -207,7 +151,7 @@ export function escapeRawControlChars(text: string): string {
     }
 
     if (escaped) {
-      // 上一个字符是反斜杠：这个字符无论是什么都已经被转义，原样放行
+      // 已被反斜杠转义，原样放行
       out += ch;
       escaped = false;
       continue;
@@ -227,7 +171,7 @@ export function escapeRawControlChars(text: string): string {
 
     const code = ch.charCodeAt(0);
     if (code < 0x20) {
-      // 裸控制字符（换行、制表、回车……）：转义成 \uXXXX
+      // 裸控制字符，转义成 \uXXXX
       out += `\\u${code.toString(16).padStart(4, "0")}`;
       continue;
     }
@@ -251,11 +195,8 @@ function asString(v: unknown): string {
 }
 
 /**
- * 解析模型输出。
- *
- * 注意这里**只做结构校验，不做质量判断** ——
- * 「验收标准够不够硬」由 validateSpec 负责，
- * 两者分开之后，失败时的报错能精确到是哪一类问题。
+ * 只做结构校验，不做质量判断：验收标准够不够硬由 validateSpec 负责。
+ * 分开之后，失败时的报错能精确到是哪一类问题。
  */
 export function parseSpec(
   raw: string,
@@ -296,14 +237,12 @@ export function parseSpec(
           verifyBy: asString(x.verifyBy),
           level: x.level === "must" ? ("must" as const) : ("should" as const),
         }))
-        // 缺了 statement 的条目直接丢掉：留着它只会让验收阶段
-        // 去校验一条根本没说清的标准
+        // 缺 statement 的条目丢掉：留着只会让验收阶段去校验一条没说清的标准
         .filter((x) => x.statement.length > 0)
     : [];
 
   const spec: AppSpec = {
-    // 原文一字不改地留着 —— 后面所有阶段引用需求时都以它为准，
-    // 而不是以模型改写过的 goal 为准
+    // 原文一字不改：后面各阶段引用需求都以此为准，而不是模型改写过的 goal
     prompt: meta.prompt,
     goal: asString(o.goal),
     audience: asString(o.audience),
@@ -321,13 +260,8 @@ export function parseSpec(
   return { ok: true, spec };
 }
 
-/* ============================================================
-   校验
-   ------------------------------------------------------------
-   分成两档：blocking（拦下，不能往下走）与 advisory（提醒，但放行）。
-   现实里的需求很少一次就完美，全拦下来会把用户卡死；
-   但验收标准不过关是真不能往下走的 —— 那会让第六道工序失去依据。
-   ============================================================ */
+// 分两档：blocking 拦下不能往下走，advisory 提醒但放行。
+// 全拦下来会把用户卡死，但验收标准不过关确实不能往下走：第六道会失去依据。
 
 export interface SpecIssue {
   level: "blocking" | "advisory";
@@ -392,10 +326,8 @@ export function validateSpec(spec: AppSpec): SpecIssue[] {
 }
 
 /**
- * 判断一条验收标准是不是「说了等于没说」。
- *
- * 这类词的问题不是不准确，而是**无法判定真假**：
- * 两个人看「界面美观」会得出两个结论，验收就变成了扯皮。
+ * 说了等于没说的验收标准。这类词的问题不是不准确，而是无法判定真假：
+ * 两个人看界面美观这三个字会得出两个结论，验收就变成了扯皮。
  */
 const VAGUE_WORDS = [
   "美观",
@@ -414,24 +346,18 @@ export function isVagueStatement(statement: string): boolean {
   return VAGUE_WORDS.some((w) => statement.includes(w));
 }
 
-/* ============================================================
-   门禁
-   ============================================================ */
-
 export interface SpecGate {
   /** 能不能进入下一道工序 */
   pass: boolean;
-  /** 拦下来的原因（blocking 的） */
+  /** 拦下来的原因 */
   blocking: SpecIssue[];
-  /** 提醒但不拦的 */
+  /** 提醒但不拦 */
   advisory: SpecIssue[];
   /**
-   * 需要用户回答的问题。
-   * 有未回答的问题时**不能往下走** —— 这正是「人工门禁」的含义：
-   * 全流程唯一需要人的地方。
+   * 有未回答的问题时不能往下走，这是人工门禁的含义：全流程唯一需要人的地方。
    */
   pendingQuestions: string[];
-  /** 给界面用的一句话结论 */
+  /** 界面用的一句话结论 */
   summary: string;
 }
 
@@ -457,13 +383,8 @@ export function reviewSpec(spec: AppSpec): SpecGate {
   return { pass, blocking, advisory, pendingQuestions, summary };
 }
 
-/* ============================================================
-   降级：模型没能给出可用规格时
-   ------------------------------------------------------------
-   与其让整条流水线失败，不如给出一份**诚实标注过的兜底规格**：
-   验收标准只保留能自动判定的那几条，并明确写出「这份是兜底」。
-   用户在界面上看得到差别，就不会把兜底当成真规格。
-   ============================================================ */
+// 兜底：与其让整条流水线失败，不如给一份明确标注过的兜底规格，
+// 验收标准只留能自动判定的那几条，用户看得到差别就不会当成真规格。
 
 export const FALLBACK_MARK = "（兜底规格：未能从模型获得结构化规格）";
 
@@ -510,12 +431,12 @@ export function fallbackSpec(meta: {
   };
 }
 
-/** 兜底规格在界面上要显著区别于真规格 */
+/** 与真规格区分 */
 export function isFallbackSpec(spec: AppSpec): boolean {
   return spec.audience === "未说明" && spec.scope.inScope.length === 1;
 }
 
-/** 规格摘要，供界面与日志使用 */
+/** 摘要，供界面与日志使用 */
 export function summarizeSpec(spec: AppSpec): string {
   const must = spec.acceptance.filter((a) => a.level === "must").length;
   return `${spec.acceptance.length} 条验收标准（其中 ${must} 条必需）· ${spec.scenarios.length} 个场景 · ${spec.scope.outOfScope.length} 条不做`;

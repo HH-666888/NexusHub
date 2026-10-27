@@ -1,25 +1,6 @@
 /**
- * 事件记录器
- * ============================================================
- * 把生成器吐出来的事件，一份推给调用方（实时看），
- * 另一份合并后落库（事后回放）。
- *
- * ── 为什么是「包一层」而不是在生成器里直接写库 ──
- *   生成内核不该认识存储。写进去之后，想换个存储介质、
- *   想在测试里不落库，都得去改内核。
- *   包一层的话，内核一行不动，落库是可插拔的。
- *
- * ── 为什么必须合并片段 ──
- *   一次生成会吐出三千多个正文与思考片段。
- *   逐条落库 = 三千多次写入，在 SQLite 上每次都 fsync，
- *   累积起来是肉眼可见的卡顿 —— 而这一切只是为了回放时
- *   能看到「第 1200 毫秒时已经写了 400 个字」，
- *   合并成几十条完全够用。
- *
- * ── 一条容易写错的地方 ──
- *   缓冲区必须在**任何非片段事件之前**先冲刷。
- *   否则 usage 事件会先落库，而它前面那段正文后落库，
- *   回放到那一刻时就会看到「钱已经花了，字还没出来」。
+ * 事件记录器：把生成事件原样转发给调用方，同时合并片段后落库。
+ * 片段必须合并，且在任何非片段事件之前冲刷，否则回放顺序会错。
  */
 
 import type { NewRunEvent, RunEventKind } from "../domain/run-event";
@@ -27,14 +8,11 @@ import type { EventStore } from "../ports/event-store";
 import type { GenerateEvent } from "./service";
 
 export interface RecorderOptions {
-  /**
-   * 缓冲区攒多久冲刷一次（毫秒）。
-   * 太小 → 写入次数多；太大 → 回放粒度粗、拖动时跳跃感明显。
-   */
+  /** 冲刷间隔（毫秒）：太小写入次数多，太大回放粒度粗 */
   flushIntervalMs?: number;
-  /** 缓冲区字符数上限，超过就立刻冲刷，避免长回答把内存撑大 */
+  /** 缓冲字符上限，超过立即冲刷 */
   flushChars?: number;
-  /** 注入时钟，便于测试里精确控制时间 */
+  /** 注入时钟，便于测试 */
   now?: () => number;
 }
 
@@ -44,11 +22,7 @@ const DEFAULT_FLUSH_CHARS = 4000;
 /** 会被合并的片段类型 */
 const DELTA_KINDS = new Set<RunEventKind>(["text", "reasoning"]);
 
-/**
- * 包装一个事件流：原样转发，同时合并落库。
- *
- * 返回的仍然是同一个事件流 —— 调用方（SSE 接口）不需要知道自己被记录了。
- */
+/** 原样转发并合并落库；调用方（SSE 接口）无感 */
 export async function* recordRunEvents(
   source: AsyncIterable<GenerateEvent>,
   store: EventStore,
@@ -62,16 +36,13 @@ export async function* recordRunEvents(
   let seq = 0;
   const pending: NewRunEvent[] = [];
 
-  /*
-    尚未落库的片段。按 kind 分开攒 ——
-    正文和思考会交替出现，混在一个缓冲里就分不出来了。
-  */
+  // 正文与思考交替出现，按 kind 分开攒才能各自成段
   let textBuf = "";
   let reasoningBuf = "";
   let textStartAt = 0;
   let reasoningStartAt = 0;
 
-  /** 把攒着的片段合成一条事件推进待写队列 */
+  /** 把攒着的片段合成一条事件，入待写队列 */
   function flushDeltas(at = now()) {
     if (textBuf) {
       pending.push({
@@ -97,15 +68,14 @@ export async function* recordRunEvents(
     }
   }
 
-  /** 真正写库。失败只记不抛 —— 记账是附加能力，不能拖垮主流程 */
+  /** 写库；失败只记日志，记账不能拖垮主流程 */
   async function persist() {
     if (pending.length === 0) return;
     const batch = pending.splice(0, pending.length);
     try {
       await store.appendMany(batch);
     } catch (err) {
-      // 写不进去就算了。用户要的是把东西生成出来，
-      // 不能因为回放数据没记上就让整次生成失败。
+      // 落库是附加能力，不为回放数据失败整次生成
       console.error(
         `[events] 落库失败，已丢弃 ${batch.length} 条事件（生成继续）：`,
         err instanceof Error ? err.message : err,
@@ -126,7 +96,6 @@ export async function* recordRunEvents(
         reasoningBuf += delta;
       }
 
-      // 攒够时间或攒够字数就冲刷
       const buffered = textBuf.length + reasoningBuf.length;
       const oldest = Math.min(
         textStartAt || t,
@@ -137,7 +106,7 @@ export async function* recordRunEvents(
         await persist();
       }
     } else {
-      // 非片段事件：先把攒着的片段落下去，保证顺序不错乱
+      // 先冲刷片段，保证落库顺序与事件顺序一致
       flushDeltas(t);
       pending.push({
         runId,
@@ -149,11 +118,9 @@ export async function* recordRunEvents(
       await persist();
     }
 
-    // 原样转发给调用方，实时体验一点不受影响
     yield event;
   }
 
-  // 流结束时把最后一点尾巴写掉
   flushDeltas();
   await persist();
 }

@@ -1,55 +1,8 @@
 /**
- * 按模块并行构建
- * ============================================================
- * 六道工序的第四道「并行构建」，实际执行。
- *
- * ⚠️ 每个模块的产出会被**真的喂给后续装配** —— 不是跑完就扔。
- *    这个函数返回的 BuildBatch 会：
- *      ① 被拼进装配那一次调用的提示词（buildAssemblePrompt）；
- *      ② 在最终 HTML 里留下痕迹，并由产物检查那条探针逐模块核对；
- *      ③ 变成清单上一批 `build:<模块id>` 的任务点（成功 done / 失败 failed）。
- *    如果哪天有人把它改成"并行跑 N 次、结果扔掉、最后照旧单次生成"，
- *    上面三条会同时失效 —— 那正是本期要防的"表演式并行"。
- *
- * ── 并发是怎么实现的（这一段的全部要点）──
- *   **工作池，不是 `for` 里 `await`。**
- *
- *   下面那个 `worker()` 是一个不断"领活 → 干完 → 再领活"的循环，
- *   同时开 `min(并发上限, 模块数)` 个。每个 worker 自带一个游标
- *   （`cursor++`）去领下一个模块，所以：
- *     · 同时在飞的调用数**永远 <= 并发上限**；
- *     · 只要上限 >1 且模块数 >1，就**真的有多个调用同时在飞** ——
- *       这是"并行"和"串行"唯一可判真假的区别；
- *     · 快的先领下一个，不会因为某个模块慢而让整批空等
- *       （`for` + `await` 就会：一个慢调用会把后面所有模块堵住）。
- *
- *   `peakInFlight` 记录的是"同时在飞的最大值"。它不是装饰：
- *   有了它，"这次真的并行了"这件事在**生产环境**里也可核实，
- *   而不只是单测里那个假端口说了算。
- *
- * ── 部分失败为什么必须如实记录 ──
- *   并行的代价就是部分失败成为常态：3 个模块里 1 个超时很正常。
- *   抹掉它的做法（丢掉那个模块、当它不存在）会造成两种谎：
- *     · 用户以为模块都做完了 —— 而最终产物里少了一整块功能；
- *     · 账上少了那次调用的钱 —— 失败的那次调用**也是花了钱的**
- *       （调用成功、解析失败的那一类尤其如此）。
- *   所以每个模块的失败都进 `failed[]`，带着原因和花费，
- *   再由编排层变成清单上一个红色的 `build:<模块id>` 点。
- *
- * ── 两处自定口径（写在这里，免得下一个人猜）──
- *   ① **全部失败**：不抛错，返回 `failed.length === 模块数` 的批次。
- *      抛错会让编排层失去"哪几个失败了、一共花了多少钱"的记录，
- *      而装配那一步仍然应该跑 —— 把失败摊开给模型看（提示词里明说
- *      "这几个模块没做成，不要替它们编"），比整条流水线崩掉诚实得多。
- *   ② **模块数为 0**：不发起任何调用，返回一个空批次，不报错。
- *      "这次没有可并行的单元"是一个事实，不是错误；
- *      但它在产物检查那里**不算通过**（没有模块产出，就无从证明
- *      模块代码进了产物）—— 见 generate/prompt.ts 里那条探针。
- *
- * ── 边界 ──
- *   只依赖 ModelPort。不碰数据库、不写文件、不知道 runId ——
- *   所以它能被单测用一个假 ModelPort 完整覆盖，也不需要任何假 store。
- *   记账由编排层做（它才有成本流水与 runId）。
+ * 按模块并行构建（第四道工序）：工作池，不是 for 里 await。
+ * 每个模块的产出会被真的喂给装配与产物检查，不是跑完就扔掉。
+ * 部分失败如实进 failed[]，带原因与花费 —— 失败的那次调用也花了钱。
+ * 全部失败不抛错、返回失败批次；模块数为 0 不发起调用，返回空批次。
  */
 
 import {
@@ -74,21 +27,8 @@ import { completeWithTruncationRetry } from "./truncation-retry";
 export interface BuildModulesDeps {
   model: ModelPort;
   /**
-   * 每构建好一个模块就回调一次（编排层用它"边构建边落盘"）。
-   *
-   * ── 为什么要有这个钩子（真实场景）──
-   *   原来是把整批跑完、由编排层统一写 `modules/<id>.json`。
-   *   问题是：整批最贵也最慢（四个模块并行也要一两分钟），
-   *   而这期间用户可能关掉浏览器、dev server 可能重启 ——
-   *   一旦被打断，**已经构建好的那两三个模块也一起没了**，
-   *   下次只能从头再花一遍钱。
-   *   有了这个钩子，落盘发生在"这个模块刚构建好"那一刻，
-   *   于是断点续跑真的接得上（见 resume.ts）。
-   *
-   * ⚠️ 内核不认识文件系统：这里只是一个**被注入的函数**，
-   *    写哪里、写不写由编排层决定；单测里传一个假函数就能验它被调用了几次。
-   * ⚠️ 回调抛错**不许**影响这一批：它只是"顺手存一份"，
-   *    存不上最坏的后果是下次续跑少沿用几个模块，不能让整批崩掉。
+   * 每构建好一个模块就回调一次，供编排层边构建边落盘 —— 断点续跑靠它。
+   * 回调抛错吞掉：存不上最坏的后果是下次少沿用几个模块，不能让整批崩掉。
    */
   onModuleBuilt?: (build: ModuleBuild) => void | Promise<void>;
 }
@@ -98,38 +38,27 @@ export interface BuildModulesInput {
   prompt: string;
   /** 模块覆盖了哪些功能条目要查它 */
   spec: AppSpec;
-  /** 拆分依据：arch.modules 就是并行的单元 */
+  /** 拆分依据：arch.modules 即并行单元 */
   arch: ArchSpec;
-  /** 并发上限。**<=0 或未给 → 默认 3** */
+  /** 并发上限；<=0 或未给取默认 3 */
   concurrency?: number;
   /** 单个模块的输出预算。未给 → MODULE_MAX_OUTPUT_TOKENS */
   maxOutputTokensPerModule?: number;
   /**
-   * 单个模块失败后要不要继续。
-   * **默认 true**（部分失败是允许的，见文件头那段）。
-   * 显式传 false 时，第一个失败的模块会中止整批并抛出 ——
-   * 已经领到活的那几个仍然会跑完再抛，不会留下悬空的调用。
+   * 单个模块失败后是否继续。默认 true（部分失败是允许的）；
+   * 传 false 时第一个失败会中止整批，已领活的模块仍会跑完再抛。
    */
   continueOnError?: boolean;
   /**
-   * 只构建这几个模块（断点续跑：上次已经构建好、且校验通过的那些不用重跑）。
-   *
-   * ── 两个细节 ──
-   *   · 未给 = 构建全部（行为与从前一致，一个字节都不变）；
-   *   · 提示词里的"第 N 个 / 共 M 个"仍然按**架构里的全部模块数**算 ——
-   *     模型需要知道整件事有几个模块（接口怎么留、和谁接），
-   *     不能因为这次只补 1 个就把上下文说成"只有 1 个模块"。
+   * 只构建这几个模块（断点续跑）。未给即构建全部。
+   * 提示词里的「第 N 个 / 共 M 个」仍按架构里的全部模块数算。
    */
   onlyModuleIds?: readonly string[];
 }
 
 /**
- * 把传进来的并发上限归一成一个能用的值。
- *
- * ── 为什么"<=0 或未给"要落到默认值，而不是 max(1, x) ──
- *   `concurrency: 0` 的语义是"我没想好"，不是"一个都不许跑"。
- *   后者会让一次运行安静地一个模块都不构建，而那种失败
- *   看起来像"架构里没有模块"，排查方向完全错。
+ * 归一并发上限。<=0 落到默认值而不是 max(1, x)：
+ * concurrency: 0 的语义是「没想好」，按 0 处理会让一次运行安静地不构建任何模块。
  */
 export function resolveConcurrency(raw?: number): number {
   if (raw === undefined || !Number.isFinite(raw) || raw <= 0) {
@@ -160,14 +89,8 @@ export async function buildModules(
   const maxOutputTokens = input.maxOutputTokensPerModule ?? MODULE_MAX_OUTPUT_TOKENS;
 
   /*
-    ---------- 这一轮到底要跑哪几个模块 ----------
-    未指定 onlyModuleIds = 全部（行为与从前一致）。
-    指定了 = 只跑那几个（断点续跑：上次已经构建好、且校验通过的那些不重跑）。
-
-    ⚠️ 提示词里「第 N 个 / 共 M 个」仍然按**架构里的全部模块数**算：
-       模型要知道整件事有几个模块（接口怎么留、和谁接），
-       不能因为这次只补 1 个就把上下文说成"只有 1 个模块"。
-       所以 N 用的是它在 arch 里的位置，不是在这一小批里的位置。
+    这一轮跑哪几个模块：未指定 onlyModuleIds 即全部。
+    提示词里的 N 用它在 arch 里的位置，不是在这一小批里的位置。
   */
   const targets: ArchModule[] =
     input.onlyModuleIds === undefined
@@ -175,10 +98,8 @@ export async function buildModules(
       : modules.filter((m) => input.onlyModuleIds!.includes(m.id));
 
   /*
-    要跑的模块数为 0：不发起任何调用，直接返回空批次（口径②，见文件头）。
-    这里**刻意不抛错、也不补一个假模块** ——
-    补一个假模块会让"并行构建"从一个事实变成一句台词。
-    （"全部模块都已沿用"这种情况走的就是这一支：这一次一个模型调用都没有。）
+    要跑的模块数为 0：不发起调用，返回空批次，也不补假模块 ——
+    补一个会让「并行构建」从事实变成台词。
   */
   if (targets.length === 0) {
     return {
@@ -194,28 +115,20 @@ export async function buildModules(
   }
 
   /**
-   * 这一批里**因为截断而重试过**的模块 id。
-   *
-   * 为什么要记下来：重试是编排层要如实说出口的一件事 ——
-   * "这个模块第一次顶满了预算，加倍重来才成" 是用户该知道的，
-   * 否则他只会看到一个慢了一倍的模块，不知道发生了什么。
-   * 用一个 Set 收集，最后按 arch 顺序（outcomes 的顺序）输出，与谁先跑完无关。
+   * 因截断而重试过的模块 id。重试要如实说出口，
+   * 最后按 outcomes 的顺序输出，与谁先跑完无关。
    */
   const retriedModuleIds = new Set<string>();
 
   /**
-   * 跑一个模块：一次模型调用 → 解析成片段；任何一步出错都变成一条 failure。
-   *
-   * ⚠️ 这个函数**不抛错**（除非解析之外的非预期异常）。
-   *    "单模块失败不许拖垮整批"这条要求，最终就落在
-   *    "错误在这里变成数据，而不是向上冒"这一句上。
+   * 跑一个模块：一次模型调用 → 解析成片段，任何一步出错都变成一条 failure。
+   * 「单模块失败不许拖垮整批」就落在「错误在这里变成数据，不向上冒」。
    */
   async function runOne(target: ArchModule, index: number): Promise<Outcome> {
     const brief = moduleBrief(input.arch, input.spec, target);
     /*
-      "第几个"取它在**架构全部模块**里的位置（不是这一小批里的位置）：
-      只补 1 个模块时，那个模块可能是架构里的第 4 个 ——
-      对它说"你是第 1 个，共 4 个"是自相矛盾的。
+      「第几个」取它在架构全部模块里的位置：只补 1 个时它可能是第 4 个，
+      对它说「你是第 1 个，共 4 个」是自相矛盾的。
     */
     const archIndex = modules.findIndex((m) => m.id === target.id);
     const userMessage = buildModulePrompt(
@@ -231,12 +144,8 @@ export async function buildModules(
       call = await completeWithTruncationRetry(model, {
         tier: "execute", // 写码是执行级任务，不是决策级
         /*
-          思考档位用生成阶段那一个默认值（现在是 "high"）。
-          这里曾经写着"写页面这类任务实测不思考又快又便宜"——
-          那个结论已经被推翻了：并行构建是**创造性写码**（这块功能怎么切、
-          接口怎么留、和别的模块怎么接），不是样板代码；
-          而且真实运行里这一道的思考量到过 18305 tokens，
-          说明模型自己认为这里有值得想的东西。见 prompt.ts 的实测记录。
+          思考档位用生成阶段的默认值：并行构建是创造性写码，不是样板代码；
+          真实运行里这一道的思考量到过 18305 tokens。
         */
         effort: GENERATE_DEFAULT_EFFORT,
         messages: [
@@ -248,10 +157,8 @@ export async function buildModules(
       });
     } catch (err) {
       /*
-        调用本身失败：钱通常没花出去（costCny 记 0），
-        但"失败"这件事必须留下 —— 它对应清单上一个红色的模块点。
-        （重试那一次失败**不会**走到这里：助手把它收成了 retryError，
-          因为第一次的钱已经花了，不能跟着异常一起丢掉。）
+        调用本身失败：钱通常没花出去，但「失败」必须留下，它对应清单上一个红点。
+        重试那一次失败不会走到这里 —— 助手把它收成了 retryError。
       */
       return {
         ok: false,
@@ -270,30 +177,14 @@ export async function buildModules(
     }
 
     /*
-      ⚠️ 从这里开始，**钱已经花了**。
-         所以下面无论解析成不成功，这笔 costCny / usage 都会跟着结果走 ——
-         解析失败那条分支里也照样带上它。这就是"失败的那次调用也花了钱"
-         这句话在代码里的落点。
-
-      ⚠️ 截断重试过的话，是**两次调用**的钱：下面把每一次的用量与花费
-         逐项加起来（addUsage），而不是只算最后那一次。
-         只算最后一次的话，被截断的那次（往往正是想得最多、最贵的一次）
-         会从账本上消失。
+      从这里开始钱已经花了，所以解析失败的分支也照样带上 costCny / usage。
+      截断重试过的话是两次调用的钱，逐项累加，而不只算最后那一次。
     */
     const result = call.result;
     /*
-      ⚠️ 账本粒度：**一个模块一行**（重试过就把两次合起来）。
-
-        为什么不像装配那一道那样"每次调用一行"：
-          模块这一层的交付单位本来就是"这个模块花了多少钱" ——
-          cost_records 里那一行的 purpose 写的是「并行构建：<模块 id>」，
-          金额与用量是两次之和，**一笔都没漏**。
-          而"它重试过"这件事由三处说出来，不靠账本：
-            ① 批次里的 retriedModules → 编排层发一条阶段说明
-            ② 失败原因里写明「加倍重试后仍然被截断」
-            ③ 界面那一步的思考里能看到两次的思考
-          装配那一道没有"模块"这个中间单位，所以它按调用记。
-          两处粒度不同是**有意**的，不是漏改。
+      账本粒度：一个模块一行（重试过就把两次合起来）。模块层的交付单位是
+      「这个模块花了多少钱」；「重试过」由 retriedModules、失败原因和思考内容三处
+      说出来，不靠账本。装配那一道没有模块这个中间单位，所以按调用记 —— 有意不同。
     */
     const spentUsage = call.attempts.reduce(
       (acc, r) => addUsage(acc, r.usage),
@@ -306,11 +197,7 @@ export async function buildModules(
     const parsed = parseModuleBuild(target.id, result.text);
     if (!parsed.ok) {
       /*
-        失败原因要把"截断"和"重试"说出来：
-          · 截断了但没重试（没条件重试）→ 用户该知道调大常数
-          · 重试了自己挂了 → 用户该知道是网络/服务端，不是预算
-        只写"产出无法使用：找不到 JSON 对象"的话，
-        看的人只能猜，而这两种原因的处置方式完全不同。
+        失败原因要把「截断」和「重试」说出来：这两种原因的处置方式完全不同。
       */
       const why = call.retryError
         ? `产出无法使用：${parsed.reason}（输出被长度上限截断，加倍预算重试那一次又失败了：${call.retryError}）`
@@ -327,7 +214,7 @@ export async function buildModules(
           model: result.model,
           priceTier: result.priceTier,
           latencyMs: spentMs,
-          // 想过了就是想过了 —— 解析失败不代表它没想，也不代表没必要让人看见
+          // 解析失败也要带思考：想过就是想过
           reasoning: result.reasoning,
         },
       };
@@ -342,27 +229,26 @@ export async function buildModules(
         model: result.model,
         priceTier: result.priceTier,
         latencyMs: spentMs,
-        // 重试之后还是截断才算截断 —— 重试成功的那次是完整的
+        // 重试之后仍截断才算截断
         truncated: call.stillTruncated,
-        // 带上思考：编排层要把它发成 reasoning 事件（见 route.ts），
-        // 否则界面上这一步的「思考」tab 永远是空的
+        // 带上思考，编排层要把它发成 reasoning 事件，否则那一步的思考 tab 永远是空的
         reasoning: result.reasoning,
       },
     };
   }
 
-  /* ---------- 工作池 ---------- */
+  // 工作池
   /** 结果按下标回填：模块顺序必须与 arch.modules 一致，与谁先跑完无关 */
   const outcomes: Outcome[] = new Array(targets.length);
   let cursor = 0;
   let inFlight = 0;
   let peakInFlight = 0;
-  /** continueOnError === false 时，第一个失败会记在这里，让所有 worker 停手 */
+  /** continueOnError === false 时第一个失败记在这里，让所有 worker 停手 */
   let abortError: Error | null = null;
 
   async function worker(): Promise<void> {
     for (;;) {
-      // 有人在跑就不领新活了（已经把活领走的那几个会自己跑完）
+      // 已中止就不领新活，已领走的会自己跑完
       if (abortError) return;
       const index = cursor++;
       if (index >= targets.length) return;
@@ -376,12 +262,8 @@ export async function buildModules(
         outcomes[index] = outcome;
 
         /*
-          构建好一个就回调一次（"边构建边落盘"）。
-          放在这里而不是汇总之后：这一批可能要跑一两分钟，
-          中途被打断时，已经好了的那几个必须已经在盘上。
-
-          ⚠️ 回调抛错吞掉：它只是顺手存一份，不能因为存不上就把整批带崩。
-             存不上的后果是"下次少沿用几个模块"，不是"这次白跑"。
+          建好一个就回调一次：这一批可能跑一两分钟，中途被打断时已好的必须在盘上。
+          回调抛错吞掉，存不上的后果是下次少沿用几个模块，不是这次白跑。
         */
         if (outcome.ok && deps.onModuleBuilt) {
           try {
@@ -398,11 +280,8 @@ export async function buildModules(
         }
       } catch (err) {
         /*
-          runOne 已经把"模型调用失败 / 产出解析失败"这两类收成了数据，
-          能走到这里的是**非预期**异常（内存、bug、被外部打断……）。
-          照样按一条失败记，而不是让它往上冒 ——
-          "单模块失败不许拖垮整批"这条承诺不该有例外：
-          一个模块的意外错误把整批带崩，等于另外几个模块白花钱。
+          runOne 已把调用失败与解析失败收成数据，走到这里的是非预期异常。
+          照样记一条失败而不上抛：一个模块的意外不该把另外几个的成果带崩。
         */
         const failure: ModuleBuildFailure = {
           moduleId: target.id,
@@ -412,7 +291,7 @@ export async function buildModules(
           model: null,
           priceTier: null,
           latencyMs: Date.now() - startedAt,
-          // 非预期错误发生在拿到模型返回之前（或过程中），没有思考可取
+          // 还没拿到模型返回，没有思考可取
           reasoning: "",
         };
         outcomes[index] = { ok: false, failure };
@@ -427,21 +306,17 @@ export async function buildModules(
     }
   }
 
-  /*
-    同时开 min(并发上限, 模块数) 个 worker。
-    取 min 是为了不白开一堆立刻返回的空 worker（模块 2 个、上限 8 时）。
-  */
+  /* 同时开 min(并发上限, 模块数) 个 worker：不白开一堆立刻返回的空 worker */
   const workerCount = Math.min(concurrency, targets.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
   /*
-    continueOnError === false 且真的失败了：整批中止。
-    注意**先等所有 worker 收工再抛** —— 直接抛会让还在飞的那几个调用
-    变成没人管的悬空 promise，而它们的花费就再也不会被记进账里。
+    整批中止：先等所有 worker 收工再抛 —— 直接抛会让还在飞的调用变成悬空 promise，
+    它们的花费就再也不会被记进账里。
   */
   if (abortError) throw abortError;
 
-  /* ---------- 汇总 ---------- */
+  // 汇总
   const built: ModuleBuild[] = [];
   const failed: ModuleBuildFailure[] = [];
   let totalCostCny = 0;
@@ -454,7 +329,7 @@ export async function buildModules(
       totalUsage = addUsage(totalUsage, outcome.build.usage);
     } else {
       failed.push(outcome.failure);
-      // ★ 失败的那笔钱也进总额 —— 见文件头"部分失败"那段
+      // 失败的那笔钱也进总额
       totalCostCny += outcome.failure.costCny;
       totalUsage = addUsage(totalUsage, outcome.failure.usage);
     }

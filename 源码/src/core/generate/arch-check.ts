@@ -1,31 +1,6 @@
 /**
- * 架构的本地检查
- * ============================================================
- * 第二道工序产出 arch.json 之后，**不调模型**就能判的三件事。
- * 三条一一对应 `core/pipeline/stages.ts` 里 arch 这一段已经写好的验收标准：
- *
- *   stages.ts:206  「规格里每条功能都能映射到至少一个模块（无孤儿需求）」
- *   stages.ts:207  「依赖清单里的包真实存在」
- *   stages.ts:208  「模块依赖图无环」
- *
- * ── ⚠️ 第二条：这里必须说实话，而且必须说清楚它**没做什么** ──
- *   验收标准那句话是「依赖清单里的包真实存在」。
- *   但**纯函数没法联网** —— 这个文件零 IO（不 import store / adapter / fetch），
- *   所以它做不到"核实存在"这件事。
- *
- *   于是这一条的 name 写成「依赖包名合法（未联网核实是否真实存在）」，
- *   detail 里再重复一遍这件事。**不许写成"依赖真实存在"那种更强的话。**
- *   理由不是措辞洁癖：
- *     界面上写着"依赖都真实存在"，而实际上只查了字符串格式 ——
- *     用户会据此跳过自己该做的核实，装的时候才发现包名是编的。
- *     一句过强的结论，比没有结论更危险。
- *   真要做"真实存在"，得由 adapters 层去查 registry（一次网络往返），
- *   那是另一件事，也必须在界面上让用户看见它在联网。
- *
- * ── 为什么是纯函数 ──
- *   和 domain/spec.ts 的 validateSpec 同一条理由：这套判断不该依赖网络。
- *   抽出来之后，"自引用算不算环""引用不存在的模块怎么报"这些边界
- *   可以用几十条单测钉死。
+ * 架构的本地检查：孤儿需求、包名语法、依赖成环，不调模型。
+ * 包名那条只能验证语法，name 与 detail 必须写明「未联网核实是否真实存在」。
  */
 
 import type { ArchSpec } from "../domain/arch";
@@ -43,18 +18,11 @@ export interface ArchCheck {
   total: number;
 }
 
-/* ============================================================
-   ① 无孤儿需求
-   ============================================================ */
 
 function checkNoOrphans(arch: ArchSpec, spec: AppSpec): ArchCheckItem {
   const name = "规格里每条功能都能映射到至少一个模块（无孤儿需求）";
 
-  /*
-    先算"被承接的条目集合"，再看规格里哪些没落进去。
-    方向不能反：反过来的话，一个模块多写了几个不存在的条目 id
-    就会让这条检查看起来"覆盖得很全"，而规格里真正的孤儿一条也没少。
-  */
+  // 先算被承接的集合再回看规格：反过来的话，模块多写几个假 id 也会显得覆盖很全
   const covered = new Set<string>();
   for (const m of arch.modules) {
     for (const id of m.coversFeatures) covered.add(id);
@@ -63,11 +31,7 @@ function checkNoOrphans(arch: ArchSpec, spec: AppSpec): ArchCheckItem {
   const missing = spec.acceptance.map((a) => a.id).filter((id) => !covered.has(id));
 
   if (spec.acceptance.length === 0) {
-    /*
-      规格里一条验收标准都没有时，这条检查**没有可判的东西**。
-      记 pass —— 但它是一句有边界的实话，不是"全覆盖"：
-      detail 必须写明规格本身是空的，否则这个绿点会被读成"需求都安排好了"。
-    */
+    // 规格为空时无物可判：记 pass，但 detail 要写明规格本身是空的
     return {
       name,
       pass: true,
@@ -85,11 +49,7 @@ function checkNoOrphans(arch: ArchSpec, spec: AppSpec): ArchCheckItem {
     };
   }
 
-  /*
-    多出来的引用（模块写了规格里不存在的条目 id）不影响这一条的通过与否 ——
-    它不制造孤儿需求，只是模型多写了几个字符串。
-    但它值得被说出来：那多半意味着模型看错了规格。
-  */
+  // 多余的 coversFeatures 引用不影响通过，但要说出来：模型多半看错了规格
   const known = new Set(spec.acceptance.map((a) => a.id));
   const stray = [...covered].filter((id) => !known.has(id));
 
@@ -104,21 +64,10 @@ function checkNoOrphans(arch: ArchSpec, spec: AppSpec): ArchCheckItem {
   };
 }
 
-/* ============================================================
-   ② 依赖包名合法（未联网核实是否真实存在）
-   ============================================================ */
 
 /**
- * npm 包名语法。
- *
- * 规则来自 npm 自己的命名约束（只取**能离线判定**的那几条）：
- *   · 全小写；可含 `-` `_` `.`
- *   · 可以带 `@scope/` 前缀，scope 与包名各是一条同样的字符序列
- *   · 首字符必须是字母或数字（所以 `.foo`、`_foo` 不合法）
- *
- * 刻意**不**检查的那几条（长度上限、保留名、是否已被占用、是否存在）：
- * 它们要么不影响可用性，要么必须联网。少查一条就说少查一条，
- * 不能因为"大概没问题"就把它算进通过。
+ * npm 包名语法：全小写，可含 - _ .，可带 @scope/ 前缀，首字符为字母或数字。
+ * 只做离线可判的部分，长度上限、保留名、是否被占用都不查。
  */
 const NPM_PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 
@@ -127,19 +76,13 @@ export function isValidPackageName(name: string): boolean {
 }
 
 function checkPackageNames(arch: ArchSpec): ArchCheckItem {
-  /*
-    ★ 这一个字串就是这条检查的名字，也是本文件最要紧的一句实话 ★
-    必须带「未联网核实是否真实存在」—— 有单测用 toContain 钉着它。
-  */
+  // 这句就是检查名字，必须带「未联网核实」—— 有单测用 toContain 钉着
   const name = "依赖包名合法（未联网核实是否真实存在）";
 
   const notChecked = "⚠️ 未联网核实这些包是否真实存在，只做了包名语法检查";
 
   if (arch.packages.length === 0) {
-    /*
-      空清单 → 通过，但 detail 必须说清是"没有可查的"，
-      不能让这个绿点被读成"依赖都核实过了"。
-    */
+    // 空清单即通过，但 detail 要写明没有可查的
     return {
       name,
       pass: true,
@@ -169,19 +112,10 @@ function checkPackageNames(arch: ArchSpec): ArchCheckItem {
   };
 }
 
-/* ============================================================
-   ③ 模块依赖图无环
-   ============================================================ */
 
 /**
- * 从 start 出发找一条回到自己的路径；找不到返回 null。
- *
- * 返回**路径**而不只是布尔值，是为了 detail 能写出「a → b → a」——
- * 「有环」这三个字对用户毫无用处：他还得自己把图读一遍才知道环在哪。
- *
- * 用三色标记（白=没走过，灰=在当前这条路径上，黑=走完了）而不是
- * 简单的 visited 集合：只有"灰"才代表环，走完的节点再遇到不算环
- * （菱形依赖 A→B→D、A→C→D 是合法的，被 visited 一刀切会误报）。
+ * 从 start 出发找一条回到自己的路径，找不到返回 null；返回路径是为了 detail 能写出 a → b → a。
+ * 用三色标记而非 visited 集合：只有灰节点代表环，走完的再遇到不算（菱形依赖不误报）。
  */
 function findCycle(
   graph: Map<string, string[]>,
@@ -200,7 +134,7 @@ function findCycle(
     for (const next of graph.get(node) ?? []) {
       const c = color.get(next) ?? WHITE;
       if (c === GRAY) {
-        // 回到当前路径上的某个节点 —— 环就是这一段
+        // 回到当前路径上的节点，这一段即环
         const at = stack.indexOf(next);
         return [...stack.slice(at), next];
       }
@@ -208,7 +142,7 @@ function findCycle(
         const found = visit(next);
         if (found) return found;
       }
-      // BLACK：这条支路已经走完且无环，直接跳过 —— 不重复走，也不误报
+      // 黑：这条支路已走完且无环
     }
 
     stack.pop();
@@ -224,13 +158,7 @@ function checkNoCycle(arch: ArchSpec): ArchCheckItem {
 
   const ids = new Set(arch.modules.map((m) => m.id));
 
-  /*
-    引用不存在的 id：**也判不通过**。
-    它不是"环"，但它让这个图根本不是一个图 ——
-    而画布/并行构建会照着 dependsOn 去找上游，找不到时的表现
-    （静默跳过、或者当成没有依赖先跑）都不报错，只会做出错的顺序。
-    所以这一条要把"引用了谁、被谁引用"逐个点名。
-  */
+  // 引用不存在的 id 也判不通过：图不成图，构建会照着错的顺序跑
   const missing: string[] = [];
   for (const m of arch.modules) {
     for (const dep of m.dependsOn) {
@@ -250,7 +178,7 @@ function checkNoCycle(arch: ArchSpec): ArchCheckItem {
 
   const graph = new Map<string, string[]>();
   for (const m of arch.modules) {
-    // 自引用（a → a）在这一步就落进图里，下面 DFS 会在"回到自己"时抓到它
+    // 自引用也进图，下面 DFS 会抓到
     graph.set(m.id, [...m.dependsOn]);
   }
 
@@ -273,17 +201,8 @@ function checkNoCycle(arch: ArchSpec): ArchCheckItem {
   };
 }
 
-/* ============================================================
-   汇总
-   ============================================================ */
 
-/**
- * 三条本地检查。
- *
- * 顺序就是 stages.ts 里 acceptance 的顺序 ——
- * 界面上那三条与工序定义那三条要能逐行对上，
- * 顺序不同的话，人核对时得来回找。
- */
+/** 三条本地检查，顺序与 stages.ts 的 acceptance 一致，界面可逐行核对 */
 export function inspectArch(arch: ArchSpec, spec: AppSpec): ArchCheck {
   const results: ArchCheckItem[] = [
     checkNoOrphans(arch, spec),
