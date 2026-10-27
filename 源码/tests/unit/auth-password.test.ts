@@ -1,3 +1,7 @@
+/**
+ * 保护 scrypt 密码哈希与令牌哈希：格式、随机盐、篡改检测与参数升级。
+ */
+
 import { describe, expect, it } from "vitest";
 import {
   hashPassword,
@@ -39,12 +43,9 @@ describe("密码哈希（scrypt）", () => {
     const hash = await hashPassword("Abcd1234!");
     const parts = hash.split("$");
 
-    // 为什么要绕一圈解码再编码，而不是直接改 Base64 的最后一个字符：
-    //   64 字节的哈希编码成 Base64 是 86 个字符，最后那个字符只有低 2 位是真实数据，
-    //   其余是补齐位。翻转补齐位解码回来字节完全没变，于是「篡改」根本没发生 ——
-    //   这个测试就会随盐的随机值而时过时不过。
-    //   曾经它就是这样一个随机失败的测试，比没有测试更糟糕：它会在演示当天突然变红。
-    //   改成翻转真实字节的最低位，结果就确定了。
+    // 不能直接改 Base64 最后一个字符：64 字节哈希编码成 86 个字符，
+    // 最后那位只有低 2 位是真实数据，翻转补齐位解码回来字节没变。
+    // 改成翻转真实字节的最低位，结果才是确定的。
     const bytes = Buffer.from(parts[5], "base64url");
     bytes[0] = bytes[0] ^ 0x01;
     parts[5] = bytes.toString("base64url");

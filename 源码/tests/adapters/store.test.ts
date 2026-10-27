@@ -2,22 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeTempDb, migrateTempDb, seedUser, setupTempEnv } from "./fixture";
 
 /**
- * 运行记录与成本流水（真库）
- * ============================================================
- * 这个文件最大的那一条是 **usage 必须累加**：
- *   每个调用方报的都是"自己那一次"的用量（规格化 / 架构 / 界面 /
- *   每个模块 / 装配各报一次）。覆盖式写入会让 runs 那一行只剩
- *   "最后一次调用"的数字 —— 实测一条真实运行因此显示成"思考 token 0"，
- *   而它实打实花了 16446 个思考 token。
- *   那件事当时只能靠真实运行事后查库发现，现在这里钉住它。
- *
- * 第二条同样重要：**totalCostCny 是覆盖**（调用方给的就是累计值）。
- *   两个字段相邻而口径相反，所以各钉一条 —— 免得下一个人"顺手统一"。
+ * 保护运行记录与成本流水（真库）：用量累加、totalCostCny 覆盖、归属与级联删除。
+ * 两个相邻字段口径相反，所以各钉一条，免得下一个人顺手统一。
  */
 
 const tmp = setupTempEnv();
 
-// ⚠️ 顺序：env 设好之后才 import adapter（client.ts 在 import 期开库）
+// 顺序：env 设好之后才 import adapter（client.ts 在 import 期开库）。
 const { sqliteRunStore } = await import("@/adapters/store/run-repo");
 const { sqliteCostStore } = await import("@/adapters/store/cost-repo");
 const { sqliteEventStore } = await import("@/adapters/store/event-repo");
@@ -54,10 +45,6 @@ async function newRun(prompt = "做一个任务看板"): Promise<string> {
   const run = await sqliteRunStore.create({ userId, prompt, workflowVersion: "v1" });
   return run.id;
 }
-
-/* ============================================================
-   基本读写
-   ============================================================ */
 
 describe("运行记录 · 基本读写", () => {
   it("create → findById 往返一致，新运行从第①阶段开始", async () => {
@@ -99,10 +86,6 @@ describe("运行记录 · 基本读写", () => {
   });
 });
 
-/* ============================================================
-   ★ 用量的累加语义（这个文件存在的理由）
-   ============================================================ */
-
 describe("运行记录 · 用量是累加的（★ 这条挡过一次真实故障）", () => {
   it("【关键】连续两次 update，用量是**两次之和**", async () => {
     const id = await newRun("累加");
@@ -143,10 +126,6 @@ describe("运行记录 · 用量是累加的（★ 这条挡过一次真实故�
   });
 });
 
-/* ============================================================
-   归属与删除
-   ============================================================ */
-
 describe("运行记录 · 归属", () => {
   it("用别人的 userId 删不掉（防伪造 id 越权）", async () => {
     const id = await newRun("删不掉");
@@ -167,10 +146,6 @@ describe("运行记录 · 归属", () => {
     expect(await sqliteEventStore.countByRun(id)).toBe(0);
   });
 });
-
-/* ============================================================
-   成本流水
-   ============================================================ */
 
 describe("成本流水", () => {
   const record = (runId: string, stage: string, costCny: number) =>
@@ -240,10 +215,6 @@ describe("成本流水", () => {
   });
 });
 
-/* ============================================================
-   事件
-   ============================================================ */
-
 describe("运行事件", () => {
   it("appendMany 落库、listByRun 按 seq 回放，deleteByRun 清空", async () => {
     const id = await newRun("事件");
@@ -295,10 +266,6 @@ describe("运行事件", () => {
     ).rejects.toThrow();
   });
 });
-
-/* ============================================================
-   夹具自身的守卫
-   ============================================================ */
 
 describe("夹具本身", () => {
   it("跑的是**临时库**，不是仓库里那个 data/nexus.db", () => {

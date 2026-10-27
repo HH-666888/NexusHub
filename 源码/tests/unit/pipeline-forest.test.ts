@@ -12,10 +12,7 @@ import type { CheckResult } from "@/core/domain/check";
 import type { StageId } from "@/core/pipeline/stages";
 
 /**
- * 子树拼装的单测
- * ============================================================
- * 这个文件管的是「画布上除了六个骨架节点之外，还画出什么」。
- * 所以最要紧的一组是**不该有子节点的时候一个都不给** ——
+ * 保护子树拼装：检查结果转子节点、没有子节点时一个都不给、拼森林与查表。
  * 图上多画一个方块，比少画一个更容易让人误解。
  */
 
@@ -54,11 +51,8 @@ describe("检查结果 → 子节点", () => {
   });
 
   it("id 用检查项名字，不用下标", () => {
-    /*
-      用下标的话，检查项顺序一变，React 会把"通过"那个方块复用到
-      "失败"那一项上 —— 颜色闪一下，而状态是错的。
-      这条断言钉住 id 是可读且稳定的。
-    */
+    // 用下标的话，检查项顺序一变，React 会把通过的方块复用到失败那项上。
+    // 所以 id 必须是可读且稳定的检查项名字。
     const kids = checksToChildren(SEVEN);
     expect(kids[0].id).toBe("verify:完整 HTML 结构");
     expect(new Set(kids.map((k) => k.id)).size).toBe(kids.length);
@@ -77,12 +71,8 @@ describe("不该有子节点的时候一个都不给", () => {
   });
 
   it("没有子节点的工序在森林里就是一片叶子，不带空 children 数组", () => {
-    /*
-      ⚠️ 这一条防的是「空数组也算有子节点」。
-      布局里 `children: []` 和 `children: undefined` 结果一样，
-      但渲染层如果按 `children !== undefined` 判断"要不要画展开箭头"，
-      就会给六道工序全都画上一个指向虚无的箭头。
-    */
+    // 防的是空数组也算有子节点：渲染层按 children !== undefined 画展开箭头，
+    // 空数组会给六道工序都画上一个指向虚无的箭头。
     const nodes = toLayoutNodes(SIX, {});
     expect(nodes).toHaveLength(6);
     for (const n of nodes) {

@@ -22,15 +22,8 @@ import {
 import { HOME_WORLD } from "@/core/canvas/viewport";
 
 /**
- * 六道工序在画布上的布局
- * ============================================================
- * 布局是纯函数，所以"摆得对不对"这件事能被断言 ——
- * 摆错一点在画面上看不出来（看起来"就是这样设计的"），
- * 但连线的两端会跟着歪，而歪的线是查不出来的。
- *
- * 两档几何都要测：
- *   WIDE   整页画布，一行六个
- *   PANEL  工作台面板，三列两行
+ * 保护六道工序的画布布局：整页一行六个、面板三列两行、边的端点与回退弧线。
+ * 布局是纯函数，摆错一点在画面上看不出来，但连线两端会跟着歪。
  */
 
 const WIDE = WIDE_GEOMETRY;
@@ -39,8 +32,7 @@ const TOTAL = 6;
 
 describe("画布布局 · 摆放（整页，一行六个）", () => {
   it("总宽 = 六个节点 + 五个空隙", () => {
-    // 写成 n 个空隙的话整条会宽出一个空隙，
-    // 而"宽一点"只有拿两个节点的间距去量才发现
+    // 写成 n 个空隙会宽出一个空隙，只有拿两个节点的间距去量才发现。
     expect(pipelineWidth(6, WIDE)).toBe(6 * WIDE.nodeW + 5 * WIDE.gapX);
   });
 
@@ -71,11 +63,7 @@ describe("画布布局 · 摆放（整页，一行六个）", () => {
   });
 
   it("【关键】整条以核心格的 x 居中", () => {
-    /*
-      画布打开时视口对准的是核心格。
-      流水线以它的 x 居中，于是「打开就看到整条」这件事
-      不需要额外调视口 —— 一个常量对齐比一段对准逻辑可靠。
-    */
+    // 流水线以核心格的 x 居中，打开画布就能看到整条，不需要额外对准逻辑。
     const first = nodeRect(0, TOTAL, WIDE);
     const last = nodeRect(TOTAL - 1, TOTAL, WIDE);
     const center = (first.x + last.x + last.w) / 2;
@@ -97,10 +85,7 @@ describe("画布布局 · 摆放（整页，一行六个）", () => {
   });
 
   it("【关键】包围盒的高度算上了回退边往下绕的那一段", () => {
-    /*
-      只算节点的话，「缩放到全部」之后回退边会被切在屏幕外 ——
-      而它是这张图上最该被看见的东西之一（别家画不出来的那个）。
-    */
+    // 只算节点的话，缩放到全部之后回退边会被切在屏幕外。
     const b = pipelineBounds(TOTAL, WIDE);
     const r = nodeRect(0, TOTAL, WIDE);
     expect(b.h).toBe(WIDE.nodeH + FALLBACK_DROP);
@@ -124,12 +109,8 @@ describe("画布布局 · 换行（面板，三列两行）", () => {
   });
 
   it("【关键】宽度按最宽的那一行算，不是按总数", () => {
-    /*
-      最后一行常常没排满（六道、一行四个的话第二行只有两个）。
-      按 total 算会多出两个空位，整条看起来偏左 ——
-      而"偏左一点"在画面上完全看不出来。
-    */
-    // 六道、一行四个 → 两行：第一行 4 个，第二行 2 个 → 宽度按 4 算
+    // 最后一行常常没排满，按 total 算会多出空位，整条看起来偏左。
+    // 宽度按最宽的那一行算。
     const g4 = { ...PANEL, perRow: 4 };
     expect(pipelineWidth(6, g4)).toBe(4 * g4.nodeW + 3 * g4.gapX);
     expect(pipelineWidth(6, g4)).toBeLessThan(pipelineWidth(6, { ...PANEL, perRow: 6 }));
@@ -147,10 +128,7 @@ describe("画布布局 · 换行（面板，三列两行）", () => {
   });
 
   it("【关键】行距装得下回退边绕的那一段", () => {
-    /*
-      装不下的话，上一行的回退弧线会横穿下一行的节点 ——
-      和"回退边不画直线"是同一个毛病，只是换了个方向。
-    */
+    // 装不下的话，上一行的回退弧线会横穿下一行的节点。
     expect(PANEL.gapY).toBeGreaterThanOrEqual(FALLBACK_DROP);
   });
 
@@ -181,12 +159,7 @@ describe("画布布局 · 边的端点", () => {
 
   it("顺序流转的线是水平的", () => {
     const p = flowPath(nodeRect(0, TOTAL), nodeRect(1, TOTAL));
-    /*
-      ⚠️ 路径里的坐标是**空格**分隔的（`M x y L x y`），不是逗号。
-      写成 /, ([\d.-]+)/ 会一个都匹配不到，
-      于是 new Set([]).size === 0，断言变成"0 不等于 1" ——
-      看起来像代码错了，其实是正则错了。
-    */
+    // 路径坐标是空格分隔的，正则写成逗号会一个都匹配不到。
     const ys = [...p.matchAll(/[ML] [\d.-]+ ([\d.-]+)/g)].map((m) => Number(m[1]));
     expect(ys, "没从路径里解析出坐标").toHaveLength(2);
     expect(new Set(ys.map((y) => y.toFixed(3))).size, "两头不在同一高度").toBe(1);
@@ -211,14 +184,7 @@ describe("画布布局 · 边的端点", () => {
   });
 });
 
-/* ============================================================
-   失败回退边
-   ============================================================
-   两条不同的路，因为有两种不同的穿透要躲：
-
-     同一行  往回退 → 走下面那条弧（横着躲开中间几个节点）
-     跨行    往上退 → 走左边那条空白带（竖着躲开中间那一行）
-   ============================================================ */
+// 两种穿透要躲：同一行往回退走下面的弧，跨行往上退走左边的空白带。
 
 describe("画布布局 · 回退边（同一行，走下面的弧）", () => {
   function points(d: string) {
@@ -229,12 +195,7 @@ describe("画布布局 · 回退边（同一行，走下面的弧）", () => {
   }
 
   it("【关键】从节点下方绕，不穿过中间那几个节点", () => {
-    /*
-      画直线的话它会横穿中间那几个节点 ——
-      穿过多少个就盖住多少个节点的正文。
-
-      判据：路径上的每个点，y 都不小于节点底边。
-    */
+    // 画直线会横穿中间几个节点；判据是路径上每个点的 y 都不小于节点底边。
     const from = nodeRect(5, TOTAL, WIDE);
     const to = nodeRect(0, TOTAL, WIDE);
     const pts = points(fallbackPath(from, to, WIDE));
@@ -265,11 +226,7 @@ describe("画布布局 · 回退边（同一行，走下面的弧）", () => {
   });
 
   it("【关键】跨度相同的两条回退边不会重叠成一条", () => {
-    /*
-      折线（下去、横走、上来）在拐角处是直角，
-      两条回退边并排时拐角会叠在一起分不清哪条是哪条。
-      弧线的中段自然分开 —— 这条断言守的就是那个"分开"。
-    */
+    // 折线的直角拐角会叠在一起，弧线的中段自然分开。
     const a = fallbackLabelAt(nodeRect(3, TOTAL, WIDE), nodeRect(1, TOTAL, WIDE));
     const b = fallbackLabelAt(nodeRect(4, TOTAL, WIDE), nodeRect(2, TOTAL, WIDE));
     expect(a.y).toBeCloseTo(b.y, 9);
@@ -286,12 +243,7 @@ describe("画布布局 · 回退边（同一行，走下面的弧）", () => {
 
 describe("画布布局 · 回退边（跨行，走左边的空白带）", () => {
   it("【关键】跨行的回退边走左边，不竖着穿过下一行", () => {
-    /*
-      换行之后有一条回退是"第二行的某道 → 第一行的某道"。
-      还走下面那条弧的话，它回升到第一行的那一段
-      会竖着穿过第二行正中间那个节点 ——
-      竖直方向也会穿透，和水平方向一样。
-    */
+    // 跨行回退若走下面那条弧，回升到第一行时会竖着穿过第二行的节点。
     const from = nodeRect(3, TOTAL, PANEL);
     const to = nodeRect(0, TOTAL, PANEL);
     const p = fallbackPath(from, to, PANEL);
@@ -311,16 +263,8 @@ describe("画布布局 · 回退边（跨行，走左边的空白带）", () => 
   });
 
   it("标签挂在左边那条竖线上，两条不会叠在一起", () => {
-    /*
-      ⚠️ laneX 必须由外面给同一个值。
-      第一版让函数按「源节点的左边」自己算 —— 对第二行第一道是对的，
-      对第二行第二道就偏了一个列宽，竖线落进节点范围里，照样竖穿。
-      「整条流水线左边在哪」是布局整体的事，单个节点不知道。
-
-      ⚠️ 两条的 y 还需要 stagger 岔开：它们的中点**算出来一模一样**
-      （起点都在第二行中线、终点都在第一行中线），
-      不错位的话两个标签会精确地叠在一个点上，看起来只有一个。
-    */
+    // laneX 必须由外面给同一个值：按节点左边自己算，第二行第二道会偏一个列宽而落进节点。
+    // 两条的 y 还要 stagger 岔开，否则中点重合，标签叠成一个。
     const lane = fallbackLaneX(TOTAL, PANEL);
     const a = fallbackLabelAt(nodeRect(3, TOTAL, PANEL), nodeRect(0, TOTAL, PANEL), lane, 0);
     const b = fallbackLabelAt(nodeRect(4, TOTAL, PANEL), nodeRect(1, TOTAL, PANEL), lane, 1);
@@ -329,7 +273,7 @@ describe("画布布局 · 回退边（跨行，走左边的空白带）", () => 
   });
 
   it("【关键】不错位的话，两条跨行标签会精确重合", () => {
-    // 这条钉住「为什么需要 stagger」这个理由本身 ——
+    // 这条钉住为什么需要 stagger 这个理由本身
     // 哪天有人觉得那个参数多余、删掉它，这条会红
     const lane = fallbackLaneX(TOTAL, PANEL);
     const a = fallbackLabelAt(nodeRect(3, TOTAL, PANEL), nodeRect(0, TOTAL, PANEL), lane);
@@ -374,9 +318,8 @@ describe("画布布局 · 回退边（跨行，走左边的空白带）", () => 
   });
 
   it("往下的回退（目标在下一行）仍然走弧", () => {
-    // 不是所有跨行都走左边 —— 只有「往上退」才走
+    // 不是所有跨行都走左边，只有往上退才走
     const p = fallbackPath(nodeRect(0, TOTAL, PANEL), nodeRect(3, TOTAL, PANEL), PANEL);
     expect(p, "往下的回退不该走左边的折线").toContain("Q");
   });
 });
-

@@ -1,3 +1,7 @@
+/**
+ * 保护分阶段花费的归集、对账与显示口径：没花过钱是 null，不是零。
+ */
+
 import { describe, expect, it } from "vitest";
 import {
   costOf,
@@ -75,7 +79,7 @@ describe("分阶段花费 · 归集", () => {
 
   it("认不出的阶段名丢掉，不塞进「其它」桶", () => {
     // 探测脚本这类没有运行归属的调用会带奇怪或空的 stage。
-    // 混进来会让「各阶段之和对不上总数」，账对不上比少几个数字更麻烦。
+    // 混进来会让各阶段之和对不上总数，账对不上比少几个数字更麻烦。
     const by = groupCostByStage([
       rec({ stage: "build", costCny: 0.02 }),
       rec({ stage: "probe", costCny: 99 }),
@@ -121,11 +125,7 @@ describe("分阶段花费 · 对账", () => {
 
 describe("分阶段花费 · 显示", () => {
   it("【关键】没花过钱时返回 null，不返回 ¥0.0000", () => {
-    /*
-      「这一步不花钱」和「花了零元」在界面上长得一样，
-      但前者是事实，后者是编的。
-      这个项目已经因为同类问题改过两次界面文案了。
-    */
+  // 没花过钱返回 null，而不是 ¥0.0000：前者是事实，后者是编的。
     expect(describeStageCost({}, "build")).toBeNull();
     const zero = groupCostByStage([rec({ stage: "build", costCny: 0 })]);
     expect(describeStageCost(zero, "build")).toBeNull();

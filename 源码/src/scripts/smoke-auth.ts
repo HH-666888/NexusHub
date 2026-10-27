@@ -1,14 +1,6 @@
 /**
- * 认证链路冒烟验证
- * ============================================================
+ * 认证链路冒烟验证：打印数据库实际配置，再走一遍注册、登录、会话解析、登出。
  * 运行：npm run smoke:auth
- *
- * 它做两件事：
- *   1. 打印数据库的真实配置（确认 WAL、外键、忙等真的开了，而不是「以为开了」）
- *   2. 走一遍完整的认证链路，把每一步的实际结果打印出来
- *
- * 为什么要有这个脚本：单元测试用的是「假存储」，
- * 而这个脚本用的是真数据库 —— 两者互补，缺一不可。
  */
 
 import { eq } from "drizzle-orm";
@@ -27,7 +19,6 @@ const line = (s = "") => console.log(s);
 const ok = (s: string) => console.log(`  ✅ ${s}`);
 const fail = (s: string) => console.log(`  ❌ ${s}`);
 
-/** 断言并打印结果：条件成立打勾，否则打叉 */
 function expect_(cond: boolean, passMsg: string, failMsg: string) {
   if (cond) ok(passMsg);
   else fail(failMsg);
@@ -42,7 +33,6 @@ function heading(title: string) {
 async function main() {
   const started = Date.now();
 
-  /* ---------- 第一步：数据库配置体检 ---------- */
   heading("第一步 · 数据库配置体检");
   const info = inspectDatabase();
   line(`  数据库文件      ${info.path}`);
@@ -56,7 +46,6 @@ async function main() {
   line(`  已存在的表      ${info.tables.join(", ") || "(空)"}`);
   line();
 
-  /* ---------- 第二步：注册 ---------- */
   heading("第二步 · 注册");
   const username = `sm_${Date.now().toString(36)}`; // 36 进制时间戳，短且唯一
   const password = "abc123";
@@ -95,7 +84,6 @@ async function main() {
   );
   line();
 
-  /* ---------- 第三步：重复注册 ---------- */
   heading("第三步 · 重复注册（应被拒绝）");
   const dup = await registerUser(sqliteAuthStore, {
     username: username.toUpperCase(),
@@ -108,7 +96,6 @@ async function main() {
   );
   line();
 
-  /* ---------- 第四步：登录 ---------- */
   heading("第四步 · 登录");
   const wrong = await loginUser(sqliteAuthStore, {
     username,
@@ -139,7 +126,6 @@ async function main() {
   expect_(loginToken !== token, "两次登录拿到不同令牌，会话彼此独立", "两次登录拿到同一个令牌");
   line();
 
-  /* ---------- 第五步：会话解析 ---------- */
   heading("第五步 · 会话解析");
   const byToken = await resolveSession(sqliteAuthStore, loginToken);
   expect_(
@@ -155,7 +141,6 @@ async function main() {
   expect_(empty === null, "空令牌被拒绝", "空令牌竟然通过了");
   line();
 
-  /* ---------- 第六步：登出 ---------- */
   heading("第六步 · 登出");
   await logout(sqliteAuthStore, loginToken);
   const afterLogout = await resolveSession(sqliteAuthStore, loginToken);
@@ -173,7 +158,6 @@ async function main() {
   );
   line();
 
-  /* ---------- 第七步：清理 ---------- */
   heading("第七步 · 清理测试数据");
   db.delete(users).where(eq(users.id, userId)).run();
   const gone = await sqliteAuthStore.findUserById(userId);

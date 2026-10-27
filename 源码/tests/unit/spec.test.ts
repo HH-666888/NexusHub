@@ -1,3 +1,8 @@
+/**
+ * 保护规格的解析：抠 JSON、解析与校验、含糊词识别、门禁、兜底与提示词。
+ * 判据与兜底都从 domain 层取，测试里不另写一套。
+ */
+
 import { describe, expect, it } from "vitest";
 import {
   buildSpecPrompt,

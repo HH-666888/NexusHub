@@ -2,22 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeTempDb, migrateTempDb, seedUser, setupTempEnv } from "../adapters/fixture";
 
 /**
- * 按文件名读 json 产物（回归测试）
- * ============================================================
- * 这条测试钉的是一个**真实存在过的 bug**：
- *
- *   spec.json 与 answers.json 都是 json 类型，而 answers.json 是后写的。
- *   "取最新的那个 json"（findLatest(runId,"json")）会在用户答过一轮之后
- *   把**答案**当成规格读到 —— 于是按它算疑问：算不出来、也不报错，
- *   只是行为诡异。
- *
- *   它在"续跑会重跑规格化"的年代碰巧看不出来（重跑会把 spec.json
- *   重新写成最新的那份），直到续跑改成"沿用已确认的规格"之后才暴露：
- *   **用户分两次答题时，第二次会被判成"没有提交任何有效的回答"（400），
- *   而他明明答了。**
- *
- * 所以下面第一条是最要紧的：answers.json 比 spec.json 新的时候，
- * 按文件名读仍然必须读到 **spec**。
+ * 保护按文件名读 json 产物：answers.json 比 spec.json 新时，读规格仍要拿到规格。
+ * 取最新那个 json 的写法会在用户答过一轮之后把答案当成规格读到。
  */
 
 const tmp = setupTempEnv();
@@ -54,12 +40,8 @@ const save = (name: string, value: unknown) =>
     content: JSON.stringify(value),
   });
 
-/**
- * 写**原始内容**（不经过 JSON.stringify）。
- * ⚠️ 想写坏 JSON 必须用它：`save("x.json", "这不是 JSON")` 写出来的是
- *    `"这不是 JSON"` —— 那是**合法**的 JSON（一个字符串），
- *    于是那条"坏 JSON"的断言反而会红。第一版就是这么错的。
- */
+// 想写坏 JSON 必须用原始内容：save 会把字符串再 stringify 一次，那仍是合法 JSON。
+// 第一版就是这么错的。
 const saveRaw = (name: string, content: string) =>
   fsArtifactStore.save({ runId, kind: "json", path: `${runId}/${name}`, content });
 
@@ -73,16 +55,12 @@ describe("按文件名读 json 产物", () => {
     expect(spec).not.toBeNull();
     expect(spec!.goal).toBe("番茄钟");
     expect(spec!.questions).toEqual(["要不要提示音？"]);
-    // ★ 反例的另一面：绝不能读到答案那份（它没有 goal/questions）
+    // 反例的另一面：绝不能读到答案那份，它没有 goal / questions。
     expect(spec as unknown as { answers?: unknown }).not.toHaveProperty("answers");
   });
 
   it("★ 反例：直接 findLatest 会拿到答案那份 —— 这正是当初那个 bug", async () => {
-    /*
-      这一条不是"验产品"，是把**坑本身**钉在测试里：
-      将来有人觉得 readJsonArtifact 多此一举、想换回 findLatest 时，
-      这里会告诉他为什么不能。
-    */
+    // 把坑本身钉在测试里：将来有人想换回 findLatest，这里告诉他为什么不能。
     const latest = await fsArtifactStore.findLatest(runId, "json");
     expect(latest).not.toBeNull();
     const raw = await fsArtifactStore.readContent(latest!);

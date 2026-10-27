@@ -18,21 +18,12 @@ import { STAGES, STAGE_MAP, stageApproval, stageAuthorityNote } from "@/core/pip
 import { actorBadge } from "@/core/pipeline/authority";
 import type { CostByStage, StageCost } from "@/core/domain/stage-cost";
 
-/**
- * 造一条阶段花费。
- * 图上只用到 costCny，其余字段给零 —— 但类型要求齐全，
- * 而齐全是有意义的：归集结果里确实有调用次数与计价档位，
- * 只传一个数字的话，想加「这一步为什么贵」就得再改一次签名。
- */
+// 造一条阶段花费：图上只用 costCny，其余字段补零。
 function stageCost(costCny: number): StageCost {
   return { costCny, calls: 1, outputTokens: 0, latencyMs: 0, tiers: ["offPeak"] };
 }
 
-/**
- * 这些测试守的是「图上不出现假信息」这条底线。
- * 图比列表更容易让人相信「这里真的有东西」，
- * 所以它比列表更不能画错。
- */
+// 这组守的是图上不出现假信息：图比列表更容易让人相信这里有东西，所以更不能画错。
 describe("流水线图 · 结构", () => {
   it("恰好六道工序，顺序与定义一致", () => {
     const g = buildPipelineGraph({ run: null });
@@ -86,9 +77,7 @@ describe("流水线图 · 结构", () => {
 describe("流水线图 · 布局", () => {
   it("同一行内列与列不重叠", () => {
     const g = buildPipelineGraph({ run: null });
-    // 原来的写法是「相邻两个节点 x 必须递增」——那只在单行时成立。
-    // 改成两行之后，第四道工序回到第一列，x 反而变小了，
-    // 于是这条断言失败。要保证的其实是「同一行内不重叠」。
+    // 相邻两个节点 x 递增只在单行时成立；要保证的是同一行内不重叠。
     const byRow = new Map<number, typeof g.nodes>();
     for (const n of g.nodes) {
       const list = byRow.get(n.y) ?? [];
@@ -153,9 +142,6 @@ describe("流水线图 · 布局", () => {
   });
 });
 
-/* ============================================================
-   这一组是整份文件里最重要的
-   ============================================================ */
 describe("流水线图 · 不出现假信息", () => {
   const planned = STAGES.filter((s) => s.implementation === "planned");
 
@@ -288,34 +274,22 @@ describe("流水线图 · 路径追踪", () => {
 
   it("【关键】追踪只跟顺序流转，不跟回退边", () => {
     // 如果回退边也算进路径，任何节点都会顺着退回起点，
-    // 「上游」就永远等于全部六道工序，追踪失去意义。
+    // 上游就永远等于全部六道工序，追踪失去意义。
     const t = tracePath(g, "assemble");
     expect(t.upstream).not.toContain("verify");
     expect(t.downstream).not.toContain("arch");
   });
 
   it("【已知局限】流水线是线性的，所以链覆盖全部六道工序", () => {
-    /*
-      这条不是「通过就好」的断言，是把一个**已知局限**写下来。
-
-      六道工序目前是一条直线（加上回退边），所以从任何一道出发，
-      上下游加起来必然是全部六道 —— 追踪在当前形态下不产生区分度。
-
-      它要等到「并行构建」真的裂成多个模块节点时才有用：
-      那时候一条链才是链，而不是整条线。
-      在那之前，这个能力的价值主要在回退那部分（见下一条）。
-    */
+    // 已知局限：六道工序是直线加回退边，上下游加起来必然是全部六道。
+    // 要等并行构建裂成模块节点，这条链才有区分度。
     const t = tracePath(g, "build");
     expect(t.chain.size).toBe(6);
     expect(t.edges.size).toBe(5); // 全部顺序流转边
   });
 
   it("回退边才是眼下真正有区分度的部分", () => {
-    /*
-      回退边不是全连的：每道工序只声明最近的一跳。
-      所以「这一道失败会退回哪」是一句有信息量的话，
-      而上游下游在直线流水线上没有。
-    */
+    // 回退边只连最近的一跳：这一道失败会退回哪，是一句有信息量的话。
     const build = tracePath(g, "build");
     const verify = tracePath(g, "verify");
     expect(build.fallbackFromMe).not.toBe(verify.fallbackFromMe);
@@ -338,7 +312,7 @@ describe("流水线图 · 路径追踪", () => {
     expect(end).toContain("终点");
     expect(mid).toContain("上游");
     expect(mid).toContain("下游");
-    // 不能说成「上游 」后面什么都没有
+    // 不能说成上游后面什么都没有
     for (const s of [start, end, mid]) {
       expect(s).not.toMatch(/上游\s*；/);
       expect(s).not.toMatch(/下游\s*；/);
@@ -356,10 +330,7 @@ describe("流水线图 · 运行状态映射", () => {
   it("失败时当前工序显示失败，已接入的后续工序仍是待执行", () => {
     const g = buildPipelineGraph({ run: { stage: "build", status: "failed" } });
     expect(nodeTone(g.nodes.find((n) => n.id === "build")!)).toBe("failed");
-    // 这里要挑一个**已接入**的后续工序。
-    // 最初我写的是 assemble，结果断言失败 —— 因为集成装配本身就是
-    // 未接入的工序，它的色调正确就是 planned。
-    // 是测试写错了，不是实现错了。
+    // 这里要挑一个已接入的后续工序：集成装配本身未接入，色调正确就是 planned。
     const verify = g.nodes.find((n) => n.id === "verify")!;
     expect(verify.implementation).not.toBe("planned");
     expect(nodeTone(verify)).toBe("pending");
@@ -380,16 +351,8 @@ describe("流水线图 · 运行状态映射", () => {
   });
 });
 
-/* ============================================================
-   权限四件套
-   ============================================================
-   这几个字段来自「研发团队运转图」那套纪律 —— 那张图删了，
-   四个维度留了下来，长到工序上，在图上露出来。
-
-   这一组测的不是"某个函数算得对"，而是**这套流程的设计意图
-   有没有真的传达到界面上**。传错了，徽章和告警会跟着错，
-   而那种错从画面上看不出来。
-   ============================================================ */
+// 权限四件套来自研发团队运转图那套纪律：四个维度长到工序上，在图上露出来。
+// 这一组测这套设计意图有没有真的传到界面上。
 
 describe("流水线图 · 权限四件套", () => {
   const g = buildPipelineGraph({ run: null });
@@ -405,26 +368,15 @@ describe("流水线图 · 权限四件套", () => {
   });
 
   it("【最要紧】验收节点在图上也是只读的", () => {
-    /*
-      这是整个转向里最要紧的一条规矩的**界面投影**：
-
-        判定者不参与生产。
-
-      核心层已经有一条单测钉着 STAGE_MAP.verify.access === "read"。
-      这一条钉的是它有没有真的传到图上 ——
-      核心层改对了、图上还画着"AI · 干活"的话，看的人仍然会误解。
-    */
+    // 判定者不参与生产：核心层已有单测钉着 verify.access === read。
+    // 这一条钉的是它有没有真的传到图上。
     const verify = nodeOf("verify");
     expect(verify.access).toBe("read");
     expect(actorBadge(verify)).toBe("AI · 只读");
   });
 
   it("approval 是算出来的，不是另存一份 —— 不会和 access 打架", () => {
-    /*
-      存两份的话，改了 access 而忘了改 approval，
-      界面上就会出现"标着只读、却要人点头"这种自相矛盾。
-      这里断言的是：图上那个值必须等于按工序定义现算的那个。
-    */
+    // approval 要按工序定义现算：另存一份会出现只读却要人点头的矛盾。
     for (const n of g.nodes) {
       expect(n.approval, `${n.name} 的 approval 和现算的对不上`).toBe(
         stageApproval(STAGE_MAP[n.id]),
@@ -453,11 +405,7 @@ describe("流水线图 · 权限四件套", () => {
   });
 
   it("未接入的工序也带着权限 —— 那是它的定义，不是它的进度", () => {
-    /*
-      权限和"接没接入"是两件事。
-      把未接入的工序的权限抹掉的话，用户就看不到"这一道将来会是什么样的角色"——
-      而那恰好是六道工序图存在的意义（它画的是完整形态）。
-    */
+    // 权限与接没接入是两件事：未接入的工序也要显示它将来会是什么角色。
     const planned = g.nodes.filter((n) => n.implementation === "planned");
     expect(planned.length).toBeGreaterThan(0);
     for (const n of planned) {
@@ -475,15 +423,8 @@ describe("流水线图 · 权限四件套", () => {
   });
 });
 
-/* ============================================================
-   门禁的「声明」与「实际」
-   ============================================================
-   改之前：stages.ts 里那句 humanGate: true 没有任何代码读它，
-   实际控制门禁的是 SPEC_GATE 环境变量，默认放行 —— 而且放行是静默的。
-   界面上的「要人点头」于是成了一句空话。
-
-   这一组测的就是：**声明和实际不一致时，图上必须看得出来。**
-   ============================================================ */
+// 改之前 humanGate 没有任何代码读它，实际门禁是 SPEC_GATE 环境变量，且默认静默放行。
+// 这一组测声明与实际不一致时，图上必须看得出来。
 
 describe("流水线图 · 门禁的声明与实际", () => {
   it("不传覆盖时，实际等于声明", () => {
@@ -503,14 +444,8 @@ describe("流水线图 · 门禁的声明与实际", () => {
   });
 
   it("【关键】覆盖成放行时，图上看得出来", () => {
-    /*
-      声明要人点头、实际不停 —— 这是比没有门禁更糟的状态：
-      用户会以为有人把关过了。
-
-      所以 approval（声明）和 gateActive（实际）必须是两个字段，
-      而且图上两个都要看得到。只留一个的话，
-      要么图上骗人，要么运行时骗人。
-    */
+    // 声明要人点头而实际不停，比没有门禁更糟：用户会以为有人把关过了。
+    // 所以 approval 与 gateActive 是两个字段，图上两个都要看得到。
     const g = buildPipelineGraph({ run: null, gateOverride: "continue" });
     const spec = g.nodes.find((n) => n.id === "spec")!;
     expect(spec.approval, "声明被覆盖改掉了").toBe("human");
@@ -542,7 +477,7 @@ describe("流水线图 · 门禁的声明与实际", () => {
       for (const n of g.nodes) {
         if (n.approval === "human" && !n.gateActive) {
           // 这就是"不一致"，两个字段刚好能表达它 ——
-          // 界面据此显示「要人点头（已放行）」
+          // 界面据此显示要人点头（已放行）
           expect(n.approval).toBe("human");
           expect(n.gateActive).toBe(false);
         }

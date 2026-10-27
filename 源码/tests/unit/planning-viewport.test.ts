@@ -9,17 +9,8 @@ import { toOutline } from "@/core/planning/outline";
 import { type TaskPoint, type TaskPointStatus } from "@/core/planning/task-point";
 
 /**
- * 视口策略的单测
- * ============================================================
- * 这个文件守的是一句话：**两种执行模式下面，树和清单完全一样，
- * 只有视口不同**。
- *
- * 为什么值得写一整个文件来钉一个这么小的函数：
- *   这句话一旦破了，破的方式一定不是「这个函数算错了」，
- *   而是有人为了实现 batch，在 TaskPoint 上加了一个字段、
- *   或者在组件里加了一个 if —— 那时候两种模式就有了两套数据，
- *   「画布和清单是同一棵树」也就不再成立。
- *   所以这里除了验证分支，还专门验证「数据侧完全不感知模式」。
+ * 保护视口策略：focus 收进单卡、batch 退到全树，两种模式下面树和清单完全一样。
+ * 这个文件同时验证数据侧完全不感知模式。
  */
 
 function point(
@@ -56,8 +47,6 @@ const CARD: Bounds = { x: 120, y: 340, w: 232, h: 112 };
 /** 整棵树的包围盒 */
 const TREE: Bounds = { x: 0, y: 0, w: 2112, h: 704 };
 
-/* ── 两个分支 ── */
-
 describe("分支：focus 收进单卡，batch 退到全树", () => {
   it("focus → 返回 focusOn（单次聚焦：视口收进当前那张卡）", () => {
     expect(boundsFor("focus", CARD, TREE)).toEqual(CARD);
@@ -68,11 +57,7 @@ describe("分支：focus 收进单卡，batch 退到全树", () => {
   });
 
   it("batch 时哪怕真有一张卡在跑，也不缩进去", () => {
-    /*
-      这是 batch 的定义：它一次放一整批下去跑，没有「当前那张卡」。
-      如果实现里写成「有 focusOn 就用 focusOn」，批量执行时会一直
-      对着第一张卡放大 —— 用户看不见其余九张的进度。
-    */
+    // batch 没有当前那张卡；写成有 focusOn 就用它，批量执行会一直对着第一张放大。
     const batched = boundsFor("batch", CARD, TREE);
     expect(batched).toEqual(TREE);
     expect(batched).not.toEqual(CARD);
@@ -85,8 +70,6 @@ describe("分支：focus 收进单卡，batch 退到全树", () => {
   });
 });
 
-/* ── 纯函数性质 ── */
-
 describe("纯函数", () => {
   it("同输入同输出：连调两次结果相同", () => {
     // 没有任何内部状态 —— 这也意味着它可以安全地放进 useMemo 的依赖里
@@ -95,17 +78,13 @@ describe("纯函数", () => {
   });
 
   it("调用顺序不影响结果：先 batch 再 focus 仍然正确", () => {
-    // 上一次调用「记住」了什么的话，这一条会红
+    // 上一次调用若记住了什么，这一条会红
     boundsFor("batch", CARD, TREE);
     expect(boundsFor("focus", CARD, TREE)).toEqual(CARD);
   });
 
   it("四个字段原样带过去，不做缩放、不做取整", () => {
-    /*
-      策略层不碰几何：算包围盒、算缩放是别人的事。
-      一旦这里开始四舍五入，缩放就会莫名其妙地差半个像素 ——
-      而这种偏差只会以「画面有点糊」的形式出现。
-    */
+    // 策略层不碰几何：这里开始取整，缩放会差半个像素，表现为画面有点糊。
     const fractional: Bounds = { x: 12.5, y: -3.25, w: 232.75, h: 111.5 };
     const whole: Bounds = { x: -0.5, y: 0.25, w: 2112.125, h: 704.875 };
     expect(boundsFor("focus", fractional, whole)).toEqual(fractional);
@@ -121,30 +100,17 @@ describe("纯函数", () => {
   });
 
   it("原样返回入参对象，不做拷贝（调用方按只读使用）", () => {
-    /*
-      这是有意选的取舍：它是策略选择，不是数据变换，没有产生新信息。
-      每次调用都复制一份，只会让「视口变了没有」无法用 === 判断 ——
-      而画布正需要这个判断来决定要不要重算变换矩阵。
-      代价写在明处：调用方不要就地改返回值。
-    */
+    // 原样返回入参：每次复制会让视口变没变无法用 === 判断，而画布正需要它。
+    // 代价写在明处：调用方不要就地改返回值。
     expect(boundsFor("focus", CARD, TREE)).toBe(CARD);
     expect(boundsFor("batch", CARD, TREE)).toBe(TREE);
   });
 });
 
-/* ── 两种模式的数据侧完全相同 ── */
-
 describe("两种模式下面，树和清单完全一样", () => {
   it("同一份日志投影出的清单，与模式无关 —— 差的只有视口矩形", () => {
-    /*
-      这个文件存在的全部理由。
-      「将来实现 batch 只需改 boundsFor 这一个函数」这句话，
-      在这里被翻译成一个可执行的断言：
-      数据侧（projectAt + toOutline）不认识也不接受模式参数，
-      两种模式拿到的清单逐行相同，唯一变化的是视口。
-      哪一天有人往 TaskPoint 上加 mode 字段、或者让清单按模式分支，
-      这条会先红 —— 而那时候改动还没扩散到画布和运行器。
-    */
+    // 数据侧不认识也不接受模式参数：两种模式拿到的清单逐行相同，变的只有视口。
+    // 谁往 TaskPoint 上加 mode 字段，这条会先红。
     const points = projectAt(fullTree(), 100);
     const outlineInFocus = toOutline(points);
     const outlineInBatch = toOutline(points);
@@ -157,10 +123,7 @@ describe("两种模式下面，树和清单完全一样", () => {
   });
 
   it("模式只影响视口：换模式不会让任何一个任务点多出来或少掉", () => {
-    /*
-      两种模式下走的是同一段数据路径：投影 → 清单 → 视口。
-      唯一被 mode 影响的是最后那一步，前面两步连参数都没有 mode 这一项。
-    */
+    // 同一段数据路径：投影、清单、视口；只有最后一步被 mode 影响。
     const idsIn = (mode: RunMode): string[] => {
       const viewport = boundsFor(mode, CARD, TREE);
       expect(viewport.w).toBeGreaterThan(0);

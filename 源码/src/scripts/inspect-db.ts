@@ -1,10 +1,6 @@
 /**
- * 数据库结构检视
- * ============================================================
+ * 直接查 SQLite 元数据表，打印实际建成的表结构。
  * 运行：npm run db:inspect
- *
- * 直接查 SQLite 的元数据表，把真实的表结构打印出来 ——
- * 不是打印 schema.ts 里「打算建什么」，而是「实际建成了什么」。
  */
 
 import { sqlite, inspectDatabase } from "@/adapters/store/client";

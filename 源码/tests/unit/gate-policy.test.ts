@@ -3,13 +3,8 @@ import { declaredGates, resolveGatePolicy } from "@/core/pipeline/gate-policy";
 import { STAGE_MAP, stageApproval, stageAuthorityNote } from "@/core/pipeline/stages";
 
 /**
- * 门禁策略
- * ============================================================
- * 改之前：`stages.ts` 里那句 `humanGate: true` **没有任何代码读它**，
- * 实际控制门禁的是 `SPEC_GATE` 这个环境变量，默认「放行」。
- * 两个互不相干的真相来源，而且放行是静默的。
- *
- * 这里测的是接上之后的行为。
+ * 保护门禁策略：声明说了算、加严永远允许、放松必须留下 overrideNote。
+ * 改之前 humanGate 没有任何代码读它，实际门禁是 SPEC_GATE 环境变量。
  */
 
 describe("门禁策略 · 权限模型说了算", () => {
@@ -52,12 +47,7 @@ describe("门禁策略 · 加严永远允许", () => {
   });
 
   it("加严时也不留痕迹 —— 多问一次人不需要解释", () => {
-    /*
-      这两个方向的代价不对等：
-        多问一次的代价是烦
-        放过一次的代价是不可逆（模型替用户猜，错了要到验收才发现）
-      所以加严不需要理由，放松才需要。
-    */
+    // 多问一次只是烦，放过一次不可逆：所以加严不需要理由，放松才需要。
     expect(resolveGatePolicy("spec", "pause").overrideNote).toBeNull();
     expect(resolveGatePolicy("build", "pause").overrideNote).toBeNull();
   });
@@ -73,15 +63,8 @@ describe("门禁策略 · 放松必须说出来", () => {
   });
 
   it("那段话说清了三件事", () => {
-    /*
-      一个静默关掉的门禁，和没有门禁是同一件事 —— 而且更糟，
-      因为界面上还写着「要人点头」，用户会以为有人把关过了。
-
-      所以这段话必须回答：
-        一、哪一步被放行了
-        二、会发生什么（模型替你猜）
-        三、代价什么时候暴露
-    */
+    // 静默关掉的门禁比没有更糟：界面上还写着要人点头。
+    // 这段话要说清哪一步被放行、会发生什么、代价什么时候暴露。
     const note = resolveGatePolicy("spec", "continue").overrideNote!;
     expect(note).toContain("规格化"); // 一
     expect(note).toContain("替你猜"); // 二
@@ -127,10 +110,7 @@ describe("门禁策略 · 三个档位都自洽", () => {
   });
 
   it("没有一种组合会既不停、又不标覆盖、而声明又说要批", () => {
-    /*
-      这是这个文件存在的全部理由。
-      出现这种组合，就意味着界面上的「要人点头」是句空话。
-    */
+    // 出现这种组合，就说明界面上的要人点头是句空话。
     const stages = Object.keys(STAGE_MAP) as Array<keyof typeof STAGE_MAP>;
     for (const id of stages) {
       for (const o of ["declared", "pause", "continue"] as const) {

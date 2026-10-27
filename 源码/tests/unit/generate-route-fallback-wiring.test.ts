@@ -3,28 +3,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * 接线断言：兜底标记必须从 spec 事件一路走到门禁（修法 4 第 4 步）
- * ============================================================
- * ── 为什么这条是"源码级"，而不是把 route 跑一遍 ──
- *   `route.ts` 是 Next.js 的 route handler：import 它要拉起 Next 运行时、
- *   better-sqlite3 和会话校验，单测里跑不起来（本项目其余单测都只测 core，
- *   靠假端口把真实调用挡在外面）。
- *
- *   而这条链子的**两端**都已经有各自的单测钉死了：
- *     · spec 事件带着 fallback  —— spec-stage.test.ts
- *     · decideGate 认这个参数    —— gate.test.ts
- *   中间那一跳（事件 → 门禁）没有别的单测能覆盖，而它恰恰是真实运行里
- *   出过问题的那一跳：兜底规格的 questions 是空的，标记半路丢了，
- *   门禁就会说"规格没有疑问，可以直接继续"，把兜底说成了没问题。
- *
- *   所以这里退一步，把"这一跳在源码里确实存在"钉死。
- *   它**能红**：把第二个实参删掉、或改回只传 runId，这几条立刻失败
- *   （已做变异验证：改坏 → 红 → 恢复后 SHA256 逐字节一致）。
- *
- * ── 为什么断言"没有旧写法"，而不只是"有新写法" ──
- *   只断言新写法出现是不够的：函数体里同时留着旧调用也会绿。
- *   所以配一条反例，把 `readGateDecision(runId)` 这种"标记丢了"的形态
- *   明确钉死为不许出现。
+ * 保护生成接口的接线：兜底标记从 spec 事件走到门禁、续跑分支、模块思考事件。
+ * route.ts 拉不起运行时，所以这里断言源码里的调用形态，并用反例钉住旧写法不存在。
  */
 
 const ROUTE_PATH = fileURLToPath(
@@ -42,7 +22,7 @@ describe("生成接口 · 兜底标记的接线", () => {
 
   it("【关键】门禁拿到的是那个标记，而不是默认的 false", () => {
     expect(src).toContain("readGateDecision(runId, specFallbackFromStage)");
-    // ★ 反例：旧写法（只传 runId）必须不再出现 —— 那正是"标记半路丢了"的形态
+    // 反例：只传 runId 的旧写法必须不再出现，那正是标记半路丢掉的形态。
     expect(src).not.toContain("readGateDecision(runId)");
   });
 
@@ -54,13 +34,8 @@ describe("生成接口 · 兜底标记的接线", () => {
     expect(src).toContain("let specFallbackFromStage = false");
   });
 
-  /*
-    「知悉并继续」那一跳。
-    判据本身是纯函数、有单测（gate.test.ts 的 isAcknowledged / decideGate）；
-    这里钉的是"接口真的读了 ack、并且先过 isAcknowledged 再交给门禁"。
-    少了 isAcknowledged 这一道，一份**空的** ack（当时压根没疑问）
-    就会被当成"他同意我们替他猜" —— 那是把用户的沉默当成授权。
-  */
+  // 这一跳的判据本身有单测；这里钉接口真的读了 ack，并且先过 isAcknowledged。
+  // 少了那一道，一份空 ack 会被当成用户同意替她猜。
   it("接口读 ack.json，并且先过 isAcknowledged 再交给门禁", () => {
     expect(src).toContain("readJsonArtifact<SpecAck>(runId, ACK_ARTIFACT_NAME)");
     // 而且要**对上具体那几条**：只判断"有没有那份记录"会替他从没看过的疑问放行
@@ -68,14 +43,8 @@ describe("生成接口 · 兜底标记的接线", () => {
   });
 });
 
-/**
- * 续跑那一跳（同一类"接线"问题，所以放在同一个文件里）
- * ============================================================
- * 判据本身是纯函数、有单测（gate.test.ts 的 isGateResume）；
- * 这里钉的是"route.ts 真的去问了这个判据、并且据此跳过了规格化"。
- * 没有这一跳，用户答完疑问再点生成会换一批新疑问，永远走不到下一步 ——
- * 实测连点三次都没过去（run ed8fcdc3）。
- */
+// 判据本身有单测；这里钉 route.ts 真的据此跳过了规格化。
+// 没有这一跳，用户答完疑问再点生成会换一批新疑问，永远走不到下一步。
 describe("生成接口 · 续跑的接线", () => {
   it("重跑规格化之前，先问了「这一趟是不是续跑」", () => {
     // 钉的是"分支由这个判据决定"，不只是"调用了它" ——
@@ -96,7 +65,7 @@ describe("生成接口 · 续跑的接线", () => {
 
   it("【关键】续跑时**不跑**规格化那一趟：runSpecStage 必须在 else 分支里", () => {
     expect(src).toContain("} else { for await (const e of runSpecStage(ports, {");
-    // ★ 反例：无条件重跑的老形态必须不再出现 —— 那正是"答了又问"的成因
+    // 反例：无条件重跑的老形态必须不再出现，那正是答了又问的成因。
     expect(src).not.toContain("specFallbackFromStage = false; for await (const e of runSpecStage(");
   });
 
@@ -107,14 +76,8 @@ describe("生成接口 · 续跑的接线", () => {
   });
 });
 
-/**
- * 模块思考的接线（还是同一类"接线"问题）
- * ============================================================
- * 数据那一头有单测（build-modules.test.ts 的「模块的思考」那一组），
- * 这里钉的是"编排层真的把它发成了 reasoning 事件、并且只发非空的"。
- * 少了这一跳，界面上并行构建那一步的「思考」tab 就永远是空的 ——
- * 而真实运行里单个模块的思考量到过 12706 tokens。
- */
+// 数据那一头有单测；这里钉编排层真的把它发成 reasoning 事件、且只发非空的。
+// 少了这一跳，并行构建那一步的思考 tab 永远是空的。
 describe("生成接口 · 模块思考的接线", () => {
   it("成功的模块：按 arch 顺序逐条发，每条标出归属", () => {
     expect(src).toContain("【${m.moduleId}】");

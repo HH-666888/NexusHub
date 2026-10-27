@@ -1,17 +1,7 @@
 /**
- * 端到端运行流程验证
- * ============================================================
+ * 端到端验证运行流程：一句话 → 一条构建记录 → 只属于我。
+ * 含归属隔离：别人的记录我看不到。
  * 运行：npm run e2e:run
- *
- * 验证「输入一句话 → 变成一条记录 → 只属于我」这条完整链路，
- * 包括一条容易被忽略但很关键的安全性质：**别人的记录我看不到**。
- *
- * 两个踩过的坑，写在这里免得再犯：
- *   1. 测试用的提示词不能是页面 placeholder 的子串，
- *      否则每个页面都会「包含」它，归属隔离的断言会假阳性。
- *   2. React 服务端渲染会在文本片段之间插入 <!-- --> 注释，
- *      `第 {1} 阶段` 实际输出是 `第 <!-- -->1<!-- --> 阶段`，
- *      断言前必须先剥掉渲染注释再匹配。
  */
 
 import { eq } from "drizzle-orm";
@@ -26,9 +16,7 @@ import {
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 
-// 检查器来自共用模块 —— 见 e2e-kit.ts 里对「为什么抽出来」的说明。
-  // 原先每条脚本各有一份，而且四份都犯了同一个错：
-  // 末尾的「全部通过」无条件打印，有失败也报绿。
+// 检查器来自共用模块，有失败时以退出码 1 结束。
   const ok = kitOk;
   const info = kitInfo;
 
@@ -42,23 +30,12 @@ function heading(title: string) {
   console.log("══════════════════════════════════════════════");
 }
 
-/**
- * 把服务端渲染出来的 HTML 转成「人可以读的文本」。
- * 剥掉 <!-- -->（React 的文本片段分隔注释）再匹配，否则跨片段的文字永远匹配不上。
- */
+// 先剥掉 React 的 <!-- --> 渲染注释再匹配，否则跨文本片段的文字匹配不上。
 function text(html: string): string {
   return html.replace(/<!--.*?-->/g, "").replace(/\s+/g, " ");
 }
 
-/**
- * 从 HTML 里取出「指定表单」的隐藏字段
- * ============================================================
- * 必须按表单分别提取，不能全页乱抓 ——
- * 主页上同时存在「创建运行」与「退出登录」两个表单，
- * 如果把两个表单的字段混在一起提交，服务端会执行错的动作。
- *
- * @param contains 用来识别目标表单的片段，例如 'name="prompt"'
- */
+// 必须按表单分别提取：主页上创建运行与退出登录两个表单混在一起会执行错动作。
 function extractFormFields(
   html: string,
   contains: string,
@@ -93,31 +70,8 @@ function readSessionCookie(res: Response): string | null {
   return null;
 }
 
-/*
-  这个文件里没有 readableHtml 了 —— 需要它的那几条断言随蓝图页一起删了。
-  但下面两条教训留着，下次谁再对渲染出来的 HTML 做字符串匹配一定还会踩：
-
-  一、**Next.js 的 RSC 水合载荷会让同一个属性出现两次。**
-     App Router 把整棵组件树序列化进
-     <script>self.__next_f.push(...)</script> 里供客户端水合。
-     而且这个坑**只对无值属性发作**：
-       有值属性  载荷里是 "data-x":"y"，形式不同，不会重复计数
-       无值属性  载荷里形式相同，于是被数了两遍
-     当时的症状是「7 张卡带原理条」跑出来 14 张，而页面完全正常。
-     所以要数属性个数的话，先 `replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, "")`。
-
-  二、**React 会在相邻的两个文本节点之间插一个 `<!-- -->`。**
-     JSX 里写  <span>往下：{label}</span>
-     渲染出来  <span>往下：<!-- -->派活</span>
-     肉眼看着一模一样，字符串匹配不一样。
-     要匹配文字就先 `replace(/<!--[\s\S]*?-->/g, "")`，
-     或者干脆在组件里用模板字符串把文字拼成一个节点。
-
-  两条都是"页面对、测试红"。不知道的话很容易被当成
-  "这条断言写错了"而去改错地方。
-*/
-
-/** 注册一个账号，返回会话 Cookie */
+// 对渲染后的 HTML 做字符串匹配会遇到两件事。
+// RSC 水合载荷让无值属性出现两次，数属性前先剥 <script>；React 会在相邻文本节点间插 <!-- -->。
 async function signUp(username: string): Promise<string> {
   const page = await fetch(`${BASE}/register`);
   const html = await page.text();
@@ -135,9 +89,7 @@ async function signUp(username: string): Promise<string> {
   });
   const cookie = readSessionCookie(res);
   if (!cookie) {
-    // 把页面上的中文错误原因抓出来。
-    // 只报一个状态码的话，排查全靠猜 —— 这里就吃过一次亏：
-    // 测试用户名超过了 20 字符上限，而错误信息里只看到一个「状态 200」。
+    // 报页面上的中文错误原因：只给状态码的话排查全靠猜。
     const body = await res.text();
     const reason =
       /role="alert"[^>]*>\s*([^<]+?)\s*</.exec(body)?.[1] ??
@@ -147,11 +99,10 @@ async function signUp(username: string): Promise<string> {
   return cookie;
 }
 
-/** 用当前会话创建一次运行 */
 async function createRun(cookie: string, prompt: string): Promise<Response> {
   const home = await fetch(`${BASE}/studio`, { headers: { cookie } });
   const html = await home.text();
-  // 工作台上还有「退出登录」表单，必须只取含 prompt 输入框的那一个
+  // 工作台上还有退出登录表单，只取含 prompt 输入框的那个
   const fields = extractFormFields(html, 'name="prompt"');
   const form = new FormData();
   for (const [k, v] of Object.entries(fields)) form.append(k, v);
@@ -176,17 +127,15 @@ async function main() {
   const tag = stamp.toString(36); // 时间戳转 36 进制，短且仍然唯一
   const userA = `ra_${tag}`;
   const userB = `rb_${tag}`;
-  // 注意：不能和输入框 placeholder 里的示例句子重复
+  // 不能和输入框 placeholder 的示例句子重复，否则归属断言会假阳性
   const prompt = "做一个宠物领养登记表，能上传照片、能记录领养状态";
 
-  /* ---------- 准备两个账号 ---------- */
   heading("准备 · 注册两个账号");
   const cookieA = await signUp(userA);
   ok("账号甲注册成功");
   const cookieB = await signUp(userB);
   ok("账号乙注册成功");
 
-  /* ---------- 1. 新账号的主页应该是空的 ---------- */
   heading("第一步 · 新账号的构建记录应该为空");
   const empty = await pageText(cookieA);
   expect_(
@@ -194,14 +143,12 @@ async function main() {
     "看到空状态提示，而不是空白页面",
     "没有看到空状态提示",
   );
-  // 先确认这条提示语确实不在 placeholder 里，否则后面的断言会假阳性
   expect_(
     !empty.includes(prompt),
     "此时页面上还没有这次构建的内容（断言前提成立）",
     "空页面上竟然出现了提示词，说明断言前提不成立",
   );
 
-  /* ---------- 2. 输入一句话创建运行 ---------- */
   heading("第二步 · 输入一句话，创建一次构建");
   const created = await createRun(cookieA, prompt);
   info(`响应状态 ${created.status}`);
@@ -217,7 +164,6 @@ async function main() {
     "跳转地址没有带上运行 id",
   );
 
-  /* ---------- 3. 记录出现在列表里 ---------- */
   heading("第三步 · 记录出现在构建记录列表");
   const htmlA = await pageText(cookieA);
   expect_(htmlA.includes(prompt), "列表里出现了刚才那句话", "列表里没有出现刚才那句话");
@@ -228,7 +174,6 @@ async function main() {
     "阶段显示不正确",
   );
 
-  /* ---------- 4. 校验不合规的输入 ---------- */
   heading("第四步 · 不合规的输入应被拒绝");
   const tooShort = await createRun(cookieA, "好");
   expect_(
@@ -244,7 +189,6 @@ async function main() {
     "过长的描述竟然通过了",
   );
 
-  /* ---------- 5. 归属隔离（最关键的一条） ---------- */
   heading("第五步 · 归属隔离：别人的记录看不到");
   const htmlB = await pageText(cookieB);
   expect_(
@@ -258,13 +202,7 @@ async function main() {
     "用户乙的空状态不正确",
   );
 
-  /*
-    ── 空状态的设计约定，在这里钉死 ──
-    空状态不是「没内容时显示一句什么都没说」，它要承担两件事：
-      ① 告诉用户下一步做什么（给三个能直接用的例子）
-      ② 不制造没有意义的大面积空白
-    下面几条一旦被改坏，这里立刻会红。
-  */
+  // 空状态要给出可直接用的示例，且不能留一大片空白。
   const SAMPLES = ["做一个团队任务看板", "做一个记账小工具", "做一个番茄钟"];
   const missingSample = SAMPLES.filter((s) => !htmlB.includes(s));
   expect_(
@@ -278,12 +216,7 @@ async function main() {
     "示例没有说明可点",
   );
 
-  /*
-    底部工作区在没选中任何记录时必须**收起来**。
-    原来的写法是固定 h-[22rem]，没内容时就是 352px 纯空白 ——
-    那正是「页面看起来像坏了」的来源。
-    这里检查收起态的那句占位说明在不在；展开时不会有它。
-  */
+  // 未选中记录时底部工作区必须收起，否则是 352px 纯空白。
   expect_(
     htmlB.includes("选中一条构建记录后，这里会出现"),
     "底部工作区在空状态下收成窄条，并说明选中后会出现什么",
@@ -296,14 +229,13 @@ async function main() {
     "空状态下方仍是空白",
   );
 
-  /* 右侧不该在没运行时摆一堆零 */
+  // 没选中运行时，右侧不该摆一排零
   expect_(
     !/输入 token\s*0/.test(htmlB),
     "没选中运行时，右侧不显示「输入 token 0」这类没有信息量的零",
     "右侧仍在显示一排零",
   );
 
-  /* ---------- 6. 直接猜 id 也访问不到 ---------- */
   heading("第六步 · 直接猜 id 也访问不到别人的记录");
   const runIdA = /[?&]run=([^"&\\]+)/.exec(location ?? "")?.[1] ?? "";
   info(`用户甲那条记录的 id：${runIdA.slice(0, 18)}…`);
@@ -319,7 +251,6 @@ async function main() {
     `用户乙竟然访问到了（状态 ${guess.status}）`,
   );
 
-  /* ---------- 7. 本人拿着自己的 id 可以访问 ---------- */
   heading("第七步 · 本人拿着自己的 id 可以访问");
   const mine = await fetch(`${BASE}/studio?run=${runIdA}`, {
     headers: { cookie: cookieA },
@@ -327,7 +258,6 @@ async function main() {
   });
   expect_(mine.status === 200, "用户甲访问自己的记录正常（200）", `返回 ${mine.status}`);
 
-  /* ---------- 8. 多条记录按时间倒序 ---------- */
   heading("第八步 · 多条记录按时间倒序排列");
   const second = "第二条记录：做一个个人记账本";
   const third = "第三条记录：做一个运营数据看板";
@@ -360,13 +290,8 @@ async function main() {
     "被拒绝的输入竟然入库了",
   );
 
-  /* ---------- 9. 底部工作区 ---------- */
   heading("第九步 · 底部工作区（生成 / 预览 / 源码）");
-  /*
-    标签第三项从「成品预览」改成「成品」——
-    那一格不再内嵌 iframe 半开着预览，改成了一枚「在新标签页整页打开」的按钮。
-    标签写「预览」会让人以为点进去就能看见，而它给的是一个动作。
-  */
+  // 第三项叫成品而不是预览：它给的是整页打开的按钮，不是内嵌预览。
   expect_(
     htmlA2.includes("生成过程") && htmlA2.includes("成品") && htmlA2.includes("源码"),
     "底部出现三个工作区标签",
@@ -383,11 +308,9 @@ async function main() {
     "没有成品却显示了下载入口",
   );
 
-  /* ---------- 10. 任务图 ---------- */
   heading("第十步 · 任务图（画布）");
 
-  // 标签页状态进了 URL，所以这里能直接导航过去验证。
-  // 状态不上 URL 的话，这块界面就只能靠人点开看 —— 自动化测试碰不到。
+  // 标签页状态在 URL 上，所以能直接导航过去验证。
   const graphHtml = await pageText(cookieA, `/studio?tab=graph`);
   expect_(
     graphHtml.includes("任务图"),
@@ -395,22 +318,15 @@ async function main() {
     "没有找到任务图标签",
   );
 
-  /*
-    ⚠️ 这条以前检查的是 `react-flow` 这个类名（React Flow 挂载成功）。
-    那张图现在搬到了自绘画布上，React Flow 也卸了。
-
-    改查 data-canvas-world —— 它是世界坐标层，**无条件**渲染的
-    （不像节点那样要等量完尺寸），所以 SSR 出来的 HTML 里就有。
-    /canvas 上也有一条同样的断言，两处一起守住"画布真的在"。
-  */
+  // 查世界坐标层：它无条件渲染，SSR 出来的 HTML 里就有。
+  // /canvas 上有一条同样的断言，两处一起守住画布真的在。
   expect_(
     graphHtml.includes("data-canvas-world"),
     "画布容器已渲染（世界坐标层在）",
     "画布没有渲染出来",
   );
 
-  // 未接入的工序必须在图上如实标注。
-  // 图比列表更容易让人相信「这里真的有东西」，所以更不能画错。
+  // 未接入的工序必须如实标注：图比列表更容易让人相信这里真的有东西。
   expect_(
     graphHtml.includes("未接入"),
     "图上如实标注了未接入的工序",
@@ -427,7 +343,6 @@ async function main() {
     "生成区没有空状态说明",
   );
 
-  /* ---------- 11. 过程记录接口 ---------- */
   heading("第十一步 · 过程记录（时间轴回放的数据源）");
 
   const eventsRes = await fetch(`${BASE}/api/runs/${runIdA}/events`, {
@@ -451,15 +366,13 @@ async function main() {
     "count 与实际条数一致",
     "count 与 events 长度对不上",
   );
-  // 这条运行没有真正调用过模型，所以事件应当为空。
-  // 空的含义是「还没跑过」，不是「跑过但没记上」—— 界面上要说清楚区别。
+  // 这条运行没有调过模型，事件应当为空；空表示还没跑过，不是跑过没记上。
   expect_(
     eventsJson.count === 0,
     "没有调用过模型的运行没有过程记录（而不是返回假数据）",
     "没有生成却返回了过程记录",
   );
 
-  // 归属校验：别人的运行取不到
   const otherEvents = await fetch(`${BASE}/api/runs/${runIdA}/events`, {
     headers: { cookie: cookieB },
   });
@@ -469,11 +382,9 @@ async function main() {
     `返回 ${otherEvents.status}，可能泄露了记录是否存在`,
   );
 
-  /* ---------- 12. 人工门禁的答案接口 ---------- */
   heading("第十二步 · 人工门禁（提交规格疑问的回答）");
 
-  // 这条运行没有规格（从没调用过模型），所以提交回答应当被明确拒绝，
-  // 而不是静默成功 —— 静默成功会让用户以为答案存下来了
+  // 没有规格时应明确拒绝，静默成功会让人以为答案存下来了
   const noSpec = await fetch(`${BASE}/api/runs/${runIdA}/answers`, {
     method: "POST",
     headers: { cookie: cookieA, "content-type": "application/json" },
@@ -510,15 +421,13 @@ async function main() {
   });
   expect_(anonAnswers.status === 401, "未登录不能提交回答", `返回 ${anonAnswers.status}`);
 
-  /* ---------- 13. 首页 / 与欢迎页 /welcome ---------- */
   heading("第十三步 · 首页（登录后的落地页）与欢迎页");
 
   const homeRes = await fetch(`${BASE}/`, { headers: { cookie: cookieA } });
   expect_(homeRes.status === 200, "登录后可以打开首页", `返回 ${homeRes.status}`);
   const homeHtml = await homeRes.text();
 
-  // 版式上几个必须存在的区块。断言的是「有没有这块」，
-  // 不是「长什么样」—— 具体像素会随设计调整，断言像素等于每改一次样式就红一次。
+  // 只断言区块是否存在，不断言像素：样式一改就红的断言没有意义。
   for (const [label, needle] of [
     ["大标题", "说一句，做出来"],
     ["产物类型分段", "网页应用"],
@@ -530,24 +439,14 @@ async function main() {
     expect_(homeHtml.includes(needle), `首页有「${label}」`, `首页缺少「${label}」`);
   }
 
-  /*
-    「新建项目」必须指向画布。
-    这条单列出来是因为它很容易在重构时被改回去 ——
-    这个卡片一度指向 /studio（工作台），而不是画布。
-    断言的是 href 本身，不是「点了会发生什么」：
-    页面上的链接对不对，从 HTML 就能确定。
-  */
+  // 新建项目必须指向 /canvas，这个链接很容易在重构时被改回工作台。
   expect_(
     homeHtml.includes('href="/canvas"'),
     "首页「新建项目」指向画布 /canvas",
     "首页「新建项目」没有指向 /canvas",
   );
 
-  /*
-    未登录必须跳登录页。
-    断言 307 而不是 200：首页会显示用户的构建记录与累计花费，
-    不能对未登录的人开放。
-  */
+  // 首页会显示构建记录与累计花费，未登录必须跳登录页。
   const homeAnon = await fetch(`${BASE}/`, { redirect: "manual" });
   expect_(
     homeAnon.status === 307 || homeAnon.status === 302,
@@ -555,11 +454,7 @@ async function main() {
     `返回 ${homeAnon.status}，可能把构建记录暴露给了未登录的人`,
   );
 
-  /*
-    欢迎页要**公开**，而且搬家之后内容不能丢。
-    这两条一起断言是有意的：搬家最容易出的错不是页面打不开，
-    而是「能打开但内容少了一截」—— 那种错没人会立刻发现。
-  */
+  // 欢迎页要公开，且搬家后内容不能少一截。
   const welcomeAnon = await fetch(`${BASE}/welcome`);
   expect_(welcomeAnon.status === 200, "未登录也能打开欢迎页", `返回 ${welcomeAnon.status}`);
   const welcomeHtml = await welcomeAnon.text();
@@ -575,10 +470,7 @@ async function main() {
     );
   }
 
-  /*
-    旧地址 /home 要重定向，不能 404。
-    已经发出去的链接与书签都指着它；404 会让人以为功能没了。
-  */
+  // 旧地址 /home 要重定向，已经发出去的链接不能 404。
   const legacyHome = await fetch(`${BASE}/home`, {
     headers: { cookie: cookieA },
     redirect: "manual",
@@ -589,7 +481,6 @@ async function main() {
     `返回 ${legacyHome.status}`,
   );
 
-  /* ---------- 14. 清理 ---------- */
   heading("第十四步 · 清理测试数据");
   for (const username of [userA, userB]) {
     const u = db.select().from(users).where(eq(users.username, username)).get();

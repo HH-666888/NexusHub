@@ -13,23 +13,9 @@ import {
 } from "@/core/planning/task-point";
 
 /**
- * 规划日志与「到点生成」的单测
- * ============================================================
- * 最要紧的一组在最上面：**到点语义** ——
- * 第 N 步的树里，绝不能出现第 N+1 步才该出生（或永远没出生）的东西。
- *
- * 为什么它排第一：
- *   「画布上第 4、5、6 道工序下面还是空的」这件事，
- *   用户是**看得出来**的。一旦投影多算了未来的点，画面上会先冒出几张
- *   还没到点的卡片 —— 而这不会崩、不会报错，只会让用户觉得
- *   「它是不是跳步了」。等到有人肉眼发现，通常已经改了三四个文件。
- *   这条测试把它变成一道机器守着的门。
- *
- * 第二组是**只增不改**：日志是整个方案里唯一的真相来源，
- * 它一旦可以被就地改写，「这一帧为什么是这样」就永远说不清了。
+ * 保护规划日志：到点语义、只增不改、状态投影、顺序与 maxSeq。
+ * 到点语义排第一：投影多算未来的点不会崩，只会让画布先冒出没到点的卡片。
  */
-
-/* ── 造点 ── */
 
 function point(
   id: string,
@@ -64,7 +50,7 @@ function threeStagesLog(): PlanningEvent[] {
   return log;
 }
 
-/** 再往里长出第 3 层的执行点 —— 它们才是「干活的最小单元」 */
+/** 再往里长出第 3 层的执行点，它们才是干活的最小单元 */
 function richLog(): PlanningEvent[] {
   let log = threeStagesLog();
   log = appendBorn(log, point("spec-1", "spec", 3, "done", 12));
@@ -82,8 +68,6 @@ function find(points: readonly TaskPoint[], id: string): TaskPoint {
     throw new Error(`投影里没有 ${id}（现有：${ids(points).join(", ") || "空"}）`);
   return hit;
 }
-
-/* ── ① 到点语义 ── */
 
 describe("到点语义：第 N 步的树里没有未来的东西", () => {
   it("seq 5：只有一级 Agent，第 1 道工序还没到点", () => {
@@ -108,10 +92,7 @@ describe("到点语义：第 N 步的树里没有未来的东西", () => {
   });
 
   it("边界取 <=：seq 9 还差一步，seq 10 正好到点", () => {
-    /*
-      差一步和正好到点是两件事。把 <= 写成 < 的话，
-      卡片会晚一帧出现 —— 而「晚一帧」在流式渲染里看起来就像卡了一下。
-    */
+    // 把 <= 写成 < 会让卡片晚一帧出现，流式渲染里看起来像卡了一下。
     expect(ids(projectAt(threeStagesLog(), 9))).toEqual(["agent-1"]);
     expect(ids(projectAt(threeStagesLog(), 10))).toEqual(["agent-1", "spec"]);
   });
@@ -122,12 +103,7 @@ describe("到点语义：第 N 步的树里没有未来的东西", () => {
   });
 
   it("任何 seq 下都不含 bornAtSeq > seq 的点", () => {
-    /*
-      这条是上面前四条的机器化表述：不去枚举每个具体 seq，
-      而是把「到点」这件事本身写成断言 —— 遍历整条时间轴，
-      任何一个投影结果里都不许出现还没出生的点。
-      将来日志变长、层级变深，这条照样管用。
-    */
+    // 到点语义的机器化表述：遍历整条时间轴，任何投影里都不许出现还没出生的点。
     const log = richLog();
     for (let seq = 0; seq <= maxSeq(log) + 5; seq++) {
       for (const p of projectAt(log, seq)) {
@@ -140,12 +116,7 @@ describe("到点语义：第 N 步的树里没有未来的东西", () => {
   });
 
   it("任何 seq 下都没有孤儿", () => {
-    /*
-      树的完整性是布局的前提（见 hasOrphans 的注释）。
-      这条不变量不是投影算出来的，而是**追加顺序**的责任：
-      父节点总是先出生。这里把它在整条时间轴上验一遍，
-      保证「到点生成」不会顺手破坏树的结构。
-    */
+    // 树完整性靠追加顺序（父节点总是先出生），这里在整条时间轴上验一遍。
     const log = richLog();
     for (let seq = 0; seq <= maxSeq(log) + 5; seq++) {
       expect(hasOrphans(projectAt(log, seq)), `seq=${seq} 时出现了孤儿`).toBe(false);
@@ -153,12 +124,7 @@ describe("到点语义：第 N 步的树里没有未来的东西", () => {
   });
 
   it("未来的点不是「存在但隐藏」—— 它根本不在数组里", () => {
-    /*
-      这两种做法在界面上看起来一样，在代码里差得很远：
-      「存在但隐藏」意味着每个下游函数都得记得判断 visible；
-      「不在数组里」意味着下游什么都不用做。
-      所以这里断言的是数组本身，而不是某个标志位。
-    */
+    // 断言的是数组本身：未来的点不在数组里，而不是存在但隐藏。
     const now = projectAt(threeStagesLog(), 15);
     expect(now).toHaveLength(2);
     expect(now.some((p) => p.id === "build")).toBe(false);
@@ -181,15 +147,9 @@ describe("到点语义：第 N 步的树里没有未来的东西", () => {
   });
 });
 
-/* ── ② 只增不改 ── */
-
 describe("只增不改：历史不许被改写", () => {
   it("appendBorn 遇到已存在的 id：整个日志逐项不变", () => {
-    /*
-      这是幂等性的核心断言，也是「删改现有断言」之外最容易被放松的一条：
-      实现里很容易写成「已存在就把状态更新一下」——那正是改写历史。
-      这里比对的是**整个数组**，不是长度，也不是某一个字段。
-    */
+    // 实现里很容易写成已存在就更新状态，那是改写历史；这里比对的是整个数组。
     const log = threeStagesLog();
     const before = structuredClone(log);
     const after = appendBorn(log, SPEC);
@@ -197,10 +157,7 @@ describe("只增不改：历史不许被改写", () => {
   });
 
   it("appendBorn 遇到已存在的 id 时，连新数组都不分配（同一个引用）", () => {
-    /*
-      调用方多半在 useMemo / reducer 里用它，「没变化」这件事要能被 === 感觉到，
-      否则每次重放都会触发一轮无谓的重渲染。
-    */
+    // 没变化时返回同一个引用，否则每次重放都会触发一轮无谓的重渲染。
     const log = threeStagesLog();
     expect(appendBorn(log, SPEC)).toBe(log);
   });
@@ -217,16 +174,12 @@ describe("只增不改：历史不许被改写", () => {
     const after = appendBorn(log, point("build", "agent-1", 2, "pending", 40));
     expect(after).toHaveLength(log.length + 1);
     expect(after.slice(0, log.length)).toEqual(log);
-    // 老日志本身没有被就地改（不是因为共享引用才「看起来没变」）
+    // 老日志本身没有被就地改，不是因为共享引用才看起来没变
     expect(log).toHaveLength(4);
   });
 
   it("appendBorn 用 point.bornAtSeq 作为事件的 seq —— 一个事实只有一个来源", () => {
-    /*
-      如果这里改用 maxSeq(log)+1，就会出现两个数字描述同一件事：
-      点说自己生于 7，事件说它是第 0 个。两者一旦对不上，
-      投影的「到点」和排序就会各说各话。
-    */
+    // 用 point.bornAtSeq 而不是 maxSeq+1：一个事实只能有一个来源。
     const p = point("x", null, 1, "pending", 7);
     expect(appendBorn([], p)).toEqual([{ kind: "born", seq: 7, point: p }]);
   });
@@ -246,11 +199,7 @@ describe("只增不改：历史不许被改写", () => {
   });
 
   it("appendStatus 不查重：同一状态写两遍就是两条，投影结果不受影响", () => {
-    /*
-      运行器可能只是又确认了一次「它还在跑」。
-      在追加这一层查重，就要先扫一遍日志，把 O(1) 变成 O(n)；
-      而重复对投影是无害的（取最后一条）。
-    */
+    // 在追加层查重要先扫一遍日志，把 O(1) 变成 O(n)；重复对投影无害。
     let log = threeStagesLog();
     log = appendStatus(log, "spec", "running", 11);
     log = appendStatus(log, "spec", "running", 11);
@@ -266,11 +215,7 @@ describe("只增不改：历史不许被改写", () => {
   });
 
   it("projectAt 返回的是快照：改投影结果不会污染日志", () => {
-    /*
-      投影结果是「某一刻的样子」，不是日志本身。
-      如果它返回的是日志里那份点对象，调用方一改，
-      就等于绕过日志改了历史 —— 只增不改这条不变量当场破产。
-    */
+    // 投影返回的是快照，否则调用方一改就等于绕过日志改了历史。
     const log = appendStatus(threeStagesLog(), "spec", "done", 11);
     const projected = projectAt(log, 100);
     const spec = find(projected, "spec");
@@ -282,8 +227,6 @@ describe("只增不改：历史不许被改写", () => {
     });
   });
 });
-
-/* ── ③ 状态投影 ── */
 
 describe("状态投影：最后一条生效，未来的一条不算", () => {
   it("没有状态事件时，用出生时带进来的状态", () => {
@@ -300,10 +243,7 @@ describe("状态投影：最后一条生效，未来的一条不算", () => {
   });
 
   it("截止时刻之后的状态事件不算数", () => {
-    /*
-      这条和「到点语义」是一体两面：点不会提前出现，
-      状态也不会提前生效。回放第 12 步时，第 13 步才写下的 done 不该可见。
-    */
+    // 点不会提前出现，状态也不会提前生效：回放第 12 步看不到第 13 步的 done。
     let log = threeStagesLog();
     log = appendStatus(log, "spec", "running", 11);
     log = appendStatus(log, "spec", "done", 13);
@@ -319,12 +259,7 @@ describe("状态投影：最后一条生效，未来的一条不算", () => {
   });
 
   it("乱序追加时取 seq 最大的那条，而不是日志里最后一条", () => {
-    /*
-      正常追加时两者等价（日志按 seq 非递减）。这条测的是**万一有人乱序追加**：
-      「最后一条」如果按日志顺序取，就会让一条更早写下的旧状态盖住新状态，
-      画面上表现为卡片颜色莫名其妙地退回去 —— 这种错极难查。
-      取 seq 最大，代价只是比较一个数字。
-    */
+    // 乱序追加时按日志顺序取最后一条，会让旧状态盖住新状态，所以取 seq 最大。
     let log = threeStagesLog();
     log = appendStatus(log, "spec", "done", 40);
     log = appendStatus(log, "spec", "running", 25);
@@ -332,21 +267,14 @@ describe("状态投影：最后一条生效，未来的一条不算", () => {
   });
 
   it("给还没出生的点写状态：不报错、不影响此刻的投影", () => {
-    /*
-      事件是流，谁在场由投影决定。为一个暂时不在场的点写状态不是错误，
-      在 appendStatus 里拦它反而需要先扫一遍日志。
-    */
+    // 为暂时不在场的点写状态不算错误，在 appendStatus 里拦它反而要先扫日志。
     let log = threeStagesLog();
     log = appendStatus(log, "build", "running", 5);
     expect(ids(projectAt(log, 5))).toEqual(["agent-1"]);
   });
 
   it("那条早写的状态事件，等点真的出生后会立刻生效", () => {
-    /*
-      这是上一条的直接后果，也是有意承认的行为：
-      日志里已经写下的历史不会被投影偷偷扔掉。
-      真要禁止「出生前的状态」，该拦的地方是 appendStatus，不是投影。
-    */
+    // 已写下的历史不会被投影扔掉；真要禁止出生前的状态，该拦的地方是 appendStatus。
     let log = threeStagesLog();
     log = appendStatus(log, "build", "running", 5);
     log = appendBorn(log, point("build", "agent-1", 2, "pending", 40));
@@ -361,15 +289,9 @@ describe("状态投影：最后一条生效，未来的一条不算", () => {
   });
 });
 
-/* ── ④ 顺序 ── */
-
 describe("顺序：按出生先后，同一时刻按出现先后", () => {
   it("按出生的 seq 排序，而不是按日志里的追加顺序", () => {
-    /*
-      追加顺序和出生顺序在正常路径下是一致的。
-      但只要有任何一个地方按「先拿到先追加」写日志，两者就会分叉 ——
-      而画面上卡片的左右位置会跟着跳。所以排序的依据必须是 seq。
-    */
+    // 只要有地方按先拿到先追加写日志，追加顺序与出生顺序就分叉；排序依据必须是 seq。
     let log: PlanningEvent[] = [];
     log = appendBorn(log, AGENT);
     log = appendBorn(log, UI); // seq 30 先追加
@@ -378,11 +300,7 @@ describe("顺序：按出生先后，同一时刻按出现先后", () => {
   });
 
   it("同一个 seq 出生的两个点：按日志里的出现顺序", () => {
-    /*
-      一次规划同时吐出两个执行点是完全可能的。
-      兜底用出现顺序，是为了让同一份日志永远投影出同一个顺序 ——
-      否则卡片位置每次刷新都可能换边。
-    */
+    // 同一 seq 出生的两个点按出现顺序排，同一份日志永远投影出同一个顺序。
     const base = (): PlanningEvent[] => {
       let log: PlanningEvent[] = [];
       log = appendBorn(log, AGENT);
@@ -406,11 +324,7 @@ describe("顺序：按出生先后，同一时刻按出现先后", () => {
   });
 
   it("手工造的坏日志里有重复出生：投影里只出现一次", () => {
-    /*
-      appendBorn 不会让重复出生进日志，但日志可能是别处拼出来的。
-      投影选择「认第一次出现的那一份」——和 appendBorn 的幂等保持一致：
-      第一个 born 就是这个点的事实。
-    */
+    // 日志可能是别处拼出来的：投影认第一次出现的那一份，与 appendBorn 幂等一致。
     const log: PlanningEvent[] = [
       ...threeStagesLog(),
       { kind: "born", seq: 20, point: point("arch", "agent-1", 2, "failed", 20) },
@@ -420,8 +334,6 @@ describe("顺序：按出生先后，同一时刻按出现先后", () => {
     expect(find(now, "arch").status).toBe("pending");
   });
 });
-
-/* ── ⑤ maxSeq ── */
 
 describe("maxSeq：日志里的「现在」", () => {
   it("空日志返回 0", () => {
@@ -438,11 +350,7 @@ describe("maxSeq：日志里的「现在」", () => {
   });
 
   it("maxSeq(log) 就是「现在」：用它投影出来的是一棵完整的树", () => {
-    /*
-      这条把两个函数绑在一起：maxSeq 不是给排序用的，
-      它的用途是「拿它当截止时刻」。
-      如果哪天有人把 maxSeq 改成只统计 born 事件，这条会立刻发现。
-    */
+    // maxSeq 的用途是拿它当截止时刻，不是排序；改成只统计 born 会让这条红。
     const log = appendStatus(richLog(), "ui-1", "running", 33);
     const now = projectAt(log, maxSeq(log));
     expect(ids(now)).toEqual([

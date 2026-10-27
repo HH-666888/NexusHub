@@ -2,19 +2,9 @@ import { describe, expect, it } from "vitest";
 import { escapeRawControlChars, extractJsonText } from "@/core/domain/spec";
 
 /**
- * JSON 字符串里的裸控制字符（真实故障的修复）
- * ============================================================
- * 实测一条真运行里，一个模块栽在这里：
- *   "产出无法使用：JSON 解析失败：Bad control character in string literal
- *    in JSON at position 3122 (line 1 column 3123)"
- * 模块产出是 {html, css, js} 三段代码，模型很容易在字符串里**直接换行**，
- * 而不是写 \n —— 那不是合法 JSON，于是整个模块被丢弃：
- * 钱花了、产物里少一整块功能，而它本可以救回来。
- *
- * 这一组钉两件事：救得回来，以及**不许救错**。
+ * 保护 JSON 字符串里裸控制字符的修复：救得回来，而且不许救错。
+ * 模块产出是 html/css/js 三段代码，模型常在字符串里直接换行。
  */
-
-/** 走一遍真实链路：extractJsonText → JSON.parse */
 const parse = (raw: string): unknown => {
   const text = extractJsonText(raw);
   if (text === null) throw new Error("抠不出 JSON");
@@ -113,10 +103,7 @@ describe("裸控制字符 · 与抠取的关系", () => {
   });
 
   it("裸控制字符救不了**截断**（那是另一回事，各有各的报错）", () => {
-    /*
-      这一条是划分边界：控制字符修复之后，截断仍然是截断 ——
-      上层据此报"JSON 写坏了"并给出位置，而不是被这里悄悄糊过去。
-    */
+    // 控制字符修复之后，截断仍然是截断，上层据此报 JSON 写坏了。
     const truncated = '{"js":"let a = 1;';
     const text = extractJsonText(truncated);
     expect(text).not.toBeNull();

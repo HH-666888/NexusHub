@@ -17,16 +17,8 @@ import {
 } from "@/core/canvas/pipeline-layout";
 
 /**
- * 森林布局的单测
- * ============================================================
- * 最要紧的一组在最上面：**没有子树时，新布局和旧的 nodeRect
- * 必须逐像素相同**。
- *
- * 为什么它排第一：
- *   这次改动把画布的位置计算整个换掉了。如果没有这条锚，
- *   「换完之后画面变了」这件事只能靠肉眼看截图发现 ——
- *   而肉眼对几个像素的偏移是瞎的。
- *   有了它，改布局时任何意外的位移都会当场变红。
+ * 保护森林布局：没有子树时与旧布局逐像素一致、子树撑开兄弟、连线不穿方块、插值动画。
+ * 回归锚排第一：改布局时任何意外位移都要当场变红。
  */
 
 const G: ForestGeometry = FOREST_GEOMETRY;
@@ -43,8 +35,6 @@ function overlaps(
 ): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
-
-/* ① 回归锚：没有子树时必须和旧布局一模一样 */
 
 describe("没有子树时与旧布局一致", () => {
   it("六个节点的位置逐个相同", () => {
@@ -70,25 +60,14 @@ describe("没有子树时与旧布局一致", () => {
   });
 
   it("高度和旧的 pipelineBounds 相同", () => {
-    /*
-      旧 pipelineBounds 的 h = 节点区 + FALLBACK_DROP，
-      新 layoutForest 的 bounds 也是。两者应该相等 ——
-      这条写出来是为了说明「我核过这件事」，而不是默认它成立。
-    */
+    // 旧 pipelineBounds 与新 bounds 都含 FALLBACK_DROP，这里核一次相等。
     const laid = layoutForest(pipeline(SIX), G);
     expect(laid.bounds.h).toBe(pipelineBounds(SIX.length, WIDE_GEOMETRY).h);
   });
 
   it("包围盒比节点区多出一个 FALLBACK_DROP —— 回退弧线不能被切在屏幕外", () => {
-    /*
-      这条守的不是「两个常量相等」，而是**那个值真的被加上了**。
-
-      我一开始写的是「forest-layout 里的 FALLBACK_DROP 和
-      pipeline-layout 里的相等」—— 那是错的断言：
-      后来改成 forest-layout 直接 import，**全项目只有一处定义**，
-      两个常量相等这件事由编译器保证，不需要测。
-      需要测的是它有没有被用在包围盒上。
-    */
+    // 守的不是两个常量相等（同一处定义由编译器保证），而是那个值真的被加进包围盒。
+    // 回退弧线不能被切在屏幕外。
     const laid = layoutForest(pipeline(SIX), G);
     const nodeBottom = Math.max(...laid.nodes.map((n) => n.y + n.h));
     expect(laid.bounds.y + laid.bounds.h - nodeBottom).toBe(OLD_DROP);
@@ -101,8 +80,6 @@ describe("没有子树时与旧布局一致", () => {
     expect(Number.isFinite(laid.bounds.x)).toBe(true);
   });
 });
-
-/* ② 一棵子树的形状 */
 
 describe("一棵子树", () => {
   const tree: LayoutNode[] = [
@@ -154,8 +131,6 @@ describe("一棵子树", () => {
     expect(laid.byId.get("s1")!.childCount).toBe(0);
   });
 });
-
-/* ③ 自动扩展：子树越宽，兄弟被撑得越开 */
 
 describe("自动扩展", () => {
   it("某一棵长出子树之后，它和右边的兄弟被推开了", () => {
@@ -210,8 +185,6 @@ describe("自动扩展", () => {
   });
 });
 
-/* ④ 子节点自己也有子节点 */
-
 describe("两层以上", () => {
   const deep: LayoutNode[] = [
     { id: "spec", children: [{ id: "a", children: [{ id: "a1" }, { id: "a2" }] }, { id: "b" }] },
@@ -243,8 +216,6 @@ describe("两层以上", () => {
   });
 });
 
-/* ⑤ 根节点换行（工作台面板那一档） */
-
 describe("根节点换行", () => {
   const panel: ForestGeometry = { ...G, root: { ...G.root, perRow: 3 } };
 
@@ -254,10 +225,7 @@ describe("根节点换行", () => {
   });
 
   it("下一行落在上一行**子树**的下面，而不是上一行节点自己的下面", () => {
-    /*
-      这一条是防「子树横穿下一行节点」的。
-      第二行的 y 必须大于第一行里最高的那棵子树的底边。
-    */
+    // 第二行的 y 必须大于第一行里最高那棵子树的底边，防子树横穿下一行。
     const laid = layoutForest(
       SIX.map((id, i) => ({
         id,
@@ -274,8 +242,6 @@ describe("根节点换行", () => {
     expect(secondTop, "第二行压在第一行的子树上").toBeGreaterThanOrEqual(firstBottom);
   });
 });
-
-/* ⑥ 数据保真 */
 
 describe("输出完整性", () => {
   it("每个输入节点都在输出里，一个不多一个不少", () => {
@@ -299,10 +265,6 @@ describe("输出完整性", () => {
     }
   });
 });
-
-/* ============================================================
-   父子连线：treeLinks
-   ============================================================ */
 
 describe("treeLinks 父子连线", () => {
   const g = FOREST_GEOMETRY;
@@ -364,16 +326,8 @@ describe("treeLinks 父子连线", () => {
   });
 
   it("★ 脊线不穿过任何一个孩子（第 2/3/4 行的线不会被方块盖住）", () => {
-    /*
-      这一条守的是**最初那个 bug**。
-
-      第一版是「每个孩子各画一条线」，多行时会从上一行的方块底下穿过，
-      于是只有第一行看起来连着。改成脊线之后必须保证：
-      **脊线在每一行都落在两个方块之间的空隙里。**
-
-      多试几个孩子数 —— 4（两整行）、5、7（最后一行只有 1 个且居中）
-      是三种不同形态，尤其 7 会触发「退化横枝」那条分支。
-    */
+    // 第一版每个孩子各画一条线，多行时会从上一行方块底下穿过。
+    // 改成脊线后必须保证它在每一行都落在两个方块的间隙里；4/5/7 个孩子各试一遍。
     for (const n of [1, 2, 3, 4, 5, 7]) {
       const nodes = withKids(n);
       const links = treeLinks(nodes);
@@ -389,11 +343,7 @@ describe("treeLinks 父子连线", () => {
 
       for (const [, rowKids] of rows) {
         const inside = rowKids.filter((k) => spineX > k.x && spineX < k.x + k.w);
-        /*
-          唯一允许「落在方块内部」的情形：这一行只有 1 个孩子，
-          而且它横跨脊线 —— 那时横枝退化成从顶边直下，不穿任何东西。
-          其余情况一律不允许。
-        */
+        // 唯一允许落在方块内部的情形：这一行只有 1 个孩子横跨脊线，横枝退化成直下。
         if (rowKids.length === 1 && inside.length === 1) continue;
         expect(
           inside.length,
@@ -433,23 +383,11 @@ describe("treeLinks 父子连线", () => {
   });
 });
 
-/* ============================================================
-   生长动画：lerpLayout
-   ============================================================ */
-
 describe("lerpLayout 两套布局之间插值", () => {
   const g = FOREST_GEOMETRY;
 
-  /**
-   * 六道工序，childrenFor 里那几道各挂**两个**孩子。
-   *
-   * ⚠️ 为什么是两个而不是一个：
-   *   一个孩子的子树宽是 232，**比根卡（240）还窄** ——
-   *   于是父节点的占位宽度没变，六个根节点的位置**一动不动**。
-   *   第一版这里挂了 1 个孩子，断言「它动了」直接失败 ——
-   *   而失败的是**测试的假设**，不是布局：一个孩子确实不该撑开任何东西。
-   *   两个才是 232×2+28 = 492 > 240，真的会撑开。
-   */
+  // 挂两个孩子而不是一个：一个孩子的子树宽 232，比根卡 240 还窄。
+  // 两个才是 232x2+28 = 492 > 240，真的会撑开兄弟。
   const KIDS = 2;
   function forest(childrenFor: string[] = []) {
     return layoutForest(
@@ -494,7 +432,7 @@ describe("lerpLayout 两套布局之间插值", () => {
     const prev = forest();
     const next = forest(["verify"]);
     const mid = lerpLayout(prev, next, 0.5);
-    // 「验收」有子节点，它自己没动，但**别的根节点被撑开了** —— 拿第一道验
+    // 验收有子节点，它自己没动，但别的根节点被撑开了，拿第一道验
     const a0 = prev.find((n) => n.id === SIX[0])!;
     const a1 = next.find((n) => n.id === SIX[0])!;
     const am = mid.find((n) => n.id === SIX[0])!;
@@ -514,12 +452,7 @@ describe("lerpLayout 两套布局之间插值", () => {
     expect(born.x).toBeCloseTo(parentPrev.x + parentPrev.w / 2, 9);
     expect(born.y).toBeCloseTo(parentPrev.y + parentPrev.h / 2, 9);
 
-    /*
-      前提：这棵树确实在动 —— 至少有一个根节点的 x 变了。
-      不断言"某个特定根动了"：哪几个根动、动多少，取决于
-      子树宽和居中的算法，那是布局的事（另有单测管）。
-      这里只确认"这棵树不是静止的"，否则上面的断言是空转的。
-    */
+    // 前提：这棵树确实在动。不断言某个特定根动了，那取决于布局算法。
     const moved = next.some((n) => {
       const p = prev.find((x) => x.id === n.id);
       return p !== undefined && n.depth === 0 && Math.abs(p.x - n.x) > 1;

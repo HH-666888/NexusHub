@@ -6,11 +6,8 @@ import {
 import type { ModelPort, ModelRequest, ModelResult } from "@/core/ports/model";
 
 /**
- * 「截断即加倍预算重试」：单测
- * ============================================================
- * 这一条是拿三次真实运行的教训换来的（模块 6000/16384/32768 都被顶满过），
- * 所以下面每一条正例都配一条反例 —— 尤其是"**没截断时一次都不许多调**"，
- * 它的反面（无脑重试）会让每一次运行的钱凭空翻倍，而且看不出来。
+ * 保护截断即加倍预算重试：该重试、不该重试、加倍边界，以及重试那次自己失败时的记账。
+ * 每条正例都配反例，尤其是没截断时一次都不许多调。
  */
 
 function result(over: Partial<ModelResult> = {}): ModelResult {
@@ -187,11 +184,7 @@ describe("截断重试 · 加倍的边界", () => {
 
 describe("截断重试 · 重试那一次自己失败（最容易漏账的一种）", () => {
   it("【关键】重试抛错 → **不往上抛**，把第一次的结果带出来并说清重试失败", async () => {
-    /*
-      为什么这一条最要紧：第一次调用是成功返回的、钱已经花掉了。
-      如果把重试的异常往上抛，调用方只会记一笔"失败、花费 0" ——
-      那笔真花掉的钱就凭空消失了。这个坑和"解析失败也要记账"是同一个。
-    */
+    // 第一次调用成功返回、钱已经花掉；把重试异常往上抛，这笔钱就凭空消失。
     const { model, h } = makeModel([{ truncated: true, costCny: 0.07 }, { throws: "网关超时" }]);
     const out = await completeWithTruncationRetry(model, BASE);
 
@@ -199,7 +192,7 @@ describe("截断重试 · 重试那一次自己失败（最容易漏账的一种
     expect(out.retryError).toBe("网关超时");
     expect(out.calls).toBe(2); // 发起过 2 次
     expect(out.attempts).toHaveLength(1); // 但只拿到 1 个结果
-    expect(out.attempts[0].costCny).toBe(0.07); // ★ 那 0.07 元要能被记上
+    expect(out.attempts[0].costCny).toBe(0.07); // 那 0.07 元要能被记上
     expect(out.stillTruncated).toBe(true);
     expect(out.retriedWithMaxTokens).toBe(16384);
   });

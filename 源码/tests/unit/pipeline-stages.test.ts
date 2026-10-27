@@ -15,9 +15,10 @@ import {
   wiredStages,
 } from "@/core/pipeline/progress";
 
-/* ============================================================
-   进度推算 —— 这里钉住的是一条「不能骗人」的规则
-   ============================================================ */
+/**
+ * 保护流水线定义与进度推算：未接入的工序不显示已通过、阶段定义与回退回路、
+ * 人工门禁、失败归因分类、isStageId 收窄与 blockedBy 语义。
+ */
 describe("流水线进度推算", () => {
   const allStages = STAGES.map((s) => s.id);
 
@@ -30,15 +31,12 @@ describe("流水线进度推算", () => {
     }
   });
 
-  /* ------------------------------------------------------------
-     这一条是整个文件里最重要的一条
-     ------------------------------------------------------------ */
   it("【关键】未接入的工序永远不能显示成「已通过」", () => {
     const planned = STAGES.filter((s) => s.implementation === "planned");
     expect(planned.length).toBeGreaterThan(0); // 当前确实还有没接入的
 
     // 把所有可能的进度组合都试一遍：无论跑到哪一步、什么状态，
-    // 未接入的工序都不能变成「已通过」
+    // 未接入的工序都不能变成已通过
     const statuses = ["running", "paused", "done", "failed"] as const;
     for (const stage of allStages) {
       for (const status of statuses) {
@@ -57,44 +55,17 @@ describe("流水线进度推算", () => {
     const done = computeStageStatuses({ stage: "verify", status: "done" });
 
     // 规格化、构建、验收都已接入，应当显示已通过。
-    //
-    // 这里原本断言 done.spec 是 pending。改成 passed 不是因为实现变了，
-    // 而是因为**规格化这一阶段真的接上了**：它会调用模型、
-    // 产出 spec.json、算出验收标准。既然它真的跑过，就该显示已通过。
-    // 断言写死的值会随实现推进而过期 —— 所以下面那条通用断言更重要。
+    // 断言写死的值会随实现推进而过期，下面那条通用断言更重要。
     expect(done.spec).toBe("passed");
     expect(done.build).toBe("passed");
     expect(done.verify).toBe("passed");
 
-    /*
-      ⚠️ 这一条是**必须改**的（本期改动的现有断言之一）。
-
-      原来断言 done.arch 是 pending，因为那时「架构定型」标着 planned
-      —— 它一行代码都没跑过，显示成已通过就是撒谎。
-
-      现在它真的接上了：编排层在规格化之后、门禁之后调 runArchStage，
-      会调模型、产出 arch.json、跑三条本地检查（route.ts 第二道那一段）。
-      也就是说跑到 verify 时，arch **确实跑过并交出了产物** ——
-      再断言 pending 就变成另一种撒谎（把做成了的说成没做成）。
-      下面「兜底断言」那条按 implementation 动态取，仍然守着真正的底线：
-      凡是还标着未接入的，无论跑到哪一步都必须是 pending。
-    */
+    // 架构定型这一期接上了：跑到 verify 时它确实跑过并交出了产物，
+    // 再断言 pending 就变成把做成了的说成没做成。
     expect(done.arch).toBe("passed");
 
-    /*
-      ⚠️ 这一条是**必须改**的（本期改动的现有断言之一，另一条在
-         planning-from-run.test.ts 的「还没接入的工序」那一组里）。
-
-      原来断言 done.ui 是 pending，因为那时「界面设计」标着 planned
-      —— 它一行代码都没跑过，显示成已通过就是撒谎。
-
-      现在它真的接上了：编排层在架构定型之后、并行构建之前调 runUiStage，
-      会调模型、产出 ui-spec.json、跑三条本地检查（route.ts 第三道那一段）。
-      也就是说跑到 verify 时，ui **确实跑过并交出了产物** ——
-      再断言 pending 就变成另一种撒谎（把做成了的说成没做成）。
-      下面「兜底断言」那条按 implementation 动态取，仍然守着真正的底线：
-      凡是还标着未接入的，无论跑到哪一步都必须是 pending。
-    */
+    // 界面设计同样接上了：跑到 verify 时它确实跑过并交出了产物。
+    // 下面的兜底断言按 implementation 动态取，仍守着真正的底线。
     expect(done.ui).toBe("passed");
 
     // 还没接入的一律 pending
@@ -102,13 +73,8 @@ describe("流水线进度推算", () => {
   });
 
   it("【兜底断言】凡是标为未接入的工序，无论跑到哪一步都必须是 pending", () => {
-    /*
-      上一条断言的是具体某几道工序的状态，会随实现推进而过期。
-      这一条不写死具体是哪几道 —— 它按 implementation 字段动态取，
-      所以无论以后哪一道接上了、哪一道还没接，它都成立。
-
-      它守的是那条底线：**没接入的工序永远不能显示成已通过**。
-    */
+    // 上一条写死了具体工序，会随实现推进过期。
+    // 这一条按 implementation 动态取：没接入的工序永远不能显示成已通过。
     const planned = STAGES.filter((s) => s.implementation === "planned");
     expect(planned.length).toBeGreaterThan(0);
 
@@ -169,10 +135,6 @@ describe("流水线进度推算", () => {
   });
 });
 
-/**
- * 这些测试不是为了覆盖率，是为了把「架构不变量」固化下来。
- * 任何一次改动如果破坏了下面任何一条，CI/本地验证会立刻失败。
- */
 describe("六阶段流水线定义", () => {
   it("恰好六个阶段，序号从 1 连续排到 6", () => {
     expect(STAGES).toHaveLength(6);
@@ -212,7 +174,7 @@ describe("六阶段流水线定义", () => {
   });
 
   it("验收标准不得包含不可判定的措辞 —— 这是「可机器判定」的实质要求", () => {
-    // 「界面美观」「尽量流畅」这类说法无法判定，一旦出现，第⑥阶段的自动验收就无从谈起
+    // 界面美观、尽量流畅这类说法无法判定，一旦出现，第⑥阶段的自动验收就无从谈起
     const vague = [
       "尽量",
       "尽可能",
@@ -299,17 +261,8 @@ describe("失败归因四分类", () => {
   });
 });
 
-/* ============================================================
-   isStageId：把 string 收窄成 StageId 的那道关卡
-   ============================================================
-   它存在的原因是一个**具体**的接缝：任务点的 id 是 string
-   （core/planning/task-point.ts），而画布要的是 StageId 这个联合类型。
-   中间只有两种走法：`as StageId`（一句谎话，编译器不再管）
-   或者真的判一次（这里）。/canvas 上"当前工序 → 自动聚焦"那条路走的是后者。
-
-   为什么值得钉住：判错的后果不是崩溃，而是**聚焦到一个不存在的工序** ——
-   视口只是没动。那和"这一步还没推进"在画面上完全一样。
-   ============================================================ */
+// isStageId 把 string 收窄成 StageId：任务点 id 是 string，画布要联合类型。
+// 判错的后果不是崩溃，而是聚焦到不存在的工序，视口只是没动。
 describe("isStageId", () => {
   it("六道工序的 id 全部认", () => {
     for (const stage of STAGES) {
@@ -333,11 +286,8 @@ describe("isStageId", () => {
   });
 
   it("原型链上的键不算工序 —— 用 in 写会在这里红", () => {
-    /*
-      `"constructor" in STAGE_MAP` 是 true（它从 Object.prototype 上来的），
-      于是脏数据会被当成一道真的工序。from-run.ts 判 phase 时踩过同一个坑，
-      那边的注释写着这件事；这里用 hasOwnProperty 是同一个理由。
-    */
+    // constructor 在 STAGE_MAP 上为 true（来自 Object.prototype），脏数据会被当成真工序。
+    // 所以用 hasOwnProperty；from-run.ts 判 phase 时踩过同一个坑。
     for (const proto of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
       expect(isStageId(proto)).toBe(false);
     }
@@ -355,20 +305,9 @@ describe("isStageId", () => {
   });
 });
 
-/* ============================================================
-   ★ blockedBy：待规划的那道工序，界面得说清"卡在哪"
-   ------------------------------------------------------------
-   背景是 assemble（集成装配）那三条验收标准：能启动 / 端口可访问 /
-   冒烟脚本能走通主流程。它们要求**真的把应用跑起来**，而当前产物是
-   单文件 HTML、项目也没有沙箱 —— 硬做只能编造检查结果。
-
-   所以这一道如实标成 planned，并把原因写在 blockedBy 上。
-   下面三条守的不是"某个字符串写对了"，而是这个字段的**语义边界**：
-     · 标着未接入的，必须说得出卡在哪（否则界面又回到干巴巴的「待规划」）；
-     · 已经接入的，**不该**还挂着一条过期的原因 ——
-       那会让界面指着一个早就接好的功能说"它还没接"，是另一种谎；
-     · 而唯一那道 planned 的工序，原因里必须真的点到"沙箱"这件事。
-   ============================================================ */
+// assemble 的三条验收标准要求真的把应用跑起来，而产物是单文件 HTML、没有沙箱。
+// 所以这一道如实标成 planned，并把原因写在 blockedBy 上。
+// 下面三条守语义边界：planned 必须说得出卡点，已接入的不许挂着过期原因。
 describe("★ blockedBy：未接入的工序必须说清卡在哪", () => {
   it("所有 implementation === \"planned\" 的工序，blockedBy 必须存在且非空", () => {
     const planned = STAGES.filter((s) => s.implementation === "planned");

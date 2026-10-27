@@ -1,3 +1,7 @@
+/**
+ * 保护用户名校验与归一化、密码强度、会话有效期。
+ */
+
 import { describe, expect, it } from "vitest";
 import {
   checkPasswordStrength,

@@ -1,19 +1,7 @@
 /**
- * 演示数据准备
- * ============================================================
+ * 造演示数据：演示账号、一条构建记录、一次真实生成，最后打印会话令牌。
+ * 会真实调用模型并产生费用（约 ¥0.015）。
  * 用法：npm run demo:seed
- *
- * 它做三件事：
- *   1. 建一个演示账号（已存在则复用）
- *   2. 建一条构建记录
- *   3. 真的跑一次生成，让工作台里有一个能点的成品
- *   4. 打印会话 Cookie —— 供开发期给截图工具使用
- *
- * ⚠️ 会真实调用模型，产生费用（约 ¥0.015）。
- *
- * 这个脚本在比赛演示时也用得上：
- *   评委打开页面时如果现场生成要等十几秒，
- *   预先跑好一条能让演示立刻有东西可看。
  */
 
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
@@ -39,7 +27,7 @@ async function main() {
   console.log(" 演示数据准备");
   console.log("══════════════════════════════════════════════");
 
-  /* ---------- 1. 账号 ---------- */
+  // 1. 账号
   const existing = await sqliteAuthStore.findUserByUsername(DEMO_USER);
   let token: string;
 
@@ -68,7 +56,7 @@ async function main() {
   const user = await sqliteAuthStore.findUserByUsername(DEMO_USER);
   if (!user) throw new Error("找不到演示账号");
 
-  /* ---------- 2. 构建记录 ---------- */
+  // 2. 构建记录
   const run = await sqliteRunStore.create({
     userId: user.id,
     prompt: DEMO_PROMPT,
@@ -76,7 +64,7 @@ async function main() {
   });
   ok(`已创建构建记录 ${run.id.slice(0, 18)}…`);
 
-  /* ---------- 3. 真的跑一次生成 ---------- */
+  // 3. 真实生成一次
   const resolved = await resolveModelEndpoint();
   if (!resolved.ready) {
     throw new Error(`模型接入配置不完整：${resolved.reason}`);
@@ -115,7 +103,7 @@ async function main() {
     throw new Error("没有产出成品，请查看上面的提示");
   }
 
-  /* ---------- 4. 输出 ---------- */
+  // 4. 输出
   console.log();
   console.log("══════════════════════════════════════════════");
   console.log(" 完成");

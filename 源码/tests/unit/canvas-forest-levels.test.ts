@@ -17,24 +17,8 @@ import {
 import type { StageId } from "@/core/pipeline/stages";
 
 /**
- * 按深度定义尺寸的单测（三层 Agent 树）
- * ============================================================
- * 这一组守的是「第 1 层的六道工序用主卡尺寸」这件事。
- *
- * ── 为什么需要它 ──
- *   布局原来只有两档几何：深度 0 用 root（240×156），
- *   深度 ≥ 1 一律用 child（232×112）。
- *   升级成三层之后，第 1 层的六道工序**掉进了 child 那一档**：
- *   六张本该和主卡一样大的工序卡被画成执行任务点那么大，
- *   三层看起来只剩两层；而且六道工序还会被按 perRow = 2
- *   折成三行，「横着排成一行」的形态也没了。
- *
- * ── 两条不能破的底线 ──
- *   ① 不传 levels 时，结果必须和以前**逐字段相同**（第一组钉着）。
- *      这是回归锚，破了它等于把整块画布悄悄挪了几像素。
- *   ② 传了 levels 时，方块之间仍然不许重叠（第二组钉着）。
- *      尺寸一改，measure 量出来的宽度和 place 摆出来的位置
- *      最容易对不上 —— 而那就是方块叠在一起的来源。
+ * 保护按深度定义尺寸：第 1 层六道工序用主卡尺寸、三层互不重叠、一行六个。
+ * 不传 levels 时与以前逐字段相同，传了 levels 时也要对得上出厂的 TREE_LEVELS。
  */
 
 /** 六道工序，顺序就是流水线顺序 */
@@ -58,12 +42,7 @@ function child(id: string, stage: StageId): StageChild {
 const kidsOf = (stage: StageId, n: number): StageChild[] =>
   Array.from({ length: n }, (_, i) => child(`${stage}:t${i}`, stage));
 
-/**
- * 六道工序各挂 0~3 个子节点。
- *
- * 0（整片叶子）、1、2（刚好一行）、3（一行两个 + 一行一个居中）——
- * 四种形态都在，折行和「最后一行居中」的边界才真的被走到。
- */
+// 六道工序各挂 0~3 个子节点，折行与最后一行居中的边界都被走到。
 const byStage: ChildrenByStage = {
   spec: kidsOf("spec", 0),
   arch: kidsOf("arch", 1),
@@ -76,10 +55,7 @@ const byStage: ChildrenByStage = {
 /** 三层树：一个一级 Agent → 六道工序 → 各自的执行任务点 */
 const TREE: LayoutNode[] = toForestNodes("agent-1", SIX, byStage);
 
-/**
- * 升级后的几何：第 0 层和第 1 层都用主卡尺寸 240×156，
- * 第 2 层起才是子卡尺寸 232×112；六道工序一行放 6 个。
- */
+// 第 0、1 层用主卡 240x156，第 2 层起子卡 232x112；六道工序一行六个。
 const LEVELS: ForestGeometry = {
   ...FOREST_GEOMETRY,
   levels: {
@@ -99,15 +75,9 @@ function overlaps(
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
-/* ① 不传 levels ≡ 传 levels: {} */
-
 describe("不传 levels 时与以前逐字段相同", () => {
   it("levels: {} 和不传 levels，整份 nodes 数组完全一致", () => {
-    /*
-      levels 是**可选**字段，「没写」和「写了个空的」都必须走回原来那条路。
-      用 toEqual 比整份 nodes 数组（而不是只挑几个数）——
-      多一个字段、少一个 undefined 都会当场变红。
-    */
+    // levels 是可选项，没写和写空都必须走回原来那条路；比的是整份 nodes 数组。
     const before = layoutForest(TREE, FOREST_GEOMETRY);
     const after = layoutForest(TREE, { ...FOREST_GEOMETRY, levels: {} });
 
@@ -130,8 +100,6 @@ describe("不传 levels 时与以前逐字段相同", () => {
   });
 });
 
-/* ② 三层树的几何 */
-
 describe("三层树的几何：第 1 层用主卡尺寸", () => {
   it("一级 Agent 是 240×156，depth 0，没有父节点，而且是唯一的根", () => {
     const root = LAID.byId.get("agent-1")!;
@@ -142,11 +110,8 @@ describe("三层树的几何：第 1 层用主卡尺寸", () => {
   });
 
   it("★ 六道工序每个都是 240×156 —— 这是这次改动的核心目的", () => {
-    /*
-      改之前，depth ≥ 1 一律取 g.child（232×112）：
-      六张本该和主卡同尺寸的工序卡被画成执行任务点那么大，
-      层级感当场消失。这条把「第 1 层回到主卡尺寸」钉死。
-    */
+    // 改之前 depth>=1 一律取 child，六张工序卡被画成执行点那么大；
+    // 这条钉住第 1 层回到主卡尺寸，层级感不再消失。
     for (const id of SIX) {
       const n = LAID.byId.get(id)!;
       expect({ id, w: n.w, h: n.h }).toEqual({ id, w: 240, h: 156 });
@@ -171,11 +136,7 @@ describe("三层树的几何：第 1 层用主卡尺寸", () => {
   });
 
   it("同一棵树不传 levels 时，六道工序仍然掉在 232×112 —— 说明上一条是 levels 起的作用", () => {
-    /*
-      这是一条「前提断言」：如果这棵树不传 levels 也是 240×156，
-      那上面那条「六道工序 240×156」就是空转的。
-      顺带把**原来的错**钉下来：六道工序会被当成子卡。
-    */
+    // 前提断言：不传 levels 时这棵树仍是 232x112，上一条才有意义。
     const flat = layoutForest(TREE, FOREST_GEOMETRY);
     for (const id of SIX) {
       expect(flat.byId.get(id)!.w, `${id} 在不传 levels 时不该是主卡尺寸`).toBe(232);
@@ -184,11 +145,8 @@ describe("三层树的几何：第 1 层用主卡尺寸", () => {
   });
 
   it("★ 三层树里任意两个方块都不重叠", () => {
-    /*
-      按层改尺寸之后，measure 量出来的宽度和 place 摆出来的位置
-      最容易对不上 —— 一旦对不上，表现就是方块叠在一起。
-      这里所有两两组合都查（16 个节点 → 120 对），不挑层级。
-    */
+    // 尺寸一改，measure 与 place 最容易对不上，表现是方块叠在一起；
+    // 这里查所有两两组合，不挑层级。
     const all = LAID.nodes;
     expect(all).toHaveLength(16); // 1 + 6 + 9，先把节点数钉住
     for (let i = 0; i < all.length; i++) {
@@ -208,8 +166,6 @@ describe("三层树的几何：第 1 层用主卡尺寸", () => {
     }
   });
 });
-
-/* ③ 六道工序排成一行 */
 
 describe("六道工序排成一行", () => {
   it("y 相同，x 按流水线顺序从左到右", () => {
@@ -239,8 +195,6 @@ describe("六道工序排成一行", () => {
   });
 });
 
-/* ④ toForestNodes 的形状 */
-
 describe("toForestNodes 的形状", () => {
   it("只有一个根，六道工序都挂在它下面，顺序不变", () => {
     expect(TREE).toHaveLength(1);
@@ -254,12 +208,8 @@ describe("toForestNodes 的形状", () => {
   });
 
   it("没有子节点的工序不带 children 键（不是空数组）", () => {
-    /*
-      空数组和 undefined 在布局里结果一样，但渲染层是按
-      `children !== undefined` 判断"要不要画展开箭头"的 ——
-      带个空数组就会给一道空工序画出一个指向虚无的箭头。
-      和 toLayoutNodes 那一组是同一个理由（见 pipeline-forest.test.ts）。
-    */
+    // 渲染层按 children !== undefined 判断要不要画展开箭头，
+    // 空数组会给一道空工序画出指向虚无的箭头。
     const spec = TREE[0].children!.find((c) => c.id === "spec")!;
     expect("children" in spec).toBe(false);
 
@@ -277,19 +227,9 @@ describe("toForestNodes 的形状", () => {
   });
 });
 
-/* ⑤ 出厂的那份几何（core 里的 TREE_LEVELS） */
-
 describe("TREE_LEVELS：画布真正用到的那份三层几何", () => {
-  /**
-   * 上面那几组用的 LEVELS 是这个测试文件里的**本地副本** ——
-   * 它证明的是"这套几何摆得对"，证明不了"画布用的就是这套"。
-   * 真正的画布（PipelineCanvas）和视口（CanvasWorkbench）取的是
-   * core/canvas/forest-layout.ts 里的 TREE_LEVELS。
-   *
-   * 两边漂开的后果不会报错，只会让画面悄悄变样：
-   * 六道工序回到 232×112、或者被折成三行 —— 而单测全绿。
-   * 所以这一组直接把出厂常量和上面钉过的那份比。
-   */
+  // 上面几组用的是本文件的本地副本，只能证明这套几何摆得对。
+  // 这一组直接比出厂的 TREE_LEVELS，防止两边漂开而单测全绿。
   it("出厂的 TREE_LEVELS 就是本文件里那套（三层的尺寸和行数一个不差）", () => {
     expect(TREE_LEVELS).toEqual(LEVELS.levels);
   });
@@ -297,27 +237,20 @@ describe("TREE_LEVELS：画布真正用到的那份三层几何", () => {
   it("拿出厂常量摆一遍，三层各自的尺寸/深度/行数都对得上", () => {
     const laid = layoutForest(TREE, { ...FOREST_GEOMETRY, levels: TREE_LEVELS });
 
-    /* 第 0 层：一级 Agent，唯一的根，主卡尺寸 */
     expect(laid.roots).toHaveLength(1);
     const root = laid.byId.get("agent-1")!;
     expect({ w: root.w, h: root.h, depth: root.depth }).toEqual({ w: 240, h: 156, depth: 0 });
 
-    /* 第 1 层：六道工序，主卡尺寸，**一行六个** */
     const stages = SIX.map((id) => laid.byId.get(id)!);
     for (const n of stages) expect({ id: n.id, w: n.w, h: n.h }).toEqual({ id: n.id, w: 240, h: 156 });
     expect(new Set(stages.map((n) => n.y)).size, "六道工序被折成了多行").toBe(1);
 
-    /* 第 2 层：执行任务点，子卡尺寸，每行两个 */
     const kids = SIX.flatMap((s) => byStage[s] ?? []).map((k) => laid.byId.get(k.id)!);
     expect(kids.length).toBe(9);
     for (const n of kids) expect({ id: n.id, w: n.w, h: n.h }).toEqual({ id: n.id, w: 232, h: 112 });
 
-    /*
-      ── 宽度这笔账 ──
-      六道工序**自己那一行**是 6×240 + 5×28 = 1580（gapX 那一层没覆盖，
-      退回 child.gapX = 28）。这个数用"没有任何子节点"的树来量最干净 ——
-      有子树之后 measure 会按子树宽把兄弟撑开（见下面第二条）。
-    */
+    // 六道工序自己那一行是 6x240 + 5x28，没有子节点时量最干净。
+    // 有子树之后 measure 会按子树宽把兄弟撑开，见下一条。
     const bare = layoutForest(toForestNodes("agent-1", SIX, {}), {
       ...FOREST_GEOMETRY,
       levels: TREE_LEVELS,
@@ -328,19 +261,12 @@ describe("TREE_LEVELS：画布真正用到的那份三层几何", () => {
     );
     expect(bare.bounds.w).toBe(1580);
 
-    /*
-      带上子树之后这一行会被撑宽 —— 撑到多少由**各自的子树宽**决定：
-      本文件里 ui / build / assemble 各挂 2~3 个执行任务点（492 宽），
-      所以是 3×240 + 3×492 + 5×28 = 2336。
-      这一条不是为了钉住 2336 这个数（换一棵树就变），而是钉住
-      **它不会失控**：文件头那条硬约束是总宽 ≤ 2450。
-    */
+    // 带上子树后这一行会被各自的子树宽撑开；这里钉的是不失控（总宽 <= 2450），
+    // 不是钉住某个具体数字。
     expect(laid.bounds.w).toBeLessThanOrEqual(2450);
     expect(laid.bounds.w).toBe(2336);
   });
 });
-
-/* ⑥ levelAt 的解析规则 */
 
 describe("levelAt 解析规则", () => {
   it("只写 { w } 的那一层，h / gapX / perRow / gapY 逐字段退回默认", () => {

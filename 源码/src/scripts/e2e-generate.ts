@@ -1,14 +1,7 @@
 /**
- * 端到端验证：流式生成接口
- * ============================================================
- * 运行：npm run e2e:generate
- *
- * ⚠️ 会真实调用模型并产生费用（约 ¥0.03）。这是必要的成本 ——
- *    模拟的测试证明不了「SSE 真的能流式推、产物真的能落盘」。
- *
- * 验证的是一条完整链路：
- *   建立会话 → 触发流式生成 → 收到各类事件 → 产物落盘 → 成本入账
- *   以及两条容易出事的性质：**幂等**（重复请求不重复花钱）与**归属隔离**。
+ * 端到端验证流式生成：会话 → SSE 事件 → 产物落盘 → 成本入账。
+ * 另验两条性质：幂等（重复请求不重复花钱）与归属隔离。
+ * 会真实调用模型，约 ¥0.03。运行：npm run e2e:generate
  */
 
 import { eq } from "drizzle-orm";
@@ -28,9 +21,7 @@ import {
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 
-// 检查器来自共用模块 —— 见 e2e-kit.ts 里对「为什么抽出来」的说明。
-  // 原先每条脚本各有一份，而且四份都犯了同一个错：
-  // 末尾的「全部通过」无条件打印，有失败也报绿。
+// 检查器来自共用模块，有失败时以退出码 1 结束。
   const ok = kitOk;
   const fail = kitFail;
   const info = kitInfo;
@@ -91,7 +82,7 @@ async function signUp(username: string): Promise<string> {
     const m = /^(nexus_session=[^;]+)/.exec(c);
     if (m) return m[1];
   }
-  // 把页面上的中文错误原因抓出来，而不是只报一个状态码
+  // 报页面上的中文错误原因，而不只是一个状态码
   const body = await res.text();
   const reason =
     /role="alert"[^>]*>\s*([^<]+?)\s*</.exec(body)?.[1] ??
@@ -99,7 +90,6 @@ async function signUp(username: string): Promise<string> {
   throw new Error(`注册失败（HTTP ${res.status}）：${reason}`);
 }
 
-/** 连上 SSE，把事件收完 */
 async function collectEvents(
   runId: string,
   cookie: string,
@@ -145,10 +135,9 @@ async function main() {
   const username = `gen_${tag}`;
   const otherName = `geno_${tag}`;
   const prompt = "做一个书签收藏夹，能添加网址、能删除、能按标签筛选，刷新后数据还在";
-  /** 门禁提问时，用户会怎么答（真实用户也是这么答的：按最简方案来） */
+  // 门禁提问时的回答，按最简方案
   const ANSWER_TEXT = "按最简方案来：纯前端单页实现，不要登录、不要后端、不要额外依赖。";
 
-  /* ---------- 准备 ---------- */
   heading("准备 · 注册账号并创建一条构建");
   const cookie = await signUp(username);
   ok("账号注册成功");
@@ -156,7 +145,7 @@ async function main() {
   const user = db.select().from(users).where(eq(users.username, username)).get();
   if (!user) throw new Error("找不到刚注册的用户");
 
-  // 运行创建本身已由 e2e:run 覆盖，这里直接落库，把验证集中在生成链路上
+  // 运行创建已由 e2e:run 覆盖，这里直接落库，把验证集中在生成链路
   const run = await sqliteRunStore.create({
     userId: user.id,
     prompt,
@@ -164,7 +153,6 @@ async function main() {
   });
   ok(`构建记录已创建：${run.id.slice(0, 18)}…`);
 
-  /* ---------- 归属隔离 ---------- */
   heading("第一步 · 别人的构建不能生成");
   const otherCookie = await signUp(otherName);
   const other = await fetch(`${BASE}/api/runs/${run.id}/generate`, {
@@ -179,7 +167,6 @@ async function main() {
   const anon = await fetch(`${BASE}/api/runs/${run.id}/generate`);
   expect_(anon.status === 401, "未登录请求 → 401", `返回 ${anon.status}`);
 
-  /* ---------- 流式生成（含门禁：被拦下就答题，再点一次续跑） ---------- */
   heading("第二步 · 触发流式生成（会真实花钱）");
   const t0 = Date.now();
   let { events, status } = await collectEvents(run.id, cookie);
@@ -188,20 +175,8 @@ async function main() {
   expect_(status === 200, `SSE 连接建立（HTTP ${status}）`, `连接失败 HTTP ${status}`);
   info(`共收到 ${events.length} 个事件，耗时 ${(elapsed / 1000).toFixed(1)} 秒`);
 
-  /*
-    ---------- 人工门禁那一跳 ----------
-    规格里还有疑问时，门禁按设计把运行停在 paused。
-
-    ⚠️ 这条 e2e 以前**没有**这一跳，于是修好兜底之后就一直是红的：
-       真规格会提疑问 → 停在门禁 → 后面 check / artifact / 账目全都收不到，
-       而那不是代码错了，是测试脚本只走了"一路跑通"的那一半流程。
-       这里补上真实用户会做的事：答完疑问，再点一次生成。
-
-    ⚠️ 顺带钉住修好没多久的一条：**续跑不许重跑规格化**。
-       重跑的话疑问会换一批新的，用户"答了又问"永远走不到下一步
-       （实测连点三次都没过去）。所以下面有一条硬断言：
-       整轮下来 stage:"spec" 的流水**恰好 1 条**。
-  */
+  // 门禁把运行停在 paused：要提交回答再触发一次，这才是真实用户走的那一跳。
+  // 续跑不许重跑规格化，否则疑问换新一批，用户答了又问，永远走不到下一步。
   const gateRounds: number[] = [];
   for (let round = 0; round < 3; round++) {
     const specEvent = events.find((e) => e.kind === "spec");
@@ -241,11 +216,7 @@ async function main() {
   }
 
   if (gateRounds.length === 0) {
-    /*
-      这一轮模型没提疑问，门禁没被触发 —— **如实说**，不假装验过。
-      （这条不断言"必须被拦"：提不提疑问是模型的事，
-        把它写成硬断言会让这条 e2e 变成一条看运气的测试。）
-    */
+    // 这轮模型没提疑问，门禁那一跳没被验到：如实说明，不写成硬断言。
     info("提示：这一轮规格里没有疑问，门禁那一跳这轮没被验到");
   } else {
     ok(`门禁确实拦下过 ${gateRounds.length} 轮（${gateRounds.join(" / ")} 个疑问）`);
@@ -266,7 +237,6 @@ async function main() {
     `事件构成：phase ${count("phase")} · text ${count("text")} · reasoning ${count("reasoning")} · usage ${count("usage")} · check ${count("check")} · artifact ${count("artifact")} · error ${count("error")}`,
   );
 
-  /* ---------- 事件序列检查 ---------- */
   heading("第三步 · 事件序列是否符合预期");
   expect_(count("phase") >= 3, "收到多个阶段事件（生成 / 检查 / 保存）", "阶段事件不足");
   expect_(
@@ -274,14 +244,7 @@ async function main() {
     `收到 ${count("text")} 个正文片段 —— 说明是真的流式，不是一次性返回`,
     "没有收到任何流式正文片段",
   );
-  /*
-    用量事件现在是两个 —— 规格化一次、生成一次。
-    这不是回归，是规格化接上之后的正常结果：
-    两个阶段各自调用模型，各自报一次用量。
-    断言改成「至少一次」而不是写死具体数字 ——
-    写死的话，以后再加一个阶段又要来改一遍，
-    而「改断言以让测试通过」正是最该警惕的动作。
-  */
+  // 用量事件按至少一次断言：规格化与生成各调一次模型，写死数字只会一改再改。
   expect_(count("usage") >= 1, "收到用量事件（规格化与生成各自上报）", `收到 ${count("usage")} 个`);
   expect_(
     count("spec") === 1,
@@ -302,7 +265,6 @@ async function main() {
     if (e.kind === "error") info(`提示：${e.message}`);
   }
 
-  /* ---------- 用量与成本 ---------- */
   heading("第四步 · 用量与成本");
   const usageEvent = events.find((e) => e.kind === "usage");
   if (usageEvent?.kind === "usage") {
@@ -328,7 +290,6 @@ async function main() {
     fail("没有收到用量事件");
   }
 
-  /* ---------- 产物落盘 ---------- */
   heading("第五步 · 产物是否真的落到了磁盘");
   const artifact = await fsArtifactStore.findLatest(run.id, "html");
   expect_(artifact !== null, "数据库里有产物登记", "数据库里没有产物登记");
@@ -353,7 +314,6 @@ async function main() {
     }
   }
 
-  /* ---------- 检查结果 ---------- */
   heading("第六步 · 产物检查结果");
   const checkEvent = events.find((e) => e.kind === "check");
   if (checkEvent?.kind === "check") {
@@ -366,7 +326,6 @@ async function main() {
     fail("没有收到检查事件");
   }
 
-  /* ---------- 成本入账 ---------- */
   heading("第七步 · 成本是否入了账");
   const records = await sqliteCostStore.listByRun(run.id);
   const countStage = (s: string) => records.filter((r) => r.stage === s).length;
@@ -377,20 +336,8 @@ async function main() {
         .join(" · "),
   );
 
-  /*
-    ⚠️ 这条断言改过两次，两次的理由都写在这里（改断言是最该警惕的动作，
-       所以必须说清"为什么改的不是判据本身"）：
-
-      · 最早写的是"恰好 1 条"——那时只有生成阶段会调用模型；
-      · 规格化接上之后改成"恰好 2 条"（spec + build）；
-      · 现在流水变成 spec / arch / ui / 各模块 / 装配 好几种，
-        "恰好 N 条"已经不是这件事的性质了。真正不会变的是两条：
-          ① **每个调用模型的阶段各记一笔**（阶段名对得上）；
-          ② **规格化恰好一笔** —— 续跑不许重跑规格化。
-        ② 尤其要紧：重跑的话疑问会换一批新的，用户"答了又问"永远走不到下一步
-        （实测连点三次都没过去）。所以这条从"数字"改成了"性质"，
-        而且比原来更严：它现在能抓住一个真实的回归。
-  */
+  // 断言的是性质而不是条数：每个调用模型的阶段各记一笔，规格化恰好一笔。
+  // 规格化重跑会让疑问换新一批，用户答了又问走不到下一步。
   expect_(
     countStage("spec") === 1,
     "规格化**只花了一次钱** —— 续跑沿用了已确认的规格，没有重跑",
@@ -422,7 +369,6 @@ async function main() {
     `状态仍是 ${refreshed?.status}，说明没有正常收尾`,
   );
 
-  /* ---------- 预览接口 ---------- */
   heading("第八步 · 产物预览接口（iframe 用的那个）");
 
   const preview = await fetch(`${BASE}/api/runs/${run.id}/artifact`, {
@@ -441,7 +387,7 @@ async function main() {
     "内容不完整",
   );
 
-  /* 沙箱相关的响应头 —— 这是预览功能里唯一有真实安全含义的部分 */
+  // 沙箱响应头是预览功能里唯一有真实安全含义的部分
   const csp = preview.headers.get("content-security-policy") ?? "";
   expect_(
     csp.includes("connect-src 'none'"),
@@ -459,7 +405,7 @@ async function main() {
     "缺少 form-action",
   );
 
-  /* 归属隔离：换成别人的会话再请求一次 */
+  // 换成别人的会话再请求一次
   const otherPreview = await fetch(`${BASE}/api/runs/${run.id}/artifact`, {
     headers: { cookie: otherCookie },
   });
@@ -472,7 +418,7 @@ async function main() {
   const anonPreview = await fetch(`${BASE}/api/runs/${run.id}/artifact`);
   expect_(anonPreview.status === 401, "未登录请求产物 → 401", `返回 ${anonPreview.status}`);
 
-  /* 下载：只多一个 Content-Disposition，内容一致 */
+  // 下载只多一个 Content-Disposition，内容与预览一致
   const download = await fetch(`${BASE}/api/runs/${run.id}/artifact`, {
     method: "POST",
     headers: { cookie },
@@ -489,7 +435,6 @@ async function main() {
     "两次拿到的内容不一样",
   );
 
-  /* ---------- 幂等 ---------- */
   heading("第九步 · 幂等：再连一次不应重复花钱");
   const before = (await sqliteCostStore.listByRun(run.id)).length;
   const second = await collectEvents(run.id, cookie);
@@ -511,7 +456,6 @@ async function main() {
     "第二次竟然重新生成了",
   );
 
-  /* ---------- 清理 ---------- */
   heading("第十步 · 清理测试数据");
   const runCount = db.select().from(runs).where(eq(runs.userId, user.id)).all().length;
   const costCount = db
