@@ -99,7 +99,7 @@ export function gridSlot(index: number): { row: number; col: number } {
 }
 
 /** 第 index 道工序的左上角坐标 */
-export function columnPosition(index: number): { x: number; y: number } {
+function columnPosition(index: number): { x: number; y: number } {
   const { row, col } = gridSlot(index);
   return {
     x: col * (LAYOUT.nodeWidth + LAYOUT.gapX),

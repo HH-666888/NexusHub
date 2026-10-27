@@ -146,14 +146,14 @@ export type UiParseResult =
  * 页面 / 组件 id 的规矩与架构模块逐字符一致，所以直接复用它的实现。
  * 抄第二份的代价是两份规则将来会在某个字符上不一样，那时页面点不动、模块点得动。
  */
-export const normalizeUiId = normalizeModuleId;
+const normalizeUiId = normalizeModuleId;
 
 /**
  * 把设计变量名归一成唯一写法，收得下模型可能给出的几种：
  *   --color-surface / color-surface / var(--color-surface) / var(--x, #fff) / --Color Surface
  * 兜底值不参与命名。返回一定以 -- 开头；一个可用字符都没有时返回空串，由调用方丢掉。
  */
-export function normalizeTokenName(raw: string): string {
+function normalizeTokenName(raw: string): string {
   let s = raw.trim().toLowerCase();
 
   // 先剥掉 var(...) 那一层，定义里不该出现它
@@ -303,7 +303,7 @@ export function parseUi(raw: string): UiParseResult {
 // 它承接全部验收标准、只引用自己定义过的变量、声明需要每个模块的数据，
 // 于是三条本地检查在兜底产物上是诚实地绿的，而不是假装设计过了。
 
-export const UI_FALLBACK_MARK = "（兜底界面：未能从模型获得结构化界面设计）";
+const UI_FALLBACK_MARK = "（兜底界面：未能从模型获得结构化界面设计）";
 
 export function fallbackUi(meta: {
   spec: AppSpec;

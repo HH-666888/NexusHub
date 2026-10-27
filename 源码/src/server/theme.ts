@@ -11,7 +11,7 @@ import { sqliteSettingsStore } from "@/adapters/store/settings-repo";
 import { THEME_OPTIONS, type ThemeId } from "@/core/domain/appearance";
 import { loadAppearance } from "@/core/settings/service";
 
-export const THEME_COOKIE = "nexus_theme";
+const THEME_COOKIE = "nexus_theme";
 
 function isThemeId(v: string | undefined): v is ThemeId {
   return THEME_OPTIONS.some((o) => o.id === v);

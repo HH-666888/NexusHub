@@ -35,7 +35,7 @@ export function newRunId(): string {
   return randomUUID();
 }
 
-export const PROMPT_MIN = 4;
+const PROMPT_MIN = 4;
 export const PROMPT_MAX = 500;
 
 export interface PromptCheck {

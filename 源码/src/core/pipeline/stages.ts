@@ -241,13 +241,6 @@ export const STAGES: readonly StageDef[] = [
   },
 ] as const;
 
-/** 界面用的实现状态标签 */
-export const IMPLEMENTATION_LABEL: Record<StageImplementation, string> = {
-  wired: "已接入",
-  direct: "直通",
-  planned: "未接入",
-};
-
 
 /**
  * 一道工序最终要不要人点头：规则给下限，humanGate 只能抬高不能降低。

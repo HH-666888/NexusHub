@@ -80,12 +80,3 @@ export const env = {
     systemPromptOverride: str("PROBE_SYSTEM_PROMPT", ""),
   },
 } as const;
-
-/** 启动期自检：密钥缺失时给出明确指引，而不是等到调用失败 */
-export function assertModelConfigured(): void {
-  if (!env.model.apiKey) {
-    throw new Error(
-      "缺少模型密钥。请复制 源码/.env.example 为 源码/.env.local，并填入 DEEPSEEK_API_KEY。",
-    );
-  }
-}

@@ -408,10 +408,10 @@ export function moduleSignature(m: {
  * 每个模块的片段最多带多少字符：6 个模块各上万字符会让 token 成本盖过并行省下的时间。
  * 掐尾而不是掐头：特征片段都在开头，掐头会让探针因为提示词里没给而变红，那是自造假故障。
  */
-export const MODULE_FRAGMENT_MAX_CHARS = 4000;
+const MODULE_FRAGMENT_MAX_CHARS = 4000;
 
 /** 所有片段合起来的上限，防止模块多的时候提示词失控 */
-export const ASSEMBLE_TOTAL_MAX_CHARS = 24000;
+const ASSEMBLE_TOTAL_MAX_CHARS = 24000;
 
 /** 掐尾并留痕：静默丢内容是最难查的一类问题 */
 function clip(text: string, max: number): string {

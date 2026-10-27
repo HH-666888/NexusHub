@@ -49,7 +49,7 @@ const globalForDb = globalThis as unknown as {
   __nexusDb?: ReturnType<typeof createConnection>;
 };
 
-export const connection = globalForDb.__nexusDb ?? createConnection();
+const connection = globalForDb.__nexusDb ?? createConnection();
 
 if (process.env.NODE_ENV !== "production") {
   globalForDb.__nexusDb = connection;
@@ -57,7 +57,7 @@ if (process.env.NODE_ENV !== "production") {
 
 export const db = connection.db;
 export const sqlite = connection.sqlite;
-export const databasePath = connection.dbPath;
+const databasePath = connection.dbPath;
 export { schema };
 
 /**

@@ -88,13 +88,6 @@ export type ArchParseResult =
   | { ok: true; arch: ArchSpec }
   | { ok: false; reason: string; raw: string };
 
-/** 小写字母数字，可含连字符，但不许出现在首尾 */
-const MODULE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
-export function isValidModuleId(id: string): boolean {
-  return MODULE_ID.test(id);
-}
-
 /**
  * 归一出合法模块 id。
  * 直接判不合法就丢弃会连带丢掉该模块的 coversFeatures，第一道检查随后变红，
@@ -207,7 +200,7 @@ export function parseArch(raw: string): ArchParseResult {
 // 兜底：解析失败不该让整条流水线停下。只给一个模块并承接全部验收标准，
 // 让无孤儿需求这条检查照样是绿的，同时如实说明这一版没做切分。
 
-export const ARCH_FALLBACK_MARK = "（兜底架构：未能从模型获得结构化架构）";
+const ARCH_FALLBACK_MARK = "（兜底架构：未能从模型获得结构化架构）";
 
 export function fallbackArch(meta: {
   spec: AppSpec;

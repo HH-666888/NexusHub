@@ -36,11 +36,6 @@ export function expect_(cond: boolean, passMsg: string, failMsg: string): boolea
   return cond;
 }
 
-// 已失败条数，供调用方判断是否继续
-export function failureCount(): number {
-  return failures;
-}
-
 // 收尾：打印汇总；有失败时以退出码 1 结束。
 export function finish(startedAt: number): never {
   const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);

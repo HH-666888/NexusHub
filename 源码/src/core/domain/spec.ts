@@ -386,8 +386,6 @@ export function reviewSpec(spec: AppSpec): SpecGate {
 // 兜底：与其让整条流水线失败，不如给一份明确标注过的兜底规格，
 // 验收标准只留能自动判定的那几条，用户看得到差别就不会当成真规格。
 
-export const FALLBACK_MARK = "（兜底规格：未能从模型获得结构化规格）";
-
 export function fallbackSpec(meta: {
   prompt: string;
   model: string;

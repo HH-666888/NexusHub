@@ -54,11 +54,6 @@ export function requiredApproval(step: AccessSubject): Approver {
   return "none";
 }
 
-export function needsHumanSignoff(step: AccessSubject): boolean {
-  return requiredApproval(step) === "human";
-}
-
-
 /** 一句话说清为什么是这个权限；理由说得出来，用户才能预判哪些事会来问他 */
 export function explainAuthority(step: AccessSubject): string {
   if (step.actor === "human") {
@@ -80,15 +75,6 @@ export function actorBadge(step: { actor: ActorKind; access?: AccessMode }): str
   if (step.actor === "program") return "程序自动";
   // 漏填按「干活」显示，否则「看数」和「上线」会显示成同一个徽章
   return step.access === "read" ? "AI · 只读" : "AI · 干活";
-}
-
-/** 给某个角色一句话的权限说明，用在节点详情面板 */
-export function actorCapability(actor: ActorKind, access?: AccessMode): string {
-  if (actor === "human") return "想做什么做什么 —— 所有对外动作的最后一道都是人";
-  if (actor === "program") return "按点自动取数，只读不写";
-  return access === "read"
-    ? "可以看任何东西，改不了任何东西"
-    : "可以在自己这边改，对外动作前会来问你";
 }
 
 
