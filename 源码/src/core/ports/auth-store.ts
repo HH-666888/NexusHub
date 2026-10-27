@@ -17,6 +17,4 @@ export interface AuthStore {
   deleteSession(sessionId: string): Promise<void>;
   /** 改密码 / 强制下线时踢掉该用户所有设备 */
   deleteSessionsByUser(userId: number): Promise<number>;
-  /** 返回清理条数 */
-  deleteExpiredSessions(now: number): Promise<number>;
 }

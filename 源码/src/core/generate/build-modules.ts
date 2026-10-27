@@ -44,11 +44,7 @@ export interface BuildModulesInput {
   concurrency?: number;
   /** 单个模块的输出预算。未给 → MODULE_MAX_OUTPUT_TOKENS */
   maxOutputTokensPerModule?: number;
-  /**
-   * 单个模块失败后是否继续。默认 true（部分失败是允许的）；
-   * 传 false 时第一个失败会中止整批，已领活的模块仍会跑完再抛。
-   */
-  continueOnError?: boolean;
+
   /**
    * 只构建这几个模块（断点续跑）。未给即构建全部。
    * 提示词里的“第 N 个 / 共 M 个”仍按架构里的全部模块数算。
@@ -84,7 +80,6 @@ export async function buildModules(
 
   const modules: ArchModule[] = input.arch.modules;
   const concurrency = resolveConcurrency(input.concurrency);
-  const continueOnError = input.continueOnError !== false;
   const maxOutputTokens = input.maxOutputTokensPerModule ?? MODULE_MAX_OUTPUT_TOKENS;
 
   /*
@@ -242,13 +237,9 @@ export async function buildModules(
   let cursor = 0;
   let inFlight = 0;
   let peakInFlight = 0;
-  /** continueOnError === false 时第一个失败记在这里，让所有 worker 停手 */
-  let abortError: Error | null = null;
 
   async function worker(): Promise<void> {
     for (;;) {
-      // 已中止就不领新活，已领走的会自己跑完
-      if (abortError) return;
       const index = cursor++;
       if (index >= targets.length) return;
 
@@ -271,12 +262,6 @@ export async function buildModules(
             // 见上：这一份没存上，不影响这一批的结果
           }
         }
-
-        if (!outcome.ok && !continueOnError && !abortError) {
-          abortError = new Error(
-            `模块 ${outcome.failure.moduleId} 构建失败（continueOnError=false，已中止整批）：${outcome.failure.message}`,
-          );
-        }
       } catch (err) {
         /*
           runOne 已把调用失败与解析失败收成数据，走到这里的是非预期异常。
@@ -294,11 +279,6 @@ export async function buildModules(
           reasoning: "",
         };
         outcomes[index] = { ok: false, failure };
-        if (!continueOnError && !abortError) {
-          abortError = new Error(
-            `模块 ${target.id} 构建失败（continueOnError=false，已中止整批）：${failure.message}`,
-          );
-        }
       } finally {
         inFlight--;
       }
@@ -308,12 +288,6 @@ export async function buildModules(
   /* 同时开 min(并发上限, 模块数) 个 worker：不白开一堆立刻返回的空 worker */
   const workerCount = Math.min(concurrency, targets.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
-
-  /*
-    整批中止：先等所有 worker 收工再抛 —— 直接抛会让还在飞的调用变成悬空 promise，
-    它们的花费就再也不会被记进账里。
-  */
-  if (abortError) throw abortError;
 
   // 汇总
   const built: ModuleBuild[] = [];

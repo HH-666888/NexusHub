@@ -4,7 +4,6 @@
  */
 
 import {
-  appearanceToCssVars,
   DEFAULT_APPEARANCE,
   normalizeAppearance,
   type AppearanceConfig,
@@ -44,13 +43,6 @@ export async function saveAppearance(
   const config = normalizeAppearance(input);
   await store.set(SETTINGS_KEYS.appearance, JSON.stringify(config), userId);
   return config;
-}
-
-/** 读配置并翻译成 CSS 变量，布局层用 */
-export async function loadAppearanceVars(
-  store: SettingsStore,
-): Promise<Record<string, string>> {
-  return appearanceToCssVars(await loadAppearance(store));
 }
 
 export async function loadModelConfig(store: SettingsStore): Promise<ModelConfig> {

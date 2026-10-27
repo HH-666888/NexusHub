@@ -205,7 +205,6 @@ async function run(opts: {
   plan?: (call: Call, nth: number) => Plan;
   delayMs?: number;
   maxOutputTokensPerModule?: number;
-  continueOnError?: boolean;
   /** 断点续跑：只构建这几个 */
   onlyModuleIds?: string[];
   /** 边构建边落盘的回调（验它被调用了几次、顺序对不对） */
@@ -223,7 +222,6 @@ async function run(opts: {
       arch: archOf(opts.ids),
       concurrency: opts.concurrency,
       maxOutputTokensPerModule: opts.maxOutputTokensPerModule,
-      continueOnError: opts.continueOnError,
       onlyModuleIds: opts.onlyModuleIds,
     },
   );
@@ -353,17 +351,6 @@ describe("单模块失败不拖垮整批（且失败留痕）", () => {
     expect(batch.failed.map((f) => f.moduleId).sort()).toEqual(["m-1", "m-3"]);
     // 失败原因各不相同 —— 合并成一句的话，处置动作就没法分流了
     expect(new Set(batch.failed.map((f) => f.message)).size).toBe(2);
-  });
-
-  it("continueOnError=false 时第一个失败中止整批并抛错（默认 true 不受影响）", async () => {
-    await expect(
-      run({
-        ids: ["m-1", "m-2"],
-        concurrency: 1,
-        continueOnError: false,
-        plan: () => ({ throws: "炸了" }),
-      }),
-    ).rejects.toThrow(/m-1/);
   });
 });
 

@@ -4,7 +4,7 @@
  * 事务里只写不等：绝不把模型调用这类耗时操作放进事务，避免长时间占着写锁。
  */
 
-import { and, eq, lt } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "./client";
 import { sessions, users } from "./schema";
 import type { AuthStore } from "@/core/ports/auth-store";
@@ -73,16 +73,6 @@ export const sqliteAuthStore: AuthStore = {
       .where(eq(sessions.userId, userId))
       .all();
     db.delete(sessions).where(eq(sessions.userId, userId)).run();
-    return before.length;
-  },
-
-  async deleteExpiredSessions(now: number): Promise<number> {
-    const before = db
-      .select({ id: sessions.id })
-      .from(sessions)
-      .where(and(lt(sessions.expiresAt, now)))
-      .all();
-    db.delete(sessions).where(lt(sessions.expiresAt, now)).run();
     return before.length;
   },
 };

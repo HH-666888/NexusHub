@@ -60,16 +60,6 @@ function createFakeStore(): AuthStore & {
       }
       return n;
     },
-    async deleteExpiredSessions(now: number) {
-      let n = 0;
-      for (const [id, s] of _sessions) {
-        if (s.expiresAt <= now) {
-          _sessions.delete(id);
-          n++;
-        }
-      }
-      return n;
-    },
   };
 }
 
