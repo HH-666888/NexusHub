@@ -49,6 +49,8 @@ import { inspectUi, type UiCheck } from "./ui-check";
 
 export type UiStageEvent =
   | { kind: "phase"; phase: "ui"; label: string }
+  /** 非流式调用拿到的思考过程。complete() 一次性返回，所以整段一次给出 */
+  | { kind: "reasoning"; delta: string }
   /** 用量与花费。与前两道的事件同构，便于统一记账 */
   | {
       kind: "usage";
@@ -92,10 +94,17 @@ export interface UiStageInput {
 
 /**
  * 界面设计 JSON 比架构还要长一点（变量表 + 页面 + 组件三块），
- * 但也一样没必要给太多：3000 够写 6 个页面 + 12 个组件，
+ * 但也一样没必要给太多：6000 够写 6 个页面 + 12 个组件，
  * 再多的输出只会被截断，而截断的 JSON 解析不出来。
+ *
+ * ── 为什么从 3000 提到 6000 ──
+ *   理由与架构那道逐字相同：`tier: "decide"` 默认开思考，
+ *   而**思考 token 计入 max_tokens**（适配器文件头第 ① 条）。
+ *   实测这一次调用思考 600 tokens；3000 现在够，但它和规格那道
+ *   是同一类"看运气"的预算 —— 思考一长（规格那道实测到过 1175），
+ *   留给 JSON 的部分就不够了，截断的 JSON 直接降级成兜底界面。
  */
-export const UI_MAX_OUTPUT_TOKENS = 3000;
+export const UI_MAX_OUTPUT_TOKENS = 6000;
 
 /**
  * 界面设计阶段的产文件名。与 stages.ts 里的声明一致 ——
@@ -285,13 +294,24 @@ export async function* runUiStage(
     };
   }
 
+  // complete() 的一次性调用也会思考（decide 档默认开），
+  // 但思考躺在 ModelResult.reasoning 里没人取 —— 不发出来的话，
+  // 界面上"这一步没有返回思考内容"，而模型其实想了。
+  // 顺序放在结果事件之前：读起来就是「先想，再给答案」。
+  if (result.reasoning.trim().length > 0) {
+    yield { kind: "reasoning", delta: result.reasoning };
+  }
+
   yield { kind: "ui", ui, check, fallback: !parsed.ok };
 
   yield {
     kind: "phase",
     phase: "ui",
-    label:
-      check.passed === check.total
+    label: !parsed.ok
+      ? // 兜底界面必须自报家门：它一个页面承接全部功能、三条本地检查照样全绿，
+        // 不写明的话后面几道会建立在"其实没做过设计决策"的界面上而没人知道
+        `界面已设计（兜底）：${summarizeUi(ui)}`
+      : check.passed === check.total
         ? `界面已设计：${summarizeUi(ui)}`
         : `界面已产出，但本地检查 ${check.passed}/${check.total} 通过 —— ` +
           `${check.results.find((r) => !r.pass)?.name ?? "有一项没过"}`,

@@ -41,6 +41,8 @@ import {
 
 export type SpecStageEvent =
   | { kind: "phase"; phase: "spec"; label: string }
+  /** 非流式调用拿到的思考过程。complete() 一次性返回，所以整段一次给出 */
+  | { kind: "reasoning"; delta: string }
   /** 用量与花费。与生成阶段的事件同构，便于统一记账 */
   | {
       kind: "usage";
@@ -78,8 +80,29 @@ export interface SpecStageInput {
   maxOutputTokens?: number;
 }
 
-/** 规格 JSON 不需要很长的输出，给太多纯属浪费预算 */
-export const SPEC_MAX_OUTPUT_TOKENS = 2000;
+/**
+ * 规格 JSON 的输出预算。
+ *
+ * ── 为什么从 2000 提到 4000、再跟着并行构建一起提到 6000（真实运行实测，不是拍的）──
+ *   这一道走的是 `tier: "decide"`，而 decide 档**默认开思考**
+ *   （适配器 DEFAULT_EFFORT.decide = "high"）。而**思考 token 计入
+ *   max_tokens** —— 适配器文件头第 ① 条写的就是这件事。
+ *   于是 2000 里真正留给 JSON 的只有「2000 减去这一次思考了多少」，
+ *   而思考长度是浮动的：
+ *     · 一次真实运行：思考 1175 + 正文 827 → 输出 2002 被截断，
+ *       JSON 在 position 1386 处断掉 → 解析失败 → 降级成兜底规格；
+ *     · 同一句 prompt 再跑一次：思考 631 → 输出 1600，没截断，解析成功。
+ *   也就是说 2000 是个「看运气」的预算：思考一长就退化成兜底规格。
+ *   而兜底规格的 questions 是空的 → **人工门禁也不会拦**（它靠 questions
+ *   判断），整条流水线会在「规格其实是兜底」的情况下照常跑到成品。
+ *   4000 在实测里留出了余量（含 1035 思考的那一次，输出 2037 就写完了）。
+ *   再抬到 6000 是因为并行构建那道也开了思考：同一批「思考 + 正文」
+ *   的工序从此共用一条余量口径，不再出现"这一道够、那一道看运气"。
+ *
+ *   之后再调这个数，请连着上面两个数一起看：
+ *   **预算是要装下「思考 + JSON」两段的，不是只装 JSON。**
+ */
+export const SPEC_MAX_OUTPUT_TOKENS = 6000;
 
 /**
  * 规格化阶段的产文件名。与 stages.ts 里的声明一致 ——
@@ -254,13 +277,25 @@ export async function* runSpecStage(
     };
   }
 
+  // complete() 的一次性调用也会思考（decide 档默认开），
+  // 但思考躺在 ModelResult.reasoning 里没人取 —— 不发出来的话，
+  // 界面上"这一步没有返回思考内容"，而模型其实想了。
+  // 顺序放在结果事件之前：读起来就是「先想，再给答案」。
+  if (result.reasoning.trim().length > 0) {
+    yield { kind: "reasoning", delta: result.reasoning };
+  }
+
   yield { kind: "spec", spec, gate, fallback: !parsed.ok };
 
   yield {
     kind: "phase",
     phase: "spec",
-    label: gate.pass
-      ? `规格已就绪：${summarizeSpec(spec)}`
-      : gate.summary,
+    label: !parsed.ok
+      ? // 兜底规格必须自报家门：它没有 questions，能一路通过门禁，
+        // 不写明的话整条流水线会在"规格其实是兜底"的情况下跑到成品
+        `规格已就绪（兜底）：${summarizeSpec(spec)}`
+      : gate.pass
+        ? `规格已就绪：${summarizeSpec(spec)}`
+        : gate.summary,
   };
 }

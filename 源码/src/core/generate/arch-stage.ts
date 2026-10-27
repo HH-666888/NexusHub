@@ -49,6 +49,8 @@ import { inspectArch, type ArchCheck } from "./arch-check";
 
 export type ArchStageEvent =
   | { kind: "phase"; phase: "arch"; label: string }
+  /** 非流式调用拿到的思考过程。complete() 一次性返回，所以整段一次给出 */
+  | { kind: "reasoning"; delta: string }
   /** 用量与花费。与规格化、生成两个阶段的事件同构，便于统一记账 */
   | {
       kind: "usage";
@@ -90,9 +92,18 @@ export interface ArchStageInput {
 
 /**
  * 架构 JSON 比规格要长一些（模块 + 依赖 + 归属），但也没必要给太多：
- * 3000 够写 6 个模块，再多的输出只会被截断，而截断的 JSON 解析不出来。
+ * 6000 够写 6 个模块，再多的输出只会被截断，而截断的 JSON 解析不出来。
+ *
+ * ── 为什么从 3000 提到 6000 ──
+ *   和规格那道逐字同一条理由：这一道也是 `tier: "decide"`，
+ *   而**思考 token 计入 max_tokens**（适配器文件头第 ① 条）。
+ *   3000 里真正留给 JSON 的只有「3000 减去这一次思考了多少」——
+ *   实测这一次调用思考 470 tokens，JSON 还是写完了；
+ *   但既然规格那道已经按"思考一长就退化"实测过一次，
+ *   同一批工序就不该继续留着一条"看运气"的预算。
+ *   5000 的余量不是估的：规格那道最坏的一次是「思考 1175 + 正文 827」。
  */
-export const ARCH_MAX_OUTPUT_TOKENS = 3000;
+export const ARCH_MAX_OUTPUT_TOKENS = 6000;
 
 /**
  * 架构定型阶段的产文件名。与 stages.ts 里的声明一致 ——
@@ -280,13 +291,24 @@ export async function* runArchStage(
     };
   }
 
+  // complete() 的一次性调用也会思考（decide 档默认开），
+  // 但思考躺在 ModelResult.reasoning 里没人取 —— 不发出来的话，
+  // 界面上"这一步没有返回思考内容"，而模型其实想了。
+  // 顺序放在结果事件之前：读起来就是「先想，再给答案」。
+  if (result.reasoning.trim().length > 0) {
+    yield { kind: "reasoning", delta: result.reasoning };
+  }
+
   yield { kind: "arch", arch, check, fallback: !parsed.ok };
 
   yield {
     kind: "phase",
     phase: "arch",
-    label:
-      check.passed === check.total
+    label: !parsed.ok
+      ? // 兜底架构必须自报家门：它用一个模块承接全部功能，本地检查照样全绿，
+        // 不写明的话四道并行构建会建立在"其实没切过模块"的架构上而没人知道
+        `架构已定型（兜底）：${summarizeArch(arch)}`
+      : check.passed === check.total
         ? `架构已定型：${summarizeArch(arch)}`
         : `架构已产出，但本地检查 ${check.passed}/${check.total} 通过 —— ` +
           `${check.results.find((r) => !r.pass)?.name ?? "有一项没过"}`,
