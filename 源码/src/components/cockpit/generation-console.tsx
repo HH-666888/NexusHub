@@ -191,42 +191,58 @@ export function GenerationConsole({
     };
   }, [runId]);
 
-  /** 提交回答。成功后把问题从本地列表里去掉 —— 界面据此收起表单 */
-  const submitAnswers = useCallback(async () => {
-    if (!spec || submitting) return;
-    setSubmitting(true);
-    setGateMsg(null);
-    try {
-      const res = await fetch(`/api/runs/${runId}/answers`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          answers: spec.questions.map((q) => ({ question: q, answer: draft[q] ?? "" })),
-        }),
-      });
-      const json = (await res.json()) as {
-        ok?: boolean;
-        error?: string;
-        answered?: number;
-        blank?: number;
-        issues?: string[];
-      };
-      if (!res.ok || !json.ok) {
-        setGateMsg(json.error ?? `提交失败（HTTP ${res.status}）`);
-        return;
+  /**
+   * 提交回答。
+   *
+   * @param revise 是否同时要求"按这些回答重出一版规格"。
+   *   ⚠️ 这个参数**必须显式传**：它原来是 onClick 直挂的，
+   *      而 onClick 会把点击事件当第一个参数传进来（对象 → 真值）——
+   *      那样每个用户都会"顺手"多花一次模型调用。所以按钮那边写成
+   *      `onClick={() => void submitAnswers(false)}`，不留默认值。
+   */
+  const submitAnswers = useCallback(
+    async (revise: boolean) => {
+      if (!spec || submitting) return;
+      setSubmitting(true);
+      setGateMsg(null);
+      try {
+        const res = await fetch(`/api/runs/${runId}/answers`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            answers: spec.questions.map((q) => ({ question: q, answer: draft[q] ?? "" })),
+            revise,
+          }),
+        });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          answered?: number;
+          blank?: number;
+          issues?: string[];
+        };
+        if (!res.ok || !json.ok) {
+          setGateMsg(json.error ?? `提交失败（HTTP ${res.status}）`);
+          return;
+        }
+        setSpec((s) => (s ? { ...s, questions: [] } : s));
+        const parts = [`已提交 ${json.answered ?? 0} 条回答`];
+        if (json.blank) parts.push(`其中 ${json.blank} 条留空（表示由你决定）`);
+        if (json.issues?.length) parts.push(json.issues.join("；"));
+        parts.push(
+          revise
+            ? "现在点「开始生成」—— 它会带着你的回答重出一版规格（这一趟多花一次调用）"
+            : "现在点「开始生成」继续",
+        );
+        setGateMsg(parts.join(" · "));
+      } catch (e) {
+        setGateMsg(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSubmitting(false);
       }
-      setSpec((s) => (s ? { ...s, questions: [] } : s));
-      const parts = [`已提交 ${json.answered ?? 0} 条回答`];
-      if (json.blank) parts.push(`其中 ${json.blank} 条留空（表示由你决定）`);
-      if (json.issues?.length) parts.push(json.issues.join("；"));
-      parts.push("现在点「开始生成」继续");
-      setGateMsg(parts.join(" · "));
-    } catch (e) {
-      setGateMsg(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSubmitting(false);
-    }
-  }, [spec, submitting, runId, draft]);
+    },
+    [spec, submitting, runId, draft],
+  );
 
   /**
    * 「知悉并继续」：我看了这些问题，但不回答 —— 这次你替我决定。
@@ -745,11 +761,25 @@ export function GenerationConsole({
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
-                  onClick={submitAnswers}
+                  onClick={() => void submitAnswers(false)}
                   disabled={submitting || acknowledging}
                   className="rounded border border-amber-700 bg-amber-900/40 px-2.5 py-1 text-[10.5px] text-amber-200 transition-colors duration-150 hover:bg-amber-900/60 disabled:opacity-50"
                 >
                   {submitting ? "提交中…" : "提交回答"}
+                </button>
+                {/*
+                  「按我的回答重出一版规格」：回答不只是"确认"，而是真的改进规格。
+                  它多花一次规格化的钱，所以单独一个按钮 + 写明代价，
+                  绝不默认勾选（默认仍然是沿用已确认的那份）。
+                */}
+                <button
+                  type="button"
+                  onClick={() => void submitAnswers(true)}
+                  disabled={submitting || acknowledging}
+                  title="提交回答，并要求模型据此重出一版规格（会多花一次规格化调用）"
+                  className="rounded border border-sky-800 bg-sky-950/40 px-2.5 py-1 text-[10.5px] text-sky-300 transition-colors duration-150 hover:bg-sky-900/50 disabled:opacity-50"
+                >
+                  提交回答并按回答重出规格
                 </button>
                 {/*
                   「知悉并继续」：第三条路。
@@ -772,6 +802,9 @@ export function GenerationConsole({
               <div className="mt-1 text-[10px] text-slate-400/80">
                 「知悉并继续」的代价：模型会替你猜这些没答的地方，猜错了要到
                 <span className="text-slate-300">验收那一步</span>才看得出来 —— 那时钱已经花完了。
+                <br />
+                「按回答重出规格」的代价：多花一次规格化调用（约 ¥0.01 上下），
+                换来的是回答真的改进规格，而不只是被记下来当确认。
               </div>
               {gateMsg && (
                 <div className="mt-1.5 text-[10.5px] text-emerald-400">{gateMsg}</div>

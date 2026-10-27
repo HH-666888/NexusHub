@@ -34,6 +34,7 @@ import {
   type AppSpec,
   type SpecGate,
 } from "../domain/spec";
+import { answersToContext, type SpecAnswers } from "./gate";
 
 /* ============================================================
    事件
@@ -78,6 +79,51 @@ export interface SpecStageInput {
   /** 已经花掉的钱，由调用方查出后传入，让内核保持无状态 */
   spentCny?: number;
   maxOutputTokens?: number;
+  /**
+   * 「按我的回答重出一版规格」。
+   *
+   * 给了它，这一趟就不是"从零出规格"，而是"在上一版基础上按回答改一版"：
+   * 上一版规格与用户的回答一起进提示词，并且明确要求**别把答过的问题再问一遍**。
+   * 没给就是原来的行为（从零出规格）—— 一个字节都不变。
+   */
+  revision?: {
+    previous: AppSpec;
+    answers: SpecAnswers;
+  };
+}
+
+/**
+ * 重出规格时给模型的那段话。
+ *
+ * ── 为什么要把上一版规格整份给它，而不是只说"按回答问题" ──
+ *   只给回答的话，模型会重新理解一遍需求 —— 那就不是"改一版"，
+ *   而是"再摇一次骰子"：用户刚确认过的东西（验收标准、边界）可能全变。
+ *   我们要的是**在已确认的那份上按回答补齐**，所以上一版必须整份在场。
+ *
+ * ── 为什么强调"别把答过的问题再问一遍" ──
+ *   他刚刚逐条答完，再问第二遍就是"答了又问"，那正是续跑那条路踩过的坑
+ *   （用户会以为自己的回答没被记住）。真出现**新的**拿不准的地方仍然可以问 ——
+ *   门禁拦得住，那是设计。
+ */
+function buildRevisionPrompt(
+  prompt: string,
+  previous: AppSpec,
+  answers: SpecAnswers,
+): string {
+  return [
+    buildSpecPrompt(prompt),
+    "",
+    "────────── 上一版规格（已经与用户确认过）──────────",
+    JSON.stringify(previous, null, 2),
+    "",
+    answersToContext(answers),
+    "",
+    "────────── 请据此更新规格 ──────────",
+    "· 保持上一版里已经明确、且用户没有提出异议的部分（验收标准、边界、不做的事）",
+    "· 把上面这些回答真正落进规格：需要改的验收标准就改，该写进边界的就写进边界",
+    "· **已经回答过的问题不要再问第二遍**（他刚答完）；确实新发现的疑点仍然可以问",
+    "· 输出的 JSON 结构与上一版完全一致",
+  ].join("\n");
 }
 
 /**
@@ -132,7 +178,13 @@ export async function* runSpecStage(
     return;
   }
 
-  yield { kind: "phase", phase: "spec", label: "正在把你的需求整理成规格" };
+  yield {
+    kind: "phase",
+    phase: "spec",
+    label: input.revision
+      ? "正在按你的回答重出一版规格"
+      : "正在把你的需求整理成规格",
+  };
 
   let raw = "";
   let result: Awaited<ReturnType<ModelPort["complete"]>> | null = null;
@@ -162,11 +214,24 @@ export async function* runSpecStage(
   }
 
   try {
+    /*
+      ---------- 重出一版规格（可选动作） ----------
+      用户答完门禁那几个疑问之后，可以要求"按我的回答重出一版规格"。
+      这时把上一版规格与他的回答一起给模型，让它据此更新 ——
+      否则回答只是被记下来当"确认"，规格里那几个拿不准的地方一个字都不会变。
+
+      ⚠️ 这一步是**用户主动点**的（会多花一次规格化的钱），不是默认行为。
+         默认仍然沿用已确认的那份规格（见 route.ts 的续跑分支）。
+    */
+    const userContent = input.revision
+      ? buildRevisionPrompt(input.prompt, input.revision.previous, input.revision.answers)
+      : buildSpecPrompt(input.prompt);
+
     result = await model.complete({
       tier: "decide", // 这是判断类任务，不是写码
       messages: [
         { role: "system", content: SPEC_SYSTEM_PROMPT },
-        { role: "user", content: buildSpecPrompt(input.prompt) },
+        { role: "user", content: userContent },
       ],
       responseFormat: "json",
       maxOutputTokens: input.maxOutputTokens ?? SPEC_MAX_OUTPUT_TOKENS,

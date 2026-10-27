@@ -37,6 +37,19 @@ export interface SpecAnswers {
   runId: string;
   answers: SpecAnswer[];
   answeredAt: number;
+  /**
+   * 用户要求"按这些回答重出一版规格"（可选动作，会多花一次规格化的钱）。
+   *
+   * 为什么把它记在 answers.json 里，而不是另开一份产物：
+   *   它描述的正是"这批回答该怎么用"—— 是只当确认（默认），
+   *   还是据此改一版规格。分开存的话，两个文件之间会出现
+   *   "回答是这样、重出标记是那样"的错位，而错位没人能发现。
+   *
+   * 消费方是生成接口的续跑分支：看到 true 就按回答重出一版规格
+   * （而不是沿用旧规格），出完之后把它改回 false —— 一次请求只消费一次，
+   * 免得每次续跑都白花一次调用。
+   */
+  revise?: boolean;
 }
 
 export const ANSWERS_ARTIFACT_NAME = "answers.json";

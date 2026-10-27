@@ -28,6 +28,8 @@ export const dynamic = "force-dynamic";
 
 interface Body {
   answers?: Array<{ question?: unknown; answer?: unknown }>;
+  /** 要求按这些回答重出一版规格（可选，会多花一次调用的钱） */
+  revise?: unknown;
 }
 
 export async function POST(
@@ -104,6 +106,12 @@ export async function POST(
     runId: run.id,
     answers: checked.answers,
     answeredAt: Date.now(),
+    /*
+      「按我的回答重出一版规格」是**可选动作**：界面上那个按钮会多花一次
+      规格化的钱，所以只有用户明确点了才写 true。默认 undefined = 不重出。
+      消费它在生成接口的续跑分支（出完会把它改回 false）。
+    */
+    ...(body.revise === true ? { revise: true } : {}),
   };
 
   await fsArtifactStore.save({

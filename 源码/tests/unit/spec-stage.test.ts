@@ -6,6 +6,8 @@ import {
   type SpecStageEvent,
 } from "@/core/generate/spec-stage";
 import type { ModelPort, ModelRequest, ModelResult } from "@/core/ports/model";
+import type { AppSpec } from "@/core/domain/spec";
+import type { SpecAnswers } from "@/core/generate/gate";
 import type { ArtifactStore } from "@/core/ports/artifact-store";
 import type { CostStore } from "@/core/ports/cost-store";
 import type { RunStore } from "@/core/ports/run-store";
@@ -57,6 +59,8 @@ interface Harness {
   costRecords: NewCostRecord[];
   runUpdates: Array<Record<string, unknown>>;
   modelCalls: number;
+  /** 每一次模型调用的请求（验提示词里到底带了什么） */
+  requests: ModelRequest[];
 }
 
 async function run(opts: {
@@ -67,6 +71,8 @@ async function run(opts: {
   spentCny?: number;
   costLimitCny?: number;
   prompt?: string;
+  /** 给了它 = 这一趟是"按我的回答重出一版规格" */
+  revision?: { previous: AppSpec; answers: SpecAnswers };
 }): Promise<Harness> {
   const h: Harness = {
     events: [],
@@ -74,11 +80,13 @@ async function run(opts: {
     costRecords: [],
     runUpdates: [],
     modelCalls: 0,
+    requests: [],
   };
 
   const model: ModelPort = {
-    async complete() {
+    async complete(req: ModelRequest) {
       h.modelCalls++;
+      h.requests.push(req);
       if (opts.modelThrows) throw new Error(opts.modelThrows);
       return opts.modelResult ?? makeResult();
     },
@@ -137,6 +145,7 @@ async function run(opts: {
       prompt: opts.prompt ?? "做一个任务看板",
       costLimitCny: opts.costLimitCny ?? 5,
       spentCny: opts.spentCny ?? 0,
+      revision: opts.revision,
     },
   )) {
     h.events.push(e);
@@ -466,5 +475,86 @@ describe("规格化阶段 · 兜底标签", () => {
     expect(specEvent(h)!.fallback).toBe(false);
     expect(phaseLabels(h).some((l) => l.includes("（兜底）"))).toBe(false);
     expect(phaseLabels(h)[phaseLabels(h).length - 1]).toContain("规格已就绪：");
+  });
+});
+
+/* ============================================================
+   按我的回答重出一版规格（可选动作）
+   ------------------------------------------------------------
+   默认是"沿用已确认的规格"（回答只当确认）。用户主动点了那个按钮之后，
+   才带着上一版规格与他的回答重新出一版 —— 这时回答才真正改变规格内容。
+   ============================================================ */
+
+describe("规格化阶段 · 按回答重出一版", () => {
+  const PREVIOUS: AppSpec = {
+    prompt: "做一个任务看板",
+    goal: "旧的一版目标",
+    audience: "小团队",
+    scenarios: ["新建任务"],
+    acceptance: [
+      { id: "ac-1", statement: "旧的一条验收", verifyBy: "点一下", level: "must" },
+    ],
+    scope: { inScope: ["看板"], outOfScope: ["多人协作"] },
+    questions: ["要不要提示音？"],
+    model: "fake-model",
+    generatedAt: 0,
+  };
+  const ANSWERS: SpecAnswers = {
+    runId: "run-1",
+    answeredAt: 1,
+    answers: [{ question: "要不要提示音？", answer: "要，用系统提示音就行" }],
+  };
+
+  const userMessage = (h: Harness): string => {
+    const req = h.requests[0];
+    const user = req?.messages.find((m) => m.role === "user");
+    return typeof user?.content === "string" ? user.content : "";
+  };
+
+  it("【关键】提示词里带上了上一版规格与用户的回答", async () => {
+    const h = await run({ revision: { previous: PREVIOUS, answers: ANSWERS } });
+    const msg = userMessage(h);
+
+    expect(msg).toContain("旧的一版目标"); // 上一版在
+    expect(msg).toContain("旧的一条验收");
+    expect(msg).toContain("要不要提示音？"); // 问题与回答都在
+    expect(msg).toContain("要，用系统提示音就行");
+  });
+
+  it("【关键】明确要求「已经回答过的问题不要再问第二遍」", async () => {
+    // 他刚逐条答完，再问第二遍就是"答了又问" —— 那正是续跑那条路踩过的坑
+    const h = await run({ revision: { previous: PREVIOUS, answers: ANSWERS } });
+    expect(userMessage(h)).toContain("已经回答过的问题不要再问第二遍");
+  });
+
+  it("★ 反例：没点重出时，提示词里**不许**出现上一版与回答（行为一个字没变）", async () => {
+    const h = await run({});
+    const msg = userMessage(h);
+    expect(msg).not.toContain("上一版规格");
+    expect(msg).not.toContain("要，用系统提示音就行");
+    expect(msg).not.toContain("已经回答过的问题不要再问第二遍");
+  });
+
+  it("阶段标签写的是「正在按你的回答重出一版规格」", async () => {
+    const h = await run({ revision: { previous: PREVIOUS, answers: ANSWERS } });
+    const labels = h.events
+      .filter((e): e is Extract<SpecStageEvent, { kind: "phase" }> => e.kind === "phase")
+      .map((e) => e.label);
+    expect(labels.some((l) => l.includes("按你的回答重出一版"))).toBe(true);
+  });
+
+  it("重出之后落盘的还是 spec.json（覆盖那一份，而不是另存一份）", async () => {
+    const h = await run({ revision: { previous: PREVIOUS, answers: ANSWERS } });
+    expect(h.saved).toHaveLength(1);
+    expect(h.saved[0].path).toBe(`run-1/${SPEC_ARTIFACT_NAME}`);
+    // 存的是这一趟模型给的新规格（夹具里那份 JSON），不是上一版
+    const saved = JSON.parse(h.saved[0].content) as AppSpec;
+    expect(saved.goal).toBe("团队任务看板");
+  });
+
+  it("重出照样记账（多花的那一次也要进流水）", async () => {
+    const h = await run({ revision: { previous: PREVIOUS, answers: ANSWERS } });
+    expect(h.costRecords).toHaveLength(1);
+    expect(h.costRecords[0].stage).toBe("spec");
   });
 });

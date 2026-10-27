@@ -80,9 +80,18 @@ describe("生成接口 · 续跑的接线", () => {
   it("重跑规格化之前，先问了「这一趟是不是续跑」", () => {
     // 钉的是"分支由这个判据决定"，不只是"调用了它" ——
     // 只调不用（或把条件改成恒假）在老形态下看不出区别，但用户会"答了又问"
-    expect(src).toContain("if (isGateResume(storedSpec, storedAnswers, storedAck) && storedSpec) {");
+    expect(src).toContain("if (!wantsRevision && isGateResume(storedSpec, storedAnswers, storedAck) && storedSpec) {");
     expect(src).toContain("readJsonArtifact<AppSpec>(runId, SPEC_ARTIFACT_NAME)");
     expect(src).toContain("readJsonArtifact<SpecAnswers>(");
+  });
+
+  it("★「按我的回答重出一版规格」那一跳：点了才重出，而且只消费一次", () => {
+    // 用户明确要求时**不沿用**，而是把上一版规格与回答交给规格化重出一版
+    expect(src).toContain("const wantsRevision =");
+    expect(src).toContain("revision:");
+    expect(src).toContain("previous: storedSpec, answers: storedAnswers");
+    // 出完把标记改回 false —— 不消费的话每次续跑都会白花一次调用
+    expect(src).toContain("{ ...storedAnswers, revise: false }");
   });
 
   it("【关键】续跑时**不跑**规格化那一趟：runSpecStage 必须在 else 分支里", () => {

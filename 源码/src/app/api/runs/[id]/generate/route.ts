@@ -334,7 +334,21 @@ export async function GET(
             ANSWERS_ARTIFACT_NAME,
           );
 
-          if (isGateResume(storedSpec, storedAnswers, storedAck) && storedSpec) {
+          /*
+            ---------- 用户点了「按我的回答重出一版规格」吗 ----------
+            点了的话这一趟**不沿用**旧规格，而是带着上一版规格与他的回答
+            重新出一版（多花一次规格化的钱 —— 那是他自己按的按钮，
+            界面上写着代价）。
+
+            ⚠️ 它必须排在"续跑沿用"之前判断：两者是同一时刻的两种选择，
+               而"重出"是更明确的那个（用户刚刚表达过）。
+          */
+          const wantsRevision =
+            storedAnswers?.revise === true &&
+            storedSpec !== null &&
+            (storedAnswers.answers ?? []).some((a) => a.answer.trim().length > 0);
+
+          if (!wantsRevision && isGateResume(storedSpec, storedAnswers, storedAck) && storedSpec) {
             specFromStage = storedSpec;
             // 规格是自己从盘上读的，兜底与否要现判 —— 它同样是界面必须看见的
             specFallbackFromStage = isFallbackSpec(storedSpec);
@@ -381,6 +395,14 @@ export async function GET(
               prompt: runPrompt,
               costLimitCny: env.run.costLimitCny,
               spentCny: spent,
+              /*
+                重出那一版：把上一版规格与他的回答一起交给模型。
+                （不重出时这里是 undefined —— 从零出规格，行为一个字没变。）
+              */
+              revision:
+                wantsRevision && storedSpec && storedAnswers
+                  ? { previous: storedSpec, answers: storedAnswers }
+                  : undefined,
             })) {
               if (e.kind === "spec") {
                 specFromStage = e.spec;
@@ -388,6 +410,30 @@ export async function GET(
               }
               // SpecStageEvent 的几种事件与 GenerateEvent 结构一致，直接透传
               yield e as GenerateEvent;
+            }
+
+            /*
+              重出成功了就把那个标记**消费掉**（改回 false 重写 answers.json）。
+
+              ── 为什么必须消费 ──
+                不消费的话，用户每点一次生成都会重出一版规格 ——
+                那是每次白花一次调用，而用户只按过一次按钮。
+                消费掉之后，后续续跑回到"沿用已确认的规格"（原来那条路）。
+
+              ⚠️ 出失败（降级成兜底规格）时也消费：否则每次点生成都重试，
+                而"重出失败"这件事已经通过 error 事件说清楚了。
+            */
+            if (wantsRevision && storedAnswers) {
+              try {
+                await fsArtifactStore.save({
+                  runId,
+                  kind: "json",
+                  path: `${runId}/${ANSWERS_ARTIFACT_NAME}`,
+                  content: JSON.stringify({ ...storedAnswers, revise: false }, null, 2),
+                });
+              } catch {
+                // 消费失败不影响这一趟：最坏是下一次续跑又重出一版
+              }
             }
           }
 
