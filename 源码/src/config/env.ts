@@ -45,15 +45,9 @@ export const env = {
     /** 执行级模型：绝大多数写码与改码 */
     executeModel: str("MODEL_EXECUTE", "deepseek-flash"),
   },
-  sandbox: {
-    memoryMb: num("SANDBOX_MEMORY_MB", 1024),
-    cpus: num("SANDBOX_CPUS", 1),
-    timeoutSeconds: num("SANDBOX_TIMEOUT_SECONDS", 300),
-    /**
-     * 并行构建的并发上限。默认 3：模块构建是网络等待，几个同时在飞对内存影响很小；
-     * <=0 或未配置时，编排层回落到 domain/module-build.ts 的 DEFAULT_BUILD_CONCURRENCY。
-     */
-    maxParallelBuild: num("MAX_PARALLEL_BUILD", 3),
+  build: {
+    /** 并行构建的并发上限；<=0 时回落到 domain/module-build.ts 的默认值 */
+    maxParallel: num("MAX_PARALLEL_BUILD", 3),
   },
   run: {
     /** 单次运行成本上限（元）；各工序入口的预算闸门据此拒绝继续 */

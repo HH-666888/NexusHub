@@ -544,8 +544,8 @@ export async function GET(
           // 默认不为 1：模型调用是网络等待而非本机算力，3 个并发对内存影响很小。
           // 调 1 即退回串行，调大更激进。
           const concurrency =
-            env.sandbox.maxParallelBuild > 0
-              ? env.sandbox.maxParallelBuild
+            env.build.maxParallel > 0
+              ? env.build.maxParallel
               : DEFAULT_BUILD_CONCURRENCY;
 
           // 预算闸门留在编排层：buildModules 只知道要构建什么，不知道还剩多少钱。
