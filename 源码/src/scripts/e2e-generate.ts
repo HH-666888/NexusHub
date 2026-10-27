@@ -145,6 +145,8 @@ async function main() {
   const username = `gen_${tag}`;
   const otherName = `geno_${tag}`;
   const prompt = "做一个书签收藏夹，能添加网址、能删除、能按标签筛选，刷新后数据还在";
+  /** 门禁提问时，用户会怎么答（真实用户也是这么答的：按最简方案来） */
+  const ANSWER_TEXT = "按最简方案来：纯前端单页实现，不要登录、不要后端、不要额外依赖。";
 
   /* ---------- 准备 ---------- */
   heading("准备 · 注册账号并创建一条构建");
@@ -177,14 +179,86 @@ async function main() {
   const anon = await fetch(`${BASE}/api/runs/${run.id}/generate`);
   expect_(anon.status === 401, "未登录请求 → 401", `返回 ${anon.status}`);
 
-  /* ---------- 流式生成 ---------- */
+  /* ---------- 流式生成（含门禁：被拦下就答题，再点一次续跑） ---------- */
   heading("第二步 · 触发流式生成（会真实花钱）");
   const t0 = Date.now();
-  const { events, status } = await collectEvents(run.id, cookie);
-  const elapsed = Date.now() - t0;
+  let { events, status } = await collectEvents(run.id, cookie);
+  let elapsed = Date.now() - t0;
 
   expect_(status === 200, `SSE 连接建立（HTTP ${status}）`, `连接失败 HTTP ${status}`);
   info(`共收到 ${events.length} 个事件，耗时 ${(elapsed / 1000).toFixed(1)} 秒`);
+
+  /*
+    ---------- 人工门禁那一跳 ----------
+    规格里还有疑问时，门禁按设计把运行停在 paused。
+
+    ⚠️ 这条 e2e 以前**没有**这一跳，于是修好兜底之后就一直是红的：
+       真规格会提疑问 → 停在门禁 → 后面 check / artifact / 账目全都收不到，
+       而那不是代码错了，是测试脚本只走了"一路跑通"的那一半流程。
+       这里补上真实用户会做的事：答完疑问，再点一次生成。
+
+    ⚠️ 顺带钉住修好没多久的一条：**续跑不许重跑规格化**。
+       重跑的话疑问会换一批新的，用户"答了又问"永远走不到下一步
+       （实测连点三次都没过去）。所以下面有一条硬断言：
+       整轮下来 stage:"spec" 的流水**恰好 1 条**。
+  */
+  const gateRounds: number[] = [];
+  for (let round = 0; round < 3; round++) {
+    const specEvent = events.find((e) => e.kind === "spec");
+    const questions =
+      specEvent && specEvent.kind === "spec" ? specEvent.spec.questions : [];
+    const finished = events.some((e) => e.kind === "check");
+    if (finished || questions.length === 0) break;
+
+    gateRounds.push(questions.length);
+    info(`第 ${round + 1} 轮被门禁拦下：${questions.length} 个疑问 → 回答后继续`);
+
+    const res = await fetch(`${BASE}/api/runs/${run.id}/answers`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        answers: questions.map((question) => ({ question, answer: ANSWER_TEXT })),
+      }),
+    });
+    const body = (await res.json()) as {
+      ok?: boolean;
+      error?: string;
+      remaining?: number;
+    };
+    expect_(
+      res.ok && body.ok === true,
+      `回答已提交（还剩 ${body.remaining ?? "?"} 个未答）`,
+      `提交回答失败 HTTP ${res.status}：${body.error ?? ""}`,
+    );
+    if (!res.ok) break;
+
+    const t1 = Date.now();
+    const again = await collectEvents(run.id, cookie);
+    elapsed += Date.now() - t1;
+    events = again.events;
+    status = again.status;
+    info(`续跑后收到 ${events.length} 个事件（累计耗时 ${(elapsed / 1000).toFixed(1)} 秒）`);
+  }
+
+  if (gateRounds.length === 0) {
+    /*
+      这一轮模型没提疑问，门禁没被触发 —— **如实说**，不假装验过。
+      （这条不断言"必须被拦"：提不提疑问是模型的事，
+        把它写成硬断言会让这条 e2e 变成一条看运气的测试。）
+    */
+    info("提示：这一轮规格里没有疑问，门禁那一跳这轮没被验到");
+  } else {
+    ok(`门禁确实拦下过 ${gateRounds.length} 轮（${gateRounds.join(" / ")} 个疑问）`);
+    const resumedLabel = events
+      .filter((e) => e.kind === "phase")
+      .map((e) => (e.kind === "phase" ? e.label : ""))
+      .find((label) => label.includes("沿用你已确认过的那份规格"));
+    expect_(
+      resumedLabel !== undefined,
+      `续跑时沿用了已确认的规格：${resumedLabel ?? ""}`,
+      "续跑没有那条「沿用你已确认过的那份规格」的说明 —— 它是不是又重跑了规格化？",
+    );
+  }
 
   const kinds = events.map((e) => e.kind);
   const count = (k: string) => kinds.filter((x) => x === k).length;
@@ -295,25 +369,44 @@ async function main() {
   /* ---------- 成本入账 ---------- */
   heading("第七步 · 成本是否入了账");
   const records = await sqliteCostStore.listByRun(run.id);
+  const countStage = (s: string) => records.filter((r) => r.stage === s).length;
+  info(
+    `成本流水 ${records.length} 条：` +
+      ["spec", "arch", "ui", "build"]
+        .map((s) => `${s} ${countStage(s)}`)
+        .join(" · "),
+  );
+
   /*
-    两条流水：规格化一条、生成一条。
-    原来断言的是 1 条 —— 那时只有生成阶段会调用模型。
-    规格化接上之后变成 2 条，这条断言就过期了。
-    除了改数字，这里还补了一条更有意义的断言：
-    两笔分别记在哪两个阶段。数字会变，但「每个调用模型的阶段各记一笔」
-    这个性质不会变。
+    ⚠️ 这条断言改过两次，两次的理由都写在这里（改断言是最该警惕的动作，
+       所以必须说清"为什么改的不是判据本身"）：
+
+      · 最早写的是"恰好 1 条"——那时只有生成阶段会调用模型；
+      · 规格化接上之后改成"恰好 2 条"（spec + build）；
+      · 现在流水变成 spec / arch / ui / 各模块 / 装配 好几种，
+        "恰好 N 条"已经不是这件事的性质了。真正不会变的是两条：
+          ① **每个调用模型的阶段各记一笔**（阶段名对得上）；
+          ② **规格化恰好一笔** —— 续跑不许重跑规格化。
+        ② 尤其要紧：重跑的话疑问会换一批新的，用户"答了又问"永远走不到下一步
+        （实测连点三次都没过去）。所以这条从"数字"改成了"性质"，
+        而且比原来更严：它现在能抓住一个真实的回归。
   */
   expect_(
-    records.length === 2,
-    "成本流水有 2 条 —— 规格化一次、生成一次",
-    `有 ${records.length} 条`,
+    countStage("spec") === 1,
+    "规格化**只花了一次钱** —— 续跑沿用了已确认的规格，没有重跑",
+    `规格化的流水有 ${countStage("spec")} 条 —— 续跑是不是又重跑了一遍规格化？`,
   );
-  const stages = records.map((r) => r.stage).sort();
-  expect_(
-    stages.includes("spec") && stages.includes("build"),
-    `两笔分别记在 spec 与 build 阶段（实际：${stages.join("、")}）`,
-    `阶段不对：${stages.join("、")}`,
-  );
+  for (const [stage, label] of [
+    ["arch", "架构定型"],
+    ["ui", "界面设计"],
+    ["build", "生成 / 装配"],
+  ] as const) {
+    expect_(
+      countStage(stage) >= 1,
+      `${label}那一道也记了账（${countStage(stage)} 条）`,
+      `${label}那一道一条账都没有`,
+    );
+  }
   const total = await sqliteCostStore.totalByRun(run.id);
   expect_(total > 0, `该运行累计花费 ¥${total.toFixed(6)}`, "累计花费为零");
 
