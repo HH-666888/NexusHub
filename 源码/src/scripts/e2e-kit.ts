@@ -49,9 +49,6 @@ export function finish(startedAt: number): never {
   for (const m of failureMessages) {
     console.log(`  ❌ ${m}`);
   }
-  console.log("");
-  console.log("  失败项已在上方逐条列出。脚本以退出码 1 结束 ——");
-  console.log("  只看“有没有报错”的自动化流程也能发现这次没过。");
   process.exit(1);
 }
 
