@@ -217,9 +217,10 @@ export const GENERATE_MAX_OUTPUT_TOKENS = 16384;
  *         配上"思考"这个页签，本身就是一处不自洽。
  *
  * ⚠️ 开了思考就要给够预算：**思考 token 计入 max_tokens**
- *   （适配器文件头第 ① 条）。所以这一道连同模块那一道
- *   （MODULE_MAX_OUTPUT_TOKENS）都从 4000 抬到了 6000 ——
- *   预算是要装下「思考 + 正文」两段的，不是只装正文。
- *   装配那一次调用用的是 GENERATE_MAX_OUTPUT_TOKENS（16384），本来就有余量。
+ *   （适配器文件头第 ① 条）。预算是要装下「思考 + 正文」两段的，
+ *   不是只装正文 —— 装配那一次用的是 GENERATE_MAX_OUTPUT_TOKENS（16384），
+ *   本来就有余量；模块那一道（MODULE_MAX_OUTPUT_TOKENS）后来也正是
+ *   按真实运行实测抬到了同一个数：还留在 6000 的时候，
+ *   4 个模块里有 2 个的思考把预算吃光、正文一个字都没吐出来。
  */
 export const GENERATE_DEFAULT_EFFORT = "high" as const;
