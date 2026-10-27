@@ -479,10 +479,21 @@ describe("每模块的提示词：带上了它自己的职责、功能条目与�
     expect(MODULE_SYSTEM_PROMPT).toContain("你只负责");
   });
 
-  it("调用参数：执行级、关思考、预算用 MODULE_MAX_OUTPUT_TOKENS", async () => {
+  /*
+    ⚠️ 这条断言的是"**修法 3 之后**"的行为，不是旧行为。
+    它以前写的是 toBe("none")：那时候并行构建刻意关着思考，
+    依据是一次实测（关思考 18.5 秒出 23.9 KB、8 项检查全过）。
+    但那个结论有两个问题：并行构建是创造性写码（要决定怎么切、怎么留接口），
+    而且真实运行里 build 的 5 次调用 reasoning_tokens 全是 0 ——
+    界面上那一步的「思考」tab 永远是"没有返回思考内容"，
+    而"看得见的思考"正是这个产品的卖点。
+    所以修法 3 把它刻意改成了 "high"，这条测试跟着改，
+    并在名字里写明是刻意改的 —— 免得下一个人以为是笔误又改回去。
+  */
+  it("调用参数：执行级、**开思考（修法 3 刻意改的行为）**、预算用 MODULE_MAX_OUTPUT_TOKENS", async () => {
     const { h } = await run({ ids: ["m-1"] });
     expect(h.calls[0].tier).toBe("execute");
-    expect(h.calls[0].effort).toBe("none");
+    expect(h.calls[0].effort).toBe("high");
     expect(h.calls[0].maxOutputTokens).toBe(MODULE_MAX_OUTPUT_TOKENS);
   });
 });
