@@ -10,6 +10,25 @@
  */
 
 import type { CheckResult } from "../domain/check";
+import { moduleSignatureCandidates, type BuildBatch } from "../domain/module-build";
+
+/**
+ * 产物检查的可选项。
+ *
+ * 目前只有一项：这次装配有没有拿到并行构建的批次。
+ * 做成一个对象而不是第二个位置参数，是为了以后加检查项时
+ * 不必再动所有调用点的签名（现在已经有十几处在调 inspectArtifact）。
+ */
+export interface InspectOptions {
+  /**
+   * 并行构建的批次。
+   *
+   * **不传 / 传 null = 这次没做并行构建** ——
+   * 那条「模块代码确实进入了产物」的检查**不出现**
+   * （理由见下面 inspectArtifact 里那段：不出现好过占着名额不干活）。
+   */
+  batch?: BuildBatch | null;
+}
 
 /**
  * 系统提示词
@@ -66,7 +85,7 @@ export function extractHtml(text: string): string {
  * 而「是否自包含」「有没有事件绑定」这类是二值判断，可重复、可解释，
  * 也正好对应我们要做的失败归因 —— 哪一项没过，就知道问题出在哪一类。
  */
-export function inspectArtifact(html: string): CheckResult[] {
+export function inspectArtifact(html: string, options: InspectOptions = {}): CheckResult[] {
   const results: CheckResult[] = [];
   const add = (name: string, pass: boolean, detail: string) =>
     results.push({ name, pass, detail });
@@ -105,6 +124,71 @@ export function inspectArtifact(html: string): CheckResult[] {
 
   const cjk = (html.match(/[\u4e00-\u9fa5]/g) ?? []).length;
   add("中文界面", cjk >= 10, `含 ${cjk} 个中文字符`);
+
+  /*
+    ---------- 第八项：模块代码确实进入了产物（★ 本期新增，是探针）----------
+
+    ── 它要防的是什么 ──
+      「表演式并行」：并行跑 N 次、结果扔掉，最后照旧单次生成。
+      那种实现下，上面七项**照样能全绿** —— 产物是一份完整页面，
+      看起来一切正常。而"并行构建"这四个字是假的。
+
+      所以需要一条只有"模块产出真的被喂进装配"才可能通过的断言：
+      从每个 ModuleBuild 里取一段**特征片段**（data-module 标记 /
+      具名函数 / 类选择器），逐条在最终 HTML 里找。
+      找不到 → 不通过，并且**指名道姓**说是哪个模块的哪一段没找到。
+
+    ── 为什么它不会恒真 ──
+      ① 片段是具体的字符串，不是"有没有 <html>"这种任何页面都满足的东西；
+      ② 模块数为 0（一个都没成功）时**一律不通过** —— 没有产出就没有证据；
+      ③ 有一条单测专门喂一份"不含任何片段"的产物，断言它必须红
+         （tests/unit/generate-service.test.ts 里那条探针用例）。
+      恒真的断言等于没检查，而这一条的意义恰恰是"能被证伪"。
+
+    ── 没传 batch 时它不出现（而不是"标成未做但计入通过数"）──
+      不出现：`inspectArtifact(html)` 仍然只返回原来那七项，
+      旧路径的 `passed/total` 一个字都不变。
+      明确标成"未做并行构建"但计进通过数的话，`8/8 通过` 会被读成
+      "连并行构建都验过了" —— 那是在用一个没跑过的检查充数。
+      宁可这一项不存在，也不要一个占了名额却没干活的检查。
+  */
+  const batch = options.batch ?? null;
+  if (batch) {
+    const probes = batch.modules.map((m) => ({
+      moduleId: m.moduleId,
+      candidates: moduleSignatureCandidates(m),
+    }));
+    const missing = probes.filter((p) => !p.candidates.some((c) => html.includes(c)));
+    const passed = probes.length > 0 && missing.length === 0;
+
+    let detail: string;
+    if (probes.length === 0) {
+      /*
+        一个成功模块都没有 → 不通过。
+        这里刻意不写"无模块，跳过"：跳过等于默认通过，
+        而不通过才是实话 —— 这次并行构建没有产出任何可核对的东西。
+      */
+      detail =
+        `并行构建没有任何成功模块的产出（失败 ${batch.failed.length} 个），` +
+        "无从证明模块代码进入了产物";
+    } else if (passed) {
+      detail =
+        `${probes.length} 个模块的特征片段都能在产物里找到（例如 ${probes[0].candidates[0]}）` +
+        (batch.failed.length > 0
+          ? `；另有 ${batch.failed.length} 个模块构建失败，它们本来就没有产出可核对`
+          : "");
+    } else {
+      const parts = missing.slice(0, 3).map((p) =>
+        p.candidates.length > 0
+          ? `模块 ${p.moduleId} 的特征片段「${p.candidates[0]}」在产物里找不到`
+          : `模块 ${p.moduleId} 提不出任何可核对的代码特征（html/css/js 都是空的？）`,
+      );
+      if (missing.length > 3) parts.push(`另有 ${missing.length - 3} 个模块同样没找到`);
+      detail = parts.join("；");
+    }
+
+    add("模块代码确实进入了产物", passed, detail);
+  }
 
   return results;
 }

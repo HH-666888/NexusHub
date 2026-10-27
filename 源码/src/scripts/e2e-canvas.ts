@@ -26,6 +26,12 @@ import { inspectUi } from "@/core/generate/ui-check";
 import { reviewSpec, type AppSpec } from "@/core/domain/spec";
 import type { ArchSpec } from "@/core/domain/arch";
 import type { UiSpec } from "@/core/domain/ui-spec";
+import {
+  ZERO_USAGE,
+  summarizeBatch,
+  type BuildBatch,
+  type ModuleBuild,
+} from "@/core/domain/module-build";
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
 import { fitFloor } from "@/core/canvas/viewport";
 import { expect_, finish, heading, info, ok, signUp } from "./e2e-kit";
@@ -639,6 +645,128 @@ function seedUiRun(username: string): string {
       // 这一条的 label 照 ui-stage.ts 真正 yield 的那句写
       ["phase", stepPhase("ui", "正在把架构变成页面与设计变量")],
       ["ui", { kind: "ui", ui: UI_ARTIFACT, check: UI_CHECK, fallback: false }],
+    ];
+
+    const ins = db.prepare(
+      `INSERT INTO run_events (run_id, seq, at, kind, payload) VALUES (?, ?, ?, ?, ?)`,
+    );
+    rows.forEach(([kind, payload], seq) => {
+      ins.run(runId, seq, now + seq, kind, JSON.stringify(payload));
+    });
+
+    return runId;
+  } finally {
+    db.close();
+  }
+}
+
+/* ============================================================
+   第四道工序「并行构建」（第二十五步）用的夹具
+   ------------------------------------------------------------
+   这一步验的是**第四道自己长出子树**：modules 事件到来之后，
+   「并行构建」那一道下面应该逐个列出每个模块的构建结果，
+   而不再是「待规划」占位行 —— 而且**失败的模块必须显示成 failed**。
+
+   前两次"长出子树"（arch → 模块、ui → 页面）长出来的都是
+   "将来要做的活"；这一次长出来的是"刚刚做过的活"，
+   所以它多了一档前两次没有的状态：失败。
+
+   ⚠️ 造出来的必须是"真的可能出现"的形状：
+     · 事件载荷由产品自己的 summarizeBatch 现算，
+       不是在这里手抄一份摘要的形状（抄的话，摘要字段改了这里不会跟着动）；
+     · 三个模块里**故意让一个失败** —— 全是成功的话，
+       "部分失败如实呈现"这条最要紧的口径根本验不到；
+     · runs 那一行 stage='build'、status='done'，
+       那正是"并行构建跑完了、装配还没开始"时库里的真实取值。
+   ============================================================ */
+
+/** 一个成功的 ModuleBuild：字段照 build-modules.ts 真的产出的那一份写 */
+function moduleBuildFixture(moduleId: string, costCny: number): ModuleBuild {
+  return {
+    moduleId,
+    summary: `${moduleId} 这一段做完了`,
+    html: `<section data-module="${moduleId}"></section>`,
+    css: `.${moduleId}-box{color:red}`,
+    js: `function ${moduleId.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase())}Init(){}`,
+    costCny,
+    usage: ZERO_USAGE,
+    model: "e2e-fixture-model",
+    priceTier: "offPeak",
+    latencyMs: 2100,
+    truncated: false,
+  };
+}
+
+/**
+ * 一批构建结果：三个模块里两个成功、一个失败。
+ *
+ * ⚠️ 失败的那个**必须留下**：把它删掉（只报成功的两个）正是
+ *    "粉饰部分失败"的做法，而这一步的存在就是为了拦住它。
+ */
+const MODULES_BATCH: BuildBatch = {
+  modules: [moduleBuildFixture("task-store", 0.01), moduleBuildFixture("board-ui", 0.01)],
+  failed: [
+    {
+      moduleId: "local-persistence",
+      message: "产出无法使用：JSON 解析失败",
+      costCny: 0.004,
+      usage: ZERO_USAGE,
+      model: "e2e-fixture-model",
+      priceTier: "offPeak",
+      latencyMs: 900,
+    },
+  ],
+  concurrency: 3,
+  totalCostCny: 0.024,
+  totalUsage: ZERO_USAGE,
+  wallClockMs: 4200,
+  peakInFlight: 2,
+};
+
+/** modules 事件的载荷：与 route.ts 真正发出的那条同构（summarizeBatch 现算） */
+const MODULES_EVENT = { kind: "modules", batch: summarizeBatch(MODULES_BATCH, ARCH_ARTIFACT) };
+
+/** 失败模块在清单上该是什么颜色：红（TONE_RGB.red = 248 113 113） */
+const FAILED_DOT = "rgb(248, 113, 113)";
+/** 成功模块在清单上该是什么颜色：蓝（TONE_RGB.blue = 96 165 250） */
+const DONE_DOT = "rgb(96, 165, 250)";
+
+/**
+ * 一条「刚跑完并行构建」的运行：规格 + 架构 + 界面 + 并行构建四段产物都在。
+ *
+ * stage 取 'build'、status 取 'done' —— 那正是并行构建跑完时库里的真实取值
+ * （route.ts 里第四道那一段跑完之后，run 的阶段就停在 build 上）。
+ */
+function seedModulesRun(username: string): string {
+  const db = new Database("./data/nexus.db");
+  try {
+    const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
+      | { id: number }
+      | undefined;
+    if (!user) throw new Error(`找不到测试账号 ${username}`);
+
+    const runId = `e2e-modules-${Date.now().toString(36)}`;
+    const now = Date.now();
+
+    db.prepare(
+      `INSERT INTO runs (id, user_id, prompt, stage, status, workflow_version, created_at, updated_at)
+       VALUES (?, ?, ?, 'build', 'done', 'e2e-fixture', ?, ?)`,
+    ).run(runId, user.id, "端到端夹具：刚跑完并行构建的运行", now, now);
+
+    const rows: Array<[string, unknown]> = [
+      ["phase", stepPhase("spec", "正在把你的需求整理成规格")],
+      [
+        "spec",
+        { kind: "spec", spec: ARCH_SPEC, gate: reviewSpec(ARCH_SPEC), fallback: false },
+      ],
+      ["phase", stepPhase("arch", "正在把规格切分成模块")],
+      ["arch", { kind: "arch", arch: ARCH_ARTIFACT, check: ARCH_CHECK, fallback: false }],
+      // 这一条的 label 照 ui-stage.ts 真正 yield 的那句写
+      ["phase", stepPhase("ui", "正在把架构变成页面与设计变量")],
+      ["ui", { kind: "ui", ui: UI_ARTIFACT, check: UI_CHECK, fallback: false }],
+      // 这两条照 route.ts 第四道真正 yield 的那两条写
+      ["phase", stepPhase("building", "正在并行构建 3 个模块（并发上限 3）")],
+      ["modules", MODULES_EVENT],
     ];
 
     const ins = db.prepare(
@@ -5315,6 +5443,180 @@ async function main() {
         `这种运行里 ${UI_PAGES.length} 个页面各一行、id 形如 ui:*、` +
         "三条本地检查全过所以是 done（不是 running）、同一页上第二道的模块子树照旧在；" +
         "而没有 ui 事件的运行那一道仍是「待规划」占位行（对照组验过，不是恒真的）—— 全部通过",
+    );
+
+    /* ============================================================
+       第二十五步 · 并行构建：清单里 build 那道自己长出模块构建子树
+       ============================================================
+       ★ 这一期交付的"并行构建"在界面上唯一的可见变化就在这里 ★
+
+       ── 要验的是什么 ──
+         一条运行跑过第四道之后，左侧清单里「并行构建」那一道下面
+         **逐个列出每个模块的构建结果**（`build:<模块id>`），
+         而不再是那条「待规划」占位行；而且**失败的模块是红色的 failed**。
+
+       ── 为什么"失败"这一档必须单独验 ──
+         前两次"长出子树"（arch → 模块、ui → 页面）长出来的都是"将来要做的活"，
+         状态由本地检查决定；这一次长出来的是"刚刚做过的活"。
+         如果把失败模块悄悄丢掉（只列成功的两个），
+         页面上会是一棵漂亮的、全绿的子树 —— 而事实是三个模块里坏了一个。
+         那正是"粉饰部分失败"，所以下面用一条"恰好三个、其中一个红"把它钉死。
+
+       ── 为什么还要一条**对照**运行 ──
+         只验"有子树"的话，"占位行规则被整个删掉"也能让它变绿 ——
+         那就成了一条永远为真的断言。所以同时跑一条**没有 modules 事件**的运行：
+         它的 build 那道**必须还是**「待规划」。
+         对照组复用第二十步那条只有 phase:spec 的运行。
+
+       ── 夹具与现实的关系 ──
+         seedModulesRun 插的是 runs 一行 + 八条事件，事件形状逐字段照
+         route.ts 第四道真正发出的那两条写（modules 的载荷更是由产品自己的
+         summarizeBatch 现算的）。真跑一次要调模型、花钱、几十秒 ——
+         e2e 不该为了验一棵树去生成一个应用。
+    */
+    heading("第二十五步 · 并行构建：清单里 build 那道自己长出模块构建子树");
+
+    /*
+      先在地面上把夹具自身验一遍：三个模块、两个成功一个失败。
+      少了这一条，夹具哪天悄悄变成"全成功"的形状，
+      下面"恰好有一个红的"会红，而红的原因看起来像界面错了 ——
+      实际上是夹具变了。夹具的形状要由夹具自己负责。
+    */
+    expect_(
+      MODULES_BATCH.modules.length === 2 && MODULES_BATCH.failed.length === 1,
+      "夹具自身成立：三个模块里两个成功、一个失败（不是全绿的假夹具）",
+      `夹具不成立：成功 ${MODULES_BATCH.modules.length} 个、失败 ${MODULES_BATCH.failed.length} 个`,
+    );
+
+    const modulesRun = seedModulesRun(username);
+    info(
+      `造了一条运行 ${modulesRun.slice(0, 8)}（stage=build、status=done，` +
+        `带 ${ARCH_MODULES.length} 个模块的构建结果：` +
+        `${MODULES_BATCH.modules.map((m) => m.moduleId).join(" ")} 成功、` +
+        `${MODULES_BATCH.failed.map((f) => f.moduleId).join(" ")} 失败）`,
+    );
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${modulesRun}` });
+    await sleep(4200);
+
+    const buildSub = await readGroupSub("build");
+    info(
+      `「并行构建」那一组：存在=${buildSub.exists} · 组内二级行 ${buildSub.kids.length} 个 · ` +
+        `占位 ${buildSub.kids.filter((k) => k.placeholder).length} 个 · 计数「${buildSub.countText}」`,
+    );
+    info(
+      `组里的行：` +
+        buildSub.kids
+          .map((k) => `${k.focus}[${k.status}]${k.text}${k.placeholder ? "(占位)" : ""}`)
+          .join(" · "),
+    );
+
+    /* ★ 1. build 那道下面有 N 个二级行（N = 模块数，含失败的那个）★ */
+    expect_(
+      buildSub.exists && buildSub.kids.length === ARCH_MODULES.length,
+      `「并行构建」下面有 ${ARCH_MODULES.length} 个二级行（每个模块一行，含失败的那个）`,
+      `「并行构建」下面只有 ${buildSub.kids.length} 个二级行，期望 ${ARCH_MODULES.length}` +
+        `（那一组存在=${buildSub.exists}）—— modules 事件没有投影成任务点？`,
+    );
+    /* ★ 2. 而且**没有**待规划占位行 ★ */
+    expect_(
+      buildSub.kids.length > 0 && buildSub.kids.every((k) => !k.placeholder),
+      "这几行里一个「待规划」占位行都没有 —— 那道工序这次真的跑过",
+      `还有 ${buildSub.kids.filter((k) => k.placeholder).length} 行占位：` +
+        buildSub.kids.filter((k) => k.placeholder).map((k) => k.text).join("、"),
+    );
+    /* ★ 3. 行 id 形如 build:*（data-outline-focus），顺序就是架构里的模块顺序 ★ */
+    expect_(
+      buildSub.kids.map((k) => k.focus).join(",") ===
+        ARCH_MODULES.map((m) => `build:${m.id}`).join(","),
+      `行 id 形如 build:*，且顺序就是架构里的模块顺序（${buildSub.kids.map((k) => k.focus).join(" ")}）`,
+      `行 id 不对：读到的 ${JSON.stringify(buildSub.kids.map((k) => k.focus))}，` +
+        `期望 ${JSON.stringify(ARCH_MODULES.map((m) => `build:${m.id}`))}`,
+    );
+    /* 4. 每行的标题就是模块名（人可读的那一列，从 arch 查） */
+    expect_(
+      buildSub.kids.map((k) => k.text).join(",") === ARCH_MODULES.map((m) => m.name).join(","),
+      `每行的标题就是模块名（${buildSub.kids.map((k) => k.text).join("、")}）`,
+      `标题不对：${JSON.stringify(buildSub.kids.map((k) => k.text))}`,
+    );
+    /* ★ 5. 状态：成功的 done（蓝），**失败的是 failed（红）**，一个 running 都没有 ★ */
+    const expectedStatus = ARCH_MODULES.map((m) =>
+      MODULES_BATCH.failed.some((f) => f.moduleId === m.id) ? "failed" : "done",
+    );
+    expect_(
+      buildSub.kids.map((k) => k.status).join(",") === expectedStatus.join(","),
+      `状态按各自的成败走（${buildSub.kids.map((k) => `${k.focus}=${k.status}`).join("、")}）` +
+        "—— 部分失败如实呈现，没有被抹平成全绿",
+      `状态不对：读到的 ${JSON.stringify(buildSub.kids.map((k) => k.status))}，` +
+        `期望 ${JSON.stringify(expectedStatus)}`,
+    );
+    expect_(
+      buildSub.kids.every(
+        (k) => k.dot === (k.status === "failed" ? FAILED_DOT : DONE_DOT),
+      ) && buildSub.kids.some((k) => k.status === "failed"),
+      `色点真的按状态走：失败那个是红（${FAILED_DOT}）、成功那些是蓝（${DONE_DOT}）`,
+      `色点不对：${JSON.stringify(buildSub.kids.map((k) => `${k.status}/${k.dot}`))}` +
+        ` —— 期望失败的红、成功的蓝，且至少有一个失败的`,
+    );
+    expect_(
+      buildSub.kids.every((k) => k.status !== "running"),
+      "一个 running 都没有 —— 构建已经结束了，这里没有任何东西还在跑",
+      `出现了 running：${JSON.stringify(buildSub.kids.map((k) => k.status))}`,
+    );
+    /* 6. 收起之后还看得见计数，它得等于模块数 */
+    expect_(
+      buildSub.countText === String(ARCH_MODULES.length),
+      `summary 上的计数是 ${buildSub.countText}（收起时也看得出这一组下面有几个点）`,
+      `计数是「${buildSub.countText}」，期望 ${ARCH_MODULES.length}`,
+    );
+    /*
+      7. build 那一级行自己的状态：这条运行 status=done，而 build 确实留下了痕迹，
+         所以它是 done —— 顺带证明"长出子树"没有把工序自己的状态带偏。
+    */
+    expect_(
+      buildSub.level1Status === "done",
+      "「并行构建」那一级行自己是 done（这条运行跑完了，而它确实留下了产物）",
+      `一级行状态是 ${buildSub.level1Status}，期望 done`,
+    );
+
+    /* ---- 对照：没有 modules 事件的运行，那一道**必须还是**「待规划」 ---- */
+    const noModulesRun = seedRunningRun(username);
+    info(`对照：造了一条只有 phase:spec 的运行 ${noModulesRun.slice(0, 8)}（没有任何 modules 事件）`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${noModulesRun}` });
+    await sleep(4200);
+
+    const noModulesSub = await readGroupSub("build");
+    info(
+      `对照组「并行构建」那一组：二级行 ${noModulesSub.kids.length} 个 · ` +
+        `占位 ${noModulesSub.kids.filter((k) => k.placeholder).length} 个 · ` +
+        `文字 ${JSON.stringify(noModulesSub.kids.map((k) => k.text))}`,
+    );
+
+    expect_(
+      noModulesSub.kids.length === 1 && noModulesSub.kids[0].placeholder,
+      "★ 对照：没有 modules 事件时，那一道下面是一行「待规划」占位行（子树不是白给的）",
+      `对照组的二级行是 ${JSON.stringify(noModulesSub.kids.map((k) => ({ text: k.text, placeholder: k.placeholder })))}` +
+        ` —— 期望恰好 1 行占位`,
+    );
+    expect_(
+      noModulesSub.kids.every((k) => !(k.focus ?? "").startsWith("build:")) &&
+        noModulesSub.level1Status === "pending",
+      "对照：一个 build:* 的点都没有，而且那一道自己是 pending —— " +
+        "没有事件就是没有，不是「有计划但没跑」",
+      `对照组里出现了模块行或状态不对：` +
+        `${JSON.stringify(noModulesSub.kids.map((k) => k.focus))} / level1=${noModulesSub.level1Status}`,
+    );
+
+    cleanupVerifyRun(modulesRun);
+    cleanupVerifyRun(noModulesRun);
+    info("夹具已清理");
+
+    ok(
+      "并行构建（第四道工序）接上之后：清单里「并行构建」那道**自己长出**模块构建子树 ——" +
+        `这种运行里 ${ARCH_MODULES.length} 个模块各一行、id 形如 build:*、顺序与架构一致、` +
+        "成功的 done（蓝）而**失败的是 failed（红）**（部分失败如实呈现，没有被抹平）；" +
+        "而没有 modules 事件的运行那一道仍是「待规划」占位行（对照组验过，不是恒真的）—— 全部通过",
     );
 
     cdp.close();

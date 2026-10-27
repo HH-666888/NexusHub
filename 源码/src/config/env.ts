@@ -72,8 +72,22 @@ export const env = {
     memoryMb: num("SANDBOX_MEMORY_MB", 1024),
     cpus: num("SANDBOX_CPUS", 1),
     timeoutSeconds: num("SANDBOX_TIMEOUT_SECONDS", 300),
-    /** 并发构建数。本机内存小，默认 1（串行），线上可调高 */
-    maxParallelBuild: num("MAX_PARALLEL_BUILD", 1),
+    /**
+     * 并行构建的并发上限（同时在飞的模块构建调用数）。
+     *
+     * ── 为什么默认是 3，而不是 1 ──
+     *   第四道工序叫「并行构建」。默认 1 就是默认不并行 ——
+     *   那样这条流水线在真实运行里和单次生成没有区别，
+     *   并行只活在文档和测试里。
+     *
+     *   3 是个保守的起点：模块构建是**网络等待**（等模型吐字），
+     *   不是本机算力，三个同时在飞对本机内存几乎没有影响。
+     *   真嫌慢/嫌贵可以调：调 1 就退回串行，调大就是更激进。
+     *
+     * <=0 或没配时，编排层会回落到 domain/module-build.ts 里的
+     * DEFAULT_BUILD_CONCURRENCY（同一个数，但只有一份定义）。
+     */
+    maxParallelBuild: num("MAX_PARALLEL_BUILD", 3),
   },
   run: {
     /** 单次运行成本上限（元），超过后自动降档 */

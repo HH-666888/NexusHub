@@ -39,6 +39,9 @@ const PHASE_LABEL: Record<GeneratePhase, string> = {
   spec: "需求规格化",
   arch: "架构定型",
   ui: "界面设计",
+  // 并行构建（第四道）与后面的"装配"分开写：这一期交付的正是这两段的区别 ——
+  // 一段是 N 个模块同时在写，另一段是把它们拼成一个成品
+  building: "并行构建",
   awaiting: "等你确认",
   generating: "正在生成",
   checking: "正在检查",
@@ -54,6 +57,9 @@ const PHASE_TONE: Record<GeneratePhase, string> = {
   arch: "border-violet-700 bg-violet-950/40 text-violet-300",
   // 界面设计和架构定型同为决策级：它定的变量表是第四道所有并行单元的共同口径
   ui: "border-violet-700 bg-violet-950/40 text-violet-300",
+  // 并行构建是执行级（真的在写码），与 generating 同色调 ——
+  // 色调分的是"谁在做"，不是序号
+  building: "border-blue-700 bg-blue-950/40 text-blue-300",
   awaiting: "border-amber-700 bg-amber-950/40 text-amber-300",
   generating: "border-blue-700 bg-blue-950/40 text-blue-300",
   checking: "border-blue-700 bg-blue-950/40 text-blue-300",

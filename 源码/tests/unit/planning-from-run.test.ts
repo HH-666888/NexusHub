@@ -6,6 +6,12 @@ import type { UiSpec } from "@/core/domain/ui-spec";
 import { inspectArch } from "@/core/generate/arch-check";
 import { inspectUi } from "@/core/generate/ui-check";
 import { inspectArtifact } from "@/core/generate/prompt";
+import {
+  ZERO_USAGE,
+  summarizeBatch,
+  type BuildBatch,
+  type ModuleBuild,
+} from "@/core/domain/module-build";
 import { STAGES } from "@/core/pipeline/stages";
 import {
   PLANNING_ROOT_ID,
@@ -1297,5 +1303,313 @@ describe("★ 串一遍 projectAt → toOutline：清单里 ui 那道也自己�
     expect(childrenOf(now, "ui")).toHaveLength(0);
     // 而且日志里根本没有针对它的状态事件 —— 我们从未碰过它
     expect(statusEventsFor(log, "ui")).toHaveLength(0);
+  });
+});
+
+/* ============================================================
+   ⑪ 并行构建 → 模块构建子树（第四道**第一次**有了自己的子树）
+   ============================================================
+   前两组（arch → 模块、ui → 页面）长出的是"将来要做的活"；
+   这一组长出的是"**刚刚做过的活**"，而且它带一栏前两组没有的东西：
+   **失败**。
+
+   这一组要守住两件事：
+     一、`build` 那道下面真的长出 `build:<模块id>`，而不是一行「待规划」；
+     二、`failed[]` 里的模块**显示成 failed** —— 部分失败如实呈现。
+
+   取材：事件的载荷由产品自己的 summarizeBatch 现算
+   （`{ kind: "modules", batch: summarizeBatch(batch, ARCH) }`），
+   而不是在这里手抄一份摘要的形状 —— 抄一份的话，
+   摘要字段改了而这里没改，夹具就会变成"现实里不可能出现"的东西。
+   ============================================================ */
+
+/** 一个成功的 ModuleBuild（字段齐全，好让 summarizeBatch 原样带出名字与花费） */
+function moduleBuildFixture(moduleId: string, costCny = 0.01): ModuleBuild {
+  return {
+    moduleId,
+    summary: `${moduleId} 这一段做完了`,
+    html: `<section data-module="${moduleId}"></section>`,
+    css: `.${moduleId}-box{color:red}`,
+    js: `function ${moduleId.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase())}Init(){}`,
+    costCny,
+    usage: ZERO_USAGE,
+    model: "fake-model",
+    priceTier: "offPeak",
+    latencyMs: 20,
+    truncated: false,
+  };
+}
+
+/**
+ * 一批真实的构建结果：task-store 成功、board-ui 失败。
+ *
+ * ⚠️ 故意让**成功的和失败的各一个**：全是成功的话，
+ *    "失败模块显示 failed"这条最要紧的口径根本验不到。
+ */
+const BUILD_BATCH: BuildBatch = {
+  modules: [moduleBuildFixture("task-store")],
+  failed: [
+    {
+      moduleId: "board-ui",
+      message: "调用模型失败：连接超时",
+      costCny: 0.012,
+      usage: ZERO_USAGE,
+      model: "fake-model",
+      priceTier: "offPeak",
+      latencyMs: 30,
+    },
+  ],
+  concurrency: 2,
+  totalCostCny: 0.022,
+  totalUsage: ZERO_USAGE,
+  wallClockMs: 45,
+  peakInFlight: 2,
+};
+
+/** modules 事件：载荷照 route.ts 真正发出的那条写（summarizeBatch 现算） */
+function modulesEvent(seq: number, batch: BuildBatch = BUILD_BATCH): RawEvent {
+  return { seq, kind: "modules", payload: { kind: "modules", batch: summarizeBatch(batch, ARCH) } };
+}
+
+/** 此刻 build 名下的模块构建点 */
+function buildPointsAt(log: readonly PlanningEvent[], seq: number): TaskPoint[] {
+  return projectAt(log, seq).filter((p) => p.id.startsWith("build:"));
+}
+
+describe("并行构建 → 模块构建任务点（含失败那一栏）", () => {
+  it("每个模块长出一个 depth 2 的点，挂在 build 下面，id 形如 build:<模块id>", () => {
+    const log = planningFromRun(src([archEvent(20), modulesEvent(30)]));
+    const kids = buildPointsAt(log, 30);
+
+    // 成功的和失败的各一个 —— 两个都要有点，少一个就是"粉饰"
+    expect(ids(kids)).toEqual(["build:task-store", "build:board-ui"]);
+
+    for (const kid of kids) {
+      expect(kid.parentId).toBe("build");
+      expect(kid.depth).toBe(2);
+      expect(kid.kind).toBe("exec");
+      expect(kid.bornAtSeq).toBe(30);
+    }
+    // 标题是人可读的模块名，**从 arch 查**（不是事件里那份副本）
+    expect(kids.map((k) => k.title)).toEqual(ARCH.modules.map((m) => m.name));
+    expect(hasOrphans(projectAt(log, 30))).toBe(false);
+  });
+
+  it("★ 失败模块 → failed，成功模块 → done；绝不给 running（构建已经结束了）", () => {
+    /*
+      ★★★ 这一条是"部分失败如实呈现"的硬证据 ★★★
+
+      口径：batch.modules → done，batch.failed → failed。
+      把失败抹成"没提过"是这一期最不能做的事：
+      用户会以为模块都做完了，而产物里少了一整块功能，
+      账上还少了那次调用的钱。
+
+      顺带钉住"不许给 running"：构建在事件到达的这一刻已经结束了，
+      这里没有任何东西还在跑 —— 给 running 会让用户坐着等一件没人开始的事。
+    */
+    const log = planningFromRun(src([archEvent(20), modulesEvent(30)]));
+    const kids = buildPointsAt(log, 30);
+    const byId = new Map(kids.map((k) => [k.id, k.status]));
+
+    expect(byId.get("build:task-store")).toBe("done");
+    expect(byId.get("build:board-ui")).toBe("failed");
+    for (const kid of kids) expect(kid.status).not.toBe("running");
+  });
+
+  it("失败的模块也带着原因进了摘要，而不是只剩一个红点", () => {
+    // 事件载荷里要有 message：不然界面上只有一个红点，说不出为什么红
+    const payload = modulesEvent(30).payload as { batch: { failed: { moduleId: string; message: string; name: string }[] } };
+    expect(payload.batch.failed).toHaveLength(1);
+    expect(payload.batch.failed[0].moduleId).toBe("board-ui");
+    expect(payload.batch.failed[0].message).toContain("连接超时");
+    expect(payload.batch.failed[0].name).toBe(ARCH.modules[1].name);
+  });
+
+  it("到点生成：第 29 刻一个模块构建点都没有，第 30 刻全在", () => {
+    const log = planningFromRun(src([archEvent(20), modulesEvent(30)]));
+
+    expect(ids(buildPointsAt(log, 29))).toEqual([]);
+    expect(buildPointsAt(log, 30).map((p) => p.bornAtSeq)).toEqual([30, 30]);
+  });
+
+  it("顺序按 **arch** 排，而不是按事件里「成功在前、失败在后」的顺序", () => {
+    /*
+      事件载荷天然是"成功的先列、失败的在后"（summarizeBatch 就是这么攒的）。
+      照它排的话，清单里 build 那一组的顺序会和上面 arch 那一组对不上 ——
+      同一个模块在两处位置不同，用户就没法对着看。
+    */
+    const flipped: BuildBatch = {
+      ...BUILD_BATCH,
+      modules: [moduleBuildFixture("board-ui")],
+      failed: [
+        {
+          moduleId: "task-store",
+          message: "调用模型失败：超时",
+          costCny: 0,
+          usage: ZERO_USAGE,
+          model: null,
+          priceTier: null,
+          latencyMs: 5,
+        },
+      ],
+    };
+    const log = planningFromRun(src([archEvent(20), modulesEvent(30, flipped)]));
+
+    expect(ids(buildPointsAt(log, 30))).toEqual(["build:task-store", "build:board-ui"]);
+    const now = buildPointsAt(log, 30);
+    // 顺序按 arch，状态按各自的事实：改成失败的那个才是 failed
+    expect(now[0].status).toBe("failed");
+    expect(now[1].status).toBe("done");
+  });
+
+  it("modules 事件让第四道真的动起来：运行结束时它是 done，而不是停在 pending", () => {
+    const running = planningFromRun(src([archEvent(20), modulesEvent(30)]));
+    expect(find(projectAt(running, 30), "build").status).toBe("running");
+
+    const doneLog = planningFromRun(src([archEvent(20), modulesEvent(30), phaseEvent(60, "done")]));
+    const now = projectAt(doneLog, maxSeq(doneLog));
+    expect(find(now, "build").status).toBe("done");
+    expect(childrenOf(now, "build")).toHaveLength(2);
+  });
+
+  it("phase:building 也归第四道（不是只在产出事件时才认它）", () => {
+    const log = planningFromRun(src([archEvent(20), phaseEvent(25, "building")]));
+    const now = projectAt(log, 25);
+
+    expect(find(now, "build").status).toBe("running");
+    // 只是开工，还没有产物 —— 所以一个 build:* 的点都不该有
+    expect(childrenOf(now, "build")).toHaveLength(0);
+  });
+
+  it("没有 arch 事件时标题退到事件里的那份名字，最后才退到模块 id", () => {
+    // 只有 modules 事件（arch 事件丢了）：名字用载荷里那一份，绝不留空白标题
+    const log = planningFromRun(src([modulesEvent(30)]));
+    const kids = buildPointsAt(log, 30);
+    expect(kids.map((k) => k.title)).toEqual(ARCH.modules.map((m) => m.name));
+  });
+
+  it("同一条 modules 事件到来两次：点只出生一次（appendBorn 幂等）", () => {
+    const log = planningFromRun(src([archEvent(20), modulesEvent(30), modulesEvent(45)]));
+    const kids = buildPointsAt(log, 100);
+
+    expect(kids).toHaveLength(2);
+    expect(kids.map((k) => k.bornAtSeq)).toEqual([30, 30]);
+  });
+
+  it("payload 残缺时不硬造任务点：没有 batch / modules / failed 就一个点都不生成", () => {
+    const cases: unknown[] = [
+      null,
+      {},
+      { batch: null },
+      { batch: {} },
+      { batch: { modules: null } },
+      { batch: { modules: "两个模块" } },
+      42,
+    ];
+
+    for (const payload of cases) {
+      const log = planningFromRun(src([{ seq: 30, kind: "modules", payload }]));
+      expect(buildPointsAt(log, 100), `payload=${JSON.stringify(payload)} 时凭空造了点`).toEqual(
+        [],
+      );
+    }
+  });
+
+  it("成功列表为空、失败列表非空时，照样为失败的模块建点（不许因为没成功就整批消失）", () => {
+    const allFailed: BuildBatch = {
+      ...BUILD_BATCH,
+      modules: [],
+      failed: [
+        {
+          moduleId: "task-store",
+          message: "调用模型失败：超时",
+          costCny: 0,
+          usage: ZERO_USAGE,
+          model: null,
+          priceTier: null,
+          latencyMs: 3,
+        },
+        {
+          moduleId: "board-ui",
+          message: "产出无法使用：JSON 解析失败",
+          costCny: 0.03,
+          usage: ZERO_USAGE,
+          model: "fake-model",
+          priceTier: "offPeak",
+          latencyMs: 9,
+        },
+      ],
+    };
+    const log = planningFromRun(src([archEvent(20), modulesEvent(30, allFailed)]));
+    const kids = buildPointsAt(log, 30);
+
+    expect(ids(kids)).toEqual(["build:task-store", "build:board-ui"]);
+    for (const kid of kids) expect(kid.status).toBe("failed");
+  });
+});
+
+describe("★ 串一遍 projectAt → toOutline：清单里 build 那道自己长出了子树", () => {
+  it("有 modules 事件时：不再有「待规划」占位行，而是逐个列出模块构建结果", () => {
+    /*
+      ★★★ 这一期的"清单长出子树"第三次发生 ★★★
+      前两次是 arch → 模块、ui → 页面，这一次是 build → 模块构建结果。
+
+      前两次那批点说的是"将来要做"，这一批说的是"刚刚做成没成"——
+      所以它多了失败这一档，而这一档必须在清单上看得见。
+    */
+    const log = planningFromRun(src([specEvent(10), archEvent(20), modulesEvent(30)]));
+    const rows = toOutline(projectAt(log, maxSeq(log)));
+
+    // ① 占位行没了
+    const buildPlaceholders = rows.filter((r) => r.placeholder && r.id.startsWith("build"));
+    expect(buildPlaceholders, "build 那道还有待规划占位行 —— 子树没长出来").toEqual([]);
+
+    // ② 列出来的就是那几个模块，id / 标题 / 层级都对得上
+    const buildRows = rows.filter((r) => r.id.startsWith("build:"));
+    expect(buildRows.map((r) => r.id)).toEqual(["build:task-store", "build:board-ui"]);
+    expect(buildRows.map((r) => r.title)).toEqual(ARCH.modules.map((m) => m.name));
+    for (const row of buildRows) {
+      expect(row.level).toBe(2);
+      expect(row.placeholder).toBe(false);
+      expect(row.canvasNodeId).toBe(row.id);
+    }
+
+    // ③ ★ 失败模块在清单上是 failed —— 部分失败如实呈现 ★
+    const statusOf = new Map(buildRows.map((r) => [r.id, r.status]));
+    expect(statusOf.get("build:task-store")).toBe("done");
+    expect(statusOf.get("build:board-ui")).toBe("failed");
+
+    // ④ build 那一级行本身照旧在场，六道工序的顺序不变
+    const level1 = rows.filter((r) => r.level === 1);
+    expect(level1.map((r) => r.id)).toEqual(STAGE_INPUT.map((s) => s.id));
+
+    // ⑤ 三棵子树同时在：前面两道的行也没被挤掉
+    expect(rows.filter((r) => r.id.startsWith("arch:")).length).toBe(ARCH.modules.length);
+  });
+
+  it("对照：没有 modules 事件的运行，build 那道**仍然是**「待规划」占位行", () => {
+    /*
+      这一条是上一条的对照组，防的是"断言永远为真"：
+      如果 outline.ts 哪天被改成"一级行一律不补占位行"，
+      上面那条会照样绿，而它想守的"子树长出来了"其实什么都没验到。
+    */
+    const log = planningFromRun(src([specEvent(10), archEvent(20), checkEvent(25)]));
+    const rows = toOutline(projectAt(log, maxSeq(log)));
+
+    const buildPlaceholders = rows.filter((r) => r.placeholder && r.id.startsWith("build"));
+    expect(buildPlaceholders).toHaveLength(1);
+    expect(buildPlaceholders[0].title).toBe("待规划");
+    expect(buildPlaceholders[0].level).toBe(2);
+    // 而且一个模块构建点都没有 —— 没有事件就是没有，不是"有计划但没跑"
+    expect(rows.filter((r) => r.id.startsWith("build:"))).toEqual([]);
+  });
+
+  it("★ 诚实底线也适用于第四道：这一次没跑过就仍然是 pending、名下无子点", () => {
+    const log = planningFromRun(src([specEvent(10), archEvent(20), checkEvent(25)], "done"));
+    const now = projectAt(log, maxSeq(log));
+
+    expect(find(now, "build").status).toBe("pending");
+    expect(childrenOf(now, "build")).toHaveLength(0);
+    expect(statusEventsFor(log, "build")).toHaveLength(0);
   });
 });

@@ -17,6 +17,7 @@
 import type { Artifact } from "../domain/artifact";
 import { summarizeChecks, type CheckResult, type CheckSummary } from "../domain/check";
 import type { ArchSpec } from "../domain/arch";
+import { buildAssemblePrompt, type BuildBatch, type BuildBatchSummary } from "../domain/module-build";
 import type { AppSpec, SpecGate } from "../domain/spec";
 import type { UiSpec } from "../domain/ui-spec";
 import type { ArchCheck } from "./arch-check";
@@ -58,6 +59,21 @@ export type GeneratePhase =
     编译器就会逼着人在那里当场回答"这条 phase 算谁的"。
   */
   | "ui" // 界面设计：定下设计变量、页面与组件
+  /*
+    building —— 并行构建：N 个模块同时开工。
+
+    为什么它是 phase 而不是"又一个 kind"，理由和 arch / ui 逐字相同：
+      它也是「一道工序开工了」。加进这个联合之后，
+      from-run.ts 的 PHASE_OWNER（穷尽的 Record）会逼着人当场回答
+      "这条 phase 算谁的"——答案是 build（第四道工序自己）。
+
+    为什么它和 generating 分开：
+      generating 现在指的是"装配那一次调用在写"（第四次调用），
+      而 building 指的是"每个模块各写各的（第 N 次调用，同时在飞）"。
+      两者混成一个的话，界面上会看到"正在生成"出现两次而分不出
+      是并行阶段还是装配阶段 —— 而这一期交付的恰恰是这两段的区别。
+  */
+  | "building" // 并行构建：按模块同时开工
   | "awaiting" // 人工门禁：停下等用户回答规格里的疑问
   | "generating" // 模型正在写
   | "checking" // 正在做产物检查
@@ -136,6 +152,21 @@ export type GenerateEvent =
       /** 是不是降级来的。兜底界面必须自报家门 */
       fallback: boolean;
     }
+  /**
+   * 并行构建的产出（第四道工序）—— 每个模块各写各的那一批。
+   *
+   * ── 为什么它是**摘要**而不是完整的 BuildBatch ──
+   *   代码片段是产物，归宿是装配提示词与最终 HTML。
+   *   事件是要逐条落库、要回放计划层的东西，塞几十 KB 代码进去
+   *   只会让每次运行的事件表白白变大，而回放时没有任何一处读它
+   *   （详见 domain/module-build.ts 里 BuildBatchSummary 那段）。
+   *
+   * ── 它承载的信息是"计划层"的：这次并行切了几个、谁成了、谁没成 ──
+   *   左侧清单上那批 `build:<模块id>` 的任务点就是由它投影出来的，
+   *   失败模块的状态是 failed（见 planning/from-run.ts 的 modulePoints）。
+   *   也就是说：**部分失败会被如实呈现**，而不是被这句摘要抹平。
+   */
+  | { kind: "modules"; batch: BuildBatchSummary }
   | {
       kind: "usage";
       usage: TokenUsage;
@@ -177,6 +208,27 @@ export interface GenerateInput {
    * 加一条空消息会白白多花 token，还会让模型以为有什么言外之意。
    */
   callbackContext?: string | null;
+  /**
+   * 并行构建的批次（第四道工序的产出）。
+   *
+   * ── ★ 它是这一期"并行构建"落到实处的唯一入口 ★ ──
+   *   传了它，装配那一次调用的用户消息里就会**真的带上各模块写出来的
+   *   代码片段**（buildAssemblePrompt），并且产物检查会多跑一条
+   *   「模块代码确实进入了产物」的探针，逐模块核对片段在不在最终 HTML 里。
+   *   于是"并行构建"从一句口号变成一条可判真假的链路：
+   *     架构切模块 → 并行各写一块 → 片段进装配提示词 → 片段进最终产物。
+   *
+   * ── 不传 = 保持原来的单次调用行为（这一条是硬要求）──
+   *   用户消息仍然就是那句原话、检查仍然只有原来那七项、
+   *   事件序列一个字节都不变。旧路径（demo-seed、上一轮之前的运行、
+   *   没跑架构的降级路径）照样能跑 —— 新特性不许把老路弄坏。
+   */
+  batch?: BuildBatch | null;
+  /**
+   * 架构产物。**只用来让装配提示词带上模块名与职责**（人话比 id 有用）。
+   * 不传时提示词退化成只写模块 id，功能不受影响。
+   */
+  arch?: ArchSpec | null;
 }
 
 /* ============================================================
@@ -206,8 +258,33 @@ export async function* generateApp(
   yield {
     kind: "phase",
     phase: "generating",
-    label: input.effort === "none" ? "正在生成（不思考）" : "正在生成",
+    label:
+      input.batch && input.batch.modules.length > 0
+        ? // 这次是"装配"：把并行构建出来的 N 份片段拼成一个成品。
+          // 说清楚是装配而不是"从头写"，用户才知道前面那次并行不是白跑的
+          `正在装配 ${input.batch.modules.length} 个模块的产出`
+        : input.effort === "none"
+          ? "正在生成（不思考）"
+          : "正在生成",
   };
+
+  /*
+    ---------- 装配那一次的输入 ----------
+    ★ 这一段就是"模块产出真的喂给最终产物"的兑现点 ★
+
+    没有 batch 时，用户消息就是那句原话（一字不改）——
+    这正是改动之前的行为，一个字节都没变。
+    有 batch 时，原话仍然在最前面（它是这次运行的起点），
+    后面接上各模块真的写出来的 html / css / js 片段（超长会掐尾，
+    见 buildAssemblePrompt 里那段：掐尾不掐头，特征片段都在开头）。
+  */
+  const userContent = input.batch
+    ? buildAssemblePrompt({
+        prompt: input.prompt,
+        batch: input.batch,
+        arch: input.arch ?? undefined,
+      })
+    : input.prompt;
 
   /* ---------- 调用模型，边收边转发 ---------- */
   let finalResult: Awaited<ReturnType<ModelPort["complete"]>> | null = null;
@@ -234,7 +311,7 @@ export async function* generateApp(
         ...(input.callbackContext
           ? [{ role: "system" as const, content: input.callbackContext }]
           : []),
-        { role: "user", content: input.prompt },
+        { role: "user", content: userContent },
       ],
     });
 
@@ -284,6 +361,16 @@ export async function* generateApp(
     usage: result.usage,
   });
 
+  /*
+    ⚠️ 模块那几笔**不在这里记**。
+       编排层（route.ts）拿到 batch 之后，已经用每一次模块调用的
+       usage / model / latencyMs 各记了一行流水（含失败的那几次 ——
+       调用成功、解析失败的那一类**也是花了钱的**），并把总额并进
+       传进来的 spentCny。在这里再记一遍就是重复记账：
+       runs.totalCostCny 会凭空多出一倍，而对账要到事后才发现。
+       所以上面那个 totalCost 是「(已含模块调用的) spent + 这次装配」。
+  */
+
   yield {
     kind: "usage",
     usage: result.usage,
@@ -305,7 +392,12 @@ export async function* generateApp(
   /* ---------- 产物检查 ---------- */
   yield { kind: "phase", phase: "checking", label: "正在检查产物" };
   const html = extractHtml(result.text);
-  const results = inspectArtifact(html);
+  /*
+    把 batch 交给检查器：有并行构建时它多跑一条「模块代码确实进入了产物」，
+    逐模块核对特征片段在不在最终 HTML 里（见 generate/prompt.ts 里那条探针）。
+    没有 batch 时它**一项都不多** —— 旧路径的 passed/total 一个字不变。
+  */
+  const results = inspectArtifact(html, { batch: input.batch });
   const summary = summarizeChecks(results);
   yield { kind: "check", results, summary };
 

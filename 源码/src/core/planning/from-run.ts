@@ -129,6 +129,17 @@ const PHASE_OWNER: Record<GeneratePhase, PhaseOwner> = {
   ui: { kind: "stage", stageId: "ui" },
 
   /*
+    building 是并行构建**自己在开工**（这一期新增的那一段）：
+      · build-modules.ts  buildModules() —— 按 arch.modules 各开一次调用，
+        工作池并发（上限来自 env 的 MAX_PARALLEL_BUILD）；
+      · route.ts 第四道那一段 `yield { kind: "phase", phase: "building", … }`
+        紧接着就是 buildModules —— 这句话说的正是它在开工；
+      · 记账也记在 build 名下（service.ts 那条 stage: "build"）。
+    三处同指第四道工序，归属没有歧义。
+  */
+  building: { kind: "stage", stageId: "build" },
+
+  /*
     awaiting 是规格化的**人工门禁**，不是新的一道工序：
       · route.ts:286  `const policy = resolveGatePolicy("spec", env.run.specGate);`
         —— 问的是 spec 这道工序要不要人点头；
@@ -200,6 +211,12 @@ const PHASE_OWNER: Record<GeneratePhase, PhaseOwner> = {
 const SPEC_STAGE_ID = "spec";
 const ARCH_STAGE_ID = "arch";
 const UI_STAGE_ID = "ui";
+/**
+ * 第四道「并行构建」。
+ * 这一期它才第一次有了名下的产出事件（modules）——
+ * 在此之前它只靠 phase 与 error 证明自己动过。
+ */
+const BUILD_STAGE_ID = "build";
 const VERIFY_STAGE_ID = "verify";
 
 /**
@@ -214,6 +231,12 @@ const PRODUCT_STAGE: Record<string, string> = {
   spec: SPEC_STAGE_ID,
   arch: ARCH_STAGE_ID,
   ui: UI_STAGE_ID,
+  /*
+    modules 是并行构建的产出（这一期新增）：一次并行构建跑完之后，
+    每个模块各一份片段、谁成了谁没成。产物是谁的，那道工序此刻就还在动 ——
+    所以它归 build，并且要让 `build:<模块id>` 那批点长出来。
+  */
+  modules: BUILD_STAGE_ID,
   check: VERIFY_STAGE_ID,
 };
 
@@ -492,6 +515,136 @@ function uiPoints(payload: Record<string, unknown> | null, seq: number): TaskPoi
   return points;
 }
 
+/**
+ * ★ 并行构建产物 → 模块构建任务点（清单里「并行构建」那道自己长出子树）★
+ *
+ * ── 为什么这一批点值得存在，而且是**这一期最该长出来的那一批** ──
+ *   `stages.ts` 给第四道写的理由是「并行的粒度是模块而不是文件」。
+ *   在这一期之前，那句话在数据上是空的：清单里「并行构建」下面永远
+ *   只有一行「待规划」，因为没有任何事件描述"这次到底并行做了几件事"。
+ *   于是界面上看不出并行过 —— 用户只能听我们说。
+ *
+ *   有了 modules 事件之后，这一道下面会长出 N 个 `build:<模块id>` 的点，
+ *   每一个回答的是"这个模块这一轮到底做成了没有"。
+ *   这正是"并行构建"从一句话变成一件可看见的事的地方。
+ *
+ * ── 状态口径（★ 与 arch / ui 那两处**刻意不同**，理由在这里）★ ──
+ *   arch 的模块点、ui 的页面点是"将来要做的活"，所以它们没有 running，
+ *   状态由架构/界面的本地检查决定。**这批点不一样**：
+ *   它们出生的时候，这件事**已经做完了** —— 事件本身就是构建结果。
+ *   所以：
+ *     · 成功的模块（batch.modules）→ `done`：它真的写出了一段可用的代码，
+ *       而且那段代码随后会进装配提示词、进最终产物（产物检查会核对）。
+ *     · 失败的模块（batch.failed）→ `failed`：★ 部分失败如实呈现的关键 ★
+ *       把失败抹成"没提过"是这一期最不能做的事：用户会以为 3 个模块都做完了，
+ *       而产物里少了一整块功能，且账上还少了那次调用的钱。
+ *     · **绝不给 running**：构建已经结束了，这里没有任何东西还在跑。
+ *
+ *   和 checkPoints 一样，状态是**出生时就定下的**：
+ *   modules 事件带到哪一步，点就生在哪一步，没有"先出生、再慢慢判定"的过程。
+ *
+ * ── 标题为什么从 arch 查，而不是只用事件里的名字 ──
+ *   arch 事件是"这个模块叫什么"的**真相来源**（第二阶段定下来的），
+ *   modules 事件里的名字只是同一件事的副本。这里以 arch 为准、
+ *   副本做兜底、最后退到模块 id —— 三级兜底保证标题永远不是空白，
+ *   同时保证"名字改了"这种事只有一个地方要改。
+ *
+ * ── 顺序为什么按 arch 排 ──
+ *   清单里上面那一组 `arch:<模块id>` 就是 arch 顺序。同一个模块在
+ *   两处顺序不一致的话，用户对不上"哪个做完了"。
+ *   拿不到 arch 顺序的（arch 事件缺失）保持事件里的原顺序。
+ */
+function modulePoints(
+  payload: Record<string, unknown> | null,
+  seq: number,
+  archNames: ReadonlyMap<string, string>,
+): TaskPoint[] {
+  const batch = asRecord(payload?.batch);
+  const okList = Array.isArray(batch?.modules) ? batch.modules : [];
+  const failList = Array.isArray(batch?.failed) ? batch.failed : [];
+  // 一份都没有（payload 残缺）→ 一个点都不造，绝不凭空生出一批模块
+  if (okList.length === 0 && failList.length === 0) return [];
+
+  interface Entry {
+    moduleId: string;
+    name: string;
+    failed: boolean;
+  }
+  const byId = new Map<string, Entry>();
+  const order: string[] = [];
+
+  const collect = (raw: unknown, failed: boolean): void => {
+    const item = asRecord(raw);
+    /*
+      moduleId 是稳定标识，也是这个点的身份（`build:<模块id>`）。
+      没有它就凑不出一个不会漂的 id —— 拿下标凑的话，
+      顺序一变，清单里那一行指的就是另一个模块了
+      （和 checkPoints / archPoints / uiPoints 同一条理由）。
+    */
+    const moduleId = asString(item?.moduleId);
+    if (!moduleId || byId.has(moduleId)) return;
+    byId.set(moduleId, {
+      moduleId,
+      name: archNames.get(moduleId) || asString(item?.name) || moduleId,
+      failed,
+    });
+    order.push(moduleId);
+  };
+
+  for (const raw of okList) collect(raw, false);
+  for (const raw of failList) collect(raw, true);
+
+  // arch 里的模块顺序（Map 的键序就是 arch.modules 的顺序）；
+  // 不在 arch 里的一律排到最后，且保持它们之间的原有先后（sort 自 ES2019 稳定）
+  const rank = new Map<string, number>();
+  let i = 0;
+  for (const id of archNames.keys()) rank.set(id, i++);
+  const UNRANKED = Number.MAX_SAFE_INTEGER;
+  const sorted = [...order].sort(
+    (a, b) => (rank.get(a) ?? UNRANKED) - (rank.get(b) ?? UNRANKED),
+  );
+
+  const points: TaskPoint[] = [];
+  for (const moduleId of sorted) {
+    const entry = byId.get(moduleId);
+    if (!entry) continue;
+    points.push({
+      id: `build:${moduleId}`,
+      parentId: BUILD_STAGE_ID,
+      depth: 2,
+      kind: "exec",
+      title: entry.name,
+      status: entry.failed ? "failed" : "done",
+      bornAtSeq: seq,
+    });
+  }
+  return points;
+}
+
+/**
+ * 从 arch 事件里把「模块 id → 模块名」收下来。
+ *
+ * modules 事件只带 id 与副本名字，而清单要显示的是人话标题 ——
+ * 真相来源是 arch（见 modulePoints 那段）。这里按事件顺序收，
+ * 于是 Map 的键序天然就是 arch.modules 的顺序，modulePoints 直接用。
+ *
+ * 后到的 arch 覆盖先到的：同一 id 又被定义了一次时，
+ * "最近一次架构定型怎么叫它"才是用户此刻看到的那个名字。
+ */
+function collectArchModuleNames(
+  payload: Record<string, unknown> | null,
+  into: Map<string, string>,
+): void {
+  const modules = asRecord(payload?.arch)?.modules;
+  if (!Array.isArray(modules)) return;
+  for (const raw of modules) {
+    const item = asRecord(raw);
+    const id = asString(item?.id);
+    if (!id) continue;
+    into.set(id, asString(item?.name) || id);
+  }
+}
+
 /* ============================================================
    投影
    ============================================================ */
@@ -571,6 +724,8 @@ export function planningFromRun(src: PlanningSource): PlanningEvent[] {
    */
   const lastFailAt = new Map<string, number>();
 
+  /** 这次运行里出现过的模块名（arch 事件收下来的）。modules 事件靠它给标题 */
+  const archModuleNames = new Map<string, string>();
   /** 最后一个有归属的工序 —— 也就是「当前工序」，失败要算在它头上 */
   let currentStage: string | null = null;
   /** 事件流里出现过的终局标记（调用方没传 runStatus 时靠它判断运行结束） */
@@ -626,6 +781,16 @@ export function planningFromRun(src: PlanningSource): PlanningEvent[] {
     }
 
     /* ---- 产出类：到点生成执行任务点，同时证明这道工序还在动 ---- */
+    /*
+      先把 arch 事件里的模块名收下来。
+      必须在**同一遍扫描里、modules 事件之前**做：arch 那条事件总是先到
+      （第二道在第四道之前跑，见 route.ts 的编排顺序），
+      所以走到 modules 时这张表已经满了。
+      放到别处（比如扫完再补一遍）的话，就得把事件数组读两遍，
+      而"读到第几条为止"这件事会有两个口径。
+    */
+    if (event.kind === "arch") collectArchModuleNames(payload, archModuleNames);
+
     const ownerStage = PRODUCT_STAGE[event.kind];
     if (!ownerStage) return; // text / reasoning / usage / artifact …：交给画布，不进计划
 
@@ -644,14 +809,16 @@ export function planningFromRun(src: PlanningSource): PlanningEvent[] {
     if (!stageIds.has(ownerStage)) return;
 
     /*
-      产出 → 它名下的执行点。四种产出各有一套派生规则：
-        · check → 七个检查项（verify 名下）
-        · arch  → 每个模块一个点（arch 名下）  —— 清单的二级子树从这儿长出来
-        · ui    → 每个页面一个点（ui 名下）    —— 清单再多一层二级子树
-        · spec  → 每条验收标准一个点（spec 名下）
-      规则分开写而不是合并成一个"万能函数"：四者的字段名、id 约定、
-      状态口径都不一样（pending / done|failed / done|failed / done|failed，
-      而且 arch 读的是 modules、ui 读的是 pages），
+      产出 → 它名下的执行点。五种产出各有一套派生规则：
+        · check   → 七个检查项（verify 名下）
+        · arch    → 每个模块一个点（arch 名下）  —— 清单的二级子树从这儿长出来
+        · ui      → 每个页面一个点（ui 名下）    —— 清单再多一层二级子树
+        · modules → 每个模块构建结果一个点（build 名下）
+                    —— 「并行构建」那道**第一次**有了自己的子树
+        · spec    → 每条验收标准一个点（spec 名下）
+      规则分开写而不是合并成一个"万能函数"：五者的字段名、id 约定、
+      状态口径都不一样（pending / done|failed / done|failed / failed|done / done|failed，
+      而且 arch 读 modules、ui 读 pages、modules 读 batch.modules+batch.failed），
       硬凑成一个只会让每条规则都变得难读、也难改。
     */
     const born =
@@ -661,7 +828,9 @@ export function planningFromRun(src: PlanningSource): PlanningEvent[] {
           ? archPoints(payload, event.seq)
           : event.kind === "ui"
             ? uiPoints(payload, event.seq)
-            : specPoints(payload, event.seq);
+            : event.kind === "modules"
+              ? modulePoints(payload, event.seq, archModuleNames)
+              : specPoints(payload, event.seq);
     for (const point of born) {
       log = appendBorn(log, point);
     }

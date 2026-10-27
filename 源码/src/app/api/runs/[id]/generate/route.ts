@@ -27,6 +27,13 @@ import { resolveModelEndpoint } from "@/adapters/model/resolve-endpoint";
 import { env } from "@/config/env";
 import { recordRunEvents } from "@/core/generate/recorder";
 import { generateApp, type GenerateEvent } from "@/core/generate/service";
+import { buildModules } from "@/core/generate/build-modules";
+import {
+  DEFAULT_BUILD_CONCURRENCY,
+  summarizeBatch,
+  summarizeBuildBatch,
+  type BuildBatch,
+} from "@/core/domain/module-build";
 import { runSpecStage, SPEC_ARTIFACT_NAME } from "@/core/generate/spec-stage";
 import { runArchStage } from "@/core/generate/arch-stage";
 import { runUiStage } from "@/core/generate/ui-stage";
@@ -414,21 +421,150 @@ export async function GET(
             }
           }
 
-          // ---------- 第四道：并行构建（当前是直通模式） ----------
+          // ---------- 第四道：并行构建（按模块真的拆开） ----------
           /*
             ⚠️ 这一行必须在架构定型与界面设计**之后**重新查一次。
             复用上一步的旧值的话，第四道拿到的 spentCny 会少掉后面那两笔，
             于是"总花费已经到了上限、第四道却还在花钱"——
             这种账要等到对账时才看得出来（runs.totalCostCny 对不上流水总额）。
           */
-          const spentAfterUi = await sqliteCostStore.totalByRun(runId);
+          const spentBeforeBuild = await sqliteCostStore.totalByRun(runId);
+
+          /*
+            ---------- 并发上限从哪来 ----------
+            env 的 MAX_PARALLEL_BUILD。没配（或配了个 <=0）时用默认 3 ——
+            这个默认值住在 domain/module-build.ts 里，不在这里再写一个字面量：
+            两处各写一个 3 的话，改一处另一处不会跟着动。
+
+            ── 为什么默认不是 1（串行）──
+              第四道叫"并行构建"。默认 1 等于默认不并行 ——
+              那样这次改动在真实运行里一点都看不出来，只有单测是绿的。
+              3 是一个保守的起点：模型调用是网络等待，不是本机算力，
+              三个同时在飞对本机内存几乎没有影响。
+          */
+          const concurrency =
+            env.sandbox.maxParallelBuild > 0
+              ? env.sandbox.maxParallelBuild
+              : DEFAULT_BUILD_CONCURRENCY;
+
+          /*
+            ---------- 预算闸门 ----------
+            buildModules 自己没有 costLimit 参数（它的输入是"要构建什么"，
+            不是"还剩多少钱"）—— 所以闸门留在编排层，口径与前面三道一致：
+            **宁可在这里拒绝，也不要花完之后才说超了。**
+            钱到顶时 batch 保持 null，第四道走原来的单次路径，
+            而它自己的预算闸门会立刻把这次运行停下并说明原因。
+          */
+          let batch: BuildBatch | null = null;
+          if (specFromStage && archFromStage && spentBeforeBuild < env.run.costLimitCny) {
+            yield {
+              kind: "phase",
+              phase: "building",
+              label:
+                `正在并行构建 ${archFromStage.modules.length} 个模块` +
+                `（并发上限 ${concurrency}）`,
+            };
+
+            batch = await buildModules(
+              { model: ports.model },
+              {
+                prompt: runPrompt,
+                spec: specFromStage,
+                arch: archFromStage,
+                concurrency,
+              },
+            );
+
+            /*
+              ---------- 记账：每一次模块调用各一行流水 ----------
+              含**失败的那几次**。理由有两条，都很实际：
+                · 调用成功、解析失败的那一类，钱是真的花了；
+                  不记的话这条运行的账会比实际少，而对账时才看得出来；
+                · 失败也要能回答"钱花在哪个模块上了" —— 这正是成本流水
+                  存在的意义（只看累计值回答不了这个问题）。
+              nodeId 写成 `build:<模块id>`：和清单上那个任务点同一个 id，
+              于是"哪一行账对应树上哪一个点"不用再猜。
+
+              记账失败不影响主流程（和另三道同一个取舍）：钱已经花了，
+              用户要的是产物，不能因为账没记上就整条流水线崩掉。
+            */
+            try {
+              for (const m of batch.modules) {
+                await sqliteCostStore.record({
+                  runId,
+                  stage: "build",
+                  nodeId: `build:${m.moduleId}`,
+                  tier: "execute",
+                  model: m.model,
+                  purpose: `并行构建：${m.moduleId}`,
+                  usage: m.usage,
+                  costCny: m.costCny,
+                  priceTier: m.priceTier,
+                  latencyMs: m.latencyMs,
+                });
+              }
+              for (const f of batch.failed) {
+                // 一次没花到钱的失败（调用直接抛错）不占一行账：
+                // 它的"失败"由事件与任务点如实呈现，账本这里只记真的花掉的
+                if (f.costCny <= 0 && f.model === null) continue;
+                await sqliteCostStore.record({
+                  runId,
+                  stage: "build",
+                  nodeId: `build:${f.moduleId}`,
+                  tier: "execute",
+                  model: f.model ?? "unknown",
+                  purpose: `并行构建失败：${f.moduleId}`,
+                  usage: f.usage,
+                  costCny: f.costCny,
+                  priceTier: f.priceTier ?? "offPeak",
+                  latencyMs: f.latencyMs,
+                });
+              }
+            } catch {
+              // 记账失败不影响主流程
+            }
+
+            /*
+              ★ 把这一批的结果发出去 ★
+              这是 modules 事件的唯一来源。清单里 `build:<模块id>` 那批任务点
+              就是由它投影出来的（planning/from-run.ts 的 modulePoints），
+              失败模块在那里是红色的 failed —— 部分失败如实呈现的关键一步。
+              载荷是**摘要**（不带代码片段），理由见 domain/module-build.ts。
+            */
+            yield { kind: "modules", batch: summarizeBatch(batch, archFromStage) };
+
+            yield {
+              kind: "phase",
+              phase: "building",
+              label: `并行构建完成：${summarizeBuildBatch(batch)}`,
+            };
+          }
+
+          /*
+            ---------- 第五道：装配 ----------
+            ⚠️ 这里必须**重新查一次钱**：
+            模块那几笔刚刚记进流水（上面那个 for），复用 spentBeforeBuild 的话，
+            装配拿到的 spentCny 会少掉这一批 —— 于是"账上已经到顶、
+            装配却还在花钱"。理由与上面 spentBeforeBuild 那一段逐字相同。
+          */
+          const spentAfterBuild = await sqliteCostStore.totalByRun(runId);
+
           yield* generateApp(ports, {
             runId,
             prompt: runPrompt,
             costLimitCny: env.run.costLimitCny,
-            spentCny: spentAfterUi,
+            spentCny: spentAfterBuild,
             // 07 回流：上一轮没过的地方，这一段会作为一条 system 消息发给模型
             callbackContext,
+            /*
+              ★ 把并行构建的产出交给装配 ★
+              传了它，装配那一次调用的用户消息里就真的带上各模块写出来的
+              html / css / js 片段，而且产物检查会多一条"模块代码确实进入了产物"
+              的探针逐模块核对。不传（预算被挡、没有架构）时，装配的行为
+              与这次改动之前**完全一致**。
+            */
+            batch,
+            arch: archFromStage,
           });
         }
 
