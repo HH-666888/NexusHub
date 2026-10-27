@@ -131,41 +131,111 @@ export function extractJsonText(raw: string): string | null {
   if (text.startsWith("{")) {
     const end = text.lastIndexOf("}");
     // 有闭合括号就截到那里
-    if (end > 0) return text.slice(0, end + 1);
+    if (end > 0) return escapeRawControlChars(text.slice(0, end + 1));
     /*
       起了头却没有闭合 —— 输出被截断了。
       这时候**不能返回 null**：那会让上层报「找不到 JSON」，
       而真实情况是「JSON 写坏了」，两者的排查方向完全不同。
       原样返回，让 JSON.parse 给出具体的语法错误位置。
     */
-    return text;
+    return escapeRawControlChars(text);
   }
 
   // 顶层是数组：也要抠出来，好让上层给出「不是对象」这个准确结论
   if (text.startsWith("[")) {
     const end = text.lastIndexOf("]");
-    if (end > 0) return text.slice(0, end + 1);
-    return text;
+    if (end > 0) return escapeRawControlChars(text.slice(0, end + 1));
+    return escapeRawControlChars(text);
   }
 
   // 再试 ```json ... ``` 围栏
   const fenced = /```(?:json)?\s*\n?([\s\S]*?)```/.exec(text);
   if (fenced) {
     const inner = fenced[1].trim();
-    if (inner.startsWith("{") || inner.startsWith("[")) return inner;
+    if (inner.startsWith("{") || inner.startsWith("[")) return escapeRawControlChars(inner);
   }
 
   // 最后试「第一个 { 到最后一个 }」
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
-  if (start >= 0 && end > start) return text.slice(start, end + 1);
+  if (start >= 0 && end > start) {
+    return escapeRawControlChars(text.slice(start, end + 1));
+  }
 
   // 对象没有，数组也试试
   const arrStart = text.indexOf("[");
   const arrEnd = text.lastIndexOf("]");
-  if (arrStart >= 0 && arrEnd > arrStart) return text.slice(arrStart, arrEnd + 1);
+  if (arrStart >= 0 && arrEnd > arrStart) {
+    return escapeRawControlChars(text.slice(arrStart, arrEnd + 1));
+  }
 
   return null;
+}
+
+/**
+ * 把 JSON **字符串里面**的裸控制字符转义掉。
+ * ============================================================
+ * ── 为什么需要它（真实故障，不是设想）──
+ *   实测一条真运行里，一个模块栽在这里：
+ *     "产出无法使用：JSON 解析失败：Bad control character in string literal
+ *      in JSON at position 3122 (line 1 column 3123)"
+ *   模块的产出是 {html, css, js} 三段代码，模型很容易在字符串里**直接换行**，
+ *   而不是写 \n —— 那不是合法 JSON，于是整个模块被丢弃：
+ *   钱花了、产物里少一整块功能，而它本可以救回来。
+ *
+ * ── 修复的边界（这一条比修复本身更重要）──
+ *   · 只动**字符串字面量内部**的控制字符（U+0000–U+001F）；
+ *   · 字符串外面的一律不动 —— 缩进用的换行、逗号后的空格都是合法 JSON，
+ *     动了它们反而会把好数据弄坏（反例测试钉着这一条）；
+ *   · 已经转义过的（\n、\"、\\）原样保留，不重复转义。
+ *
+ * 正确性靠"逐字符判断是否在字符串里"，而不是正则 ——
+ * 正则分不清 `"a\":\"b"` 这种带转义引号的串，判断错一次就会把结构改坏。
+ */
+export function escapeRawControlChars(text: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
+    if (!inString) {
+      out += ch;
+      if (ch === '"') inString = true;
+      continue;
+    }
+
+    if (escaped) {
+      // 上一个字符是反斜杠：这个字符无论是什么都已经被转义，原样放行
+      out += ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\\") {
+      out += ch;
+      escaped = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      out += ch;
+      inString = false;
+      continue;
+    }
+
+    const code = ch.charCodeAt(0);
+    if (code < 0x20) {
+      // 裸控制字符（换行、制表、回车……）：转义成 \uXXXX
+      out += `\\u${code.toString(16).padStart(4, "0")}`;
+      continue;
+    }
+
+    out += ch;
+  }
+
+  return out;
 }
 
 function asStringArray(v: unknown): string[] {
