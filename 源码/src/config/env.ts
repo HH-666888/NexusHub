@@ -1,29 +1,15 @@
 /**
- * 环境配置集中处
- * ============================================================
- * 全项目只有这一个文件读取 process.env。
- * 其他任何地方要配置，都从这里取 —— 这样「配置有哪些」永远只有一个答案。
- *
- * 安全（赛题硬性要求）：
- *   API 密钥等敏感信息不得出现在公开仓库中，须通过环境变量方式配置。
- *   本地开发把真实值写进 .env.local（已被 .gitignore 忽略），
- *   仓库里只保留 .env.example 模板。
- *
- * 注意：本文件只在服务端使用，不要在任何 "use client" 组件里引入。
+ * 环境配置集中处：全项目只有这一个文件读取 process.env。
+ * 密钥等敏感信息只放 .env.local（已忽略），仓库里只保留 .env.example。
+ * 仅服务端使用，不要在任何 "use client" 组件里引入。
+ * 所有键在 .env.example 里都有对应说明。
  */
 
 import fs from "node:fs";
 
 /**
- * 让命令行脚本也能读到 .env.local
- * ============================================================
- * Next.js 会自动加载 .env.local，但用 tsx 直接跑的脚本不会 ——
- * 于是「页面上能跑、脚本里说密钥缺失」这种困惑就会出现。
- *
- * 这里统一解决：非 Next.js 环境下自己加载一次。
- * 判断依据是 NEXT_RUNTIME —— 它是 Next.js 注入的标志，
- * 有这个标志说明 Next 已经加载过了，不必重复加载，
- * 也避免在真实部署环境里用本地文件覆盖掉容器注入的环境变量。
+ * 让命令行脚本也能读到 .env.local。
+ * NEXT_RUNTIME 是 Next.js 注入的标志，有它说明已经加载过，不必重复加载。
  */
 if (!process.env.NEXT_RUNTIME && fs.existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
@@ -42,17 +28,8 @@ function num(name: string, fallback: number): number {
 }
 
 /**
- * 读门禁覆盖的那个环境变量。
- *
- * ── 为什么写成一个函数而不是 `=== "pause" ? ... : ...` ──
- *   那个写法**只有一个有效值**：除了 "pause" 之外全是"放行"。
- *   于是 `SPEC_GATE=continue` 和 `SPEC_GATE=香蕉` 和没设
- *   得到的结果一模一样 —— 一个拼错的值会静默变成"放行"，
- *   而放行意味着模型替用户猜。
- *
- *   这里改成白名单：不认识的值一律回落到 "declared"（按权限模型来）。
- *   拼错时的后果是"多问了一次人"，而不是"少问了一次" ——
- *   这两个代价不对等。
+ * 门禁覆盖取白名单：不认识的值一律回落到 "declared"。
+ * 若写成"非 pause 即放行"，拼错的值会静默放行，而放行意味着模型替用户猜。
  */
 function parseGateOverride(raw: string): "declared" | "pause" | "continue" {
   if (raw === "pause" || raw === "continue" || raw === "declared") return raw;
@@ -73,58 +50,21 @@ export const env = {
     cpus: num("SANDBOX_CPUS", 1),
     timeoutSeconds: num("SANDBOX_TIMEOUT_SECONDS", 300),
     /**
-     * 并行构建的并发上限（同时在飞的模块构建调用数）。
-     *
-     * ── 为什么默认是 3，而不是 1 ──
-     *   第四道工序叫「并行构建」。默认 1 就是默认不并行 ——
-     *   那样这条流水线在真实运行里和单次生成没有区别，
-     *   并行只活在文档和测试里。
-     *
-     *   3 是个保守的起点：模块构建是**网络等待**（等模型吐字），
-     *   不是本机算力，三个同时在飞对本机内存几乎没有影响。
-     *   真嫌慢/嫌贵可以调：调 1 就退回串行，调大就是更激进。
-     *
-     * <=0 或没配时，编排层会回落到 domain/module-build.ts 里的
-     * DEFAULT_BUILD_CONCURRENCY（同一个数，但只有一份定义）。
+     * 并行构建的并发上限。默认 3：模块构建是网络等待，几个同时在飞对内存影响很小；
+     * <=0 或未配置时，编排层回落到 domain/module-build.ts 的 DEFAULT_BUILD_CONCURRENCY。
      */
     maxParallelBuild: num("MAX_PARALLEL_BUILD", 3),
   },
   run: {
-    /** 单次运行成本上限（元），超过后自动降档 */
+    /** 单次运行成本上限（元）；各工序入口的预算闸门据此拒绝继续 */
     costLimitCny: num("RUN_COST_LIMIT_CNY", 5),
-    /** 当前工作流版本。产物契约或阶段定义变更时必须递增，
-     *  否则旧产物会被误判为兼容 —— 这是「失效传播」的判据 */
+    /** 工作流版本：产物契约或阶段定义变更时必须递增，否则旧产物会被误判为兼容 */
     workflowVersion: "v1",
     /**
-     * 人工门禁的**运行时覆盖**。
-     *
-     * ⚠️ 它不是这件事的真相来源。
-     *    真相在 core/pipeline/stages.ts：规格化那一道声明了
-     *    `humanGate: true`，也就是"这一步要人点头"。
-     *    这里只是允许你在运行时改主意，规则在 core/pipeline/gate-policy.ts。
-     *
-     * "declared" —— 按声明来（也就是步骤自己的权限模型说了算）
-     * "pause"    —— 强制停下等人。**加严永远允许**，不需要理由
-     * "continue" —— 强制放行。这是**覆盖声明**，所以会留下痕迹：
-     *               事件流里会明说"这一步声明了要人点头，但当前设置
-     *               是先放行，模型会替你猜"。
-     *
-     * ── 为什么默认 continue ──
-     *   这是跑真实端到端时改的。原来默认拦，结果发现模型对
-     *   「做一个番茄钟」这种一句话需求也会问出 3 个问题 ——
-     *   也就是说**几乎每次生成都会被拦一次**。
-     *
-     *   这个产品的承诺是「一句话 → 一个能用的成品」。
-     *   每次都要先回答三个问题才能看到东西，那个承诺就不成立了。
-     *
-     *   所以默认放行：疑问仍然显示，用户看到了可以主动回头改，
-     *   但不会因为没回答而拿不到东西。
-     *
-     * ── 但覆盖不能是静默的 ──
-     *   一个静默关掉的门禁，和没有门禁是同一件事 —— 而且更糟，
-     *   因为界面上还写着「要人点头」，用户会以为有人把关过了。
-     *   所以 resolveGatePolicy 会把它标成 overridden 并带上 overrideNote，
-     *   事件流照实说。
+     * 人工门禁的运行时覆盖，取值 declared / pause / continue。
+     * 真相来源是 core/pipeline/stages.ts 的 humanGate 声明，规则见 gate-policy.ts。
+     * 默认 continue：几乎每次生成都会被拦，与"一句话出成品"的承诺冲突；
+     * 覆盖不静默，resolveGatePolicy 会标成 overridden，事件流照实说明。
      */
     specGate: parseGateOverride(str("SPEC_GATE", "declared")),
   },

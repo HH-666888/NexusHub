@@ -4,49 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 /**
- * 全局顶栏
- * ============================================================
- * **整个产品只有这一个顶栏。** 新加页面时用它，不要再写第二个。
+ * 全局顶栏。整个产品只有这一个，新加页面时用它，不要再写第二个。
  *
- * ── 为什么要把三套合成一套 ──
- *   之前有三套，页边距各不相同：
- *
- *     HomeNav        px-8 + max-w-1400   首页 / 画布
- *     CockpitHeader  px-6                工作台
- *     settings 里现写的   max-w-6xl + px-6   设置（品牌落在 x=472）
- *
- *   表现是**换一个页面，导航就横向跳一下** —— 而且宽屏上跳得更多。
- *   加第四个页面时必然再抄一份，跳得更乱。
- *
- * ── 统一的是什么，不统一的是什么 ──
- *   统一：位置（左边的起点、右边的终点）、品牌、右侧那组（花费 / 主题 / 用户）。
- *   不统一：**中间放什么由页面决定** ——
- *     首页那一排链接是 `links`，
- *     工作台那个一句话输入框是 `center`，
- *     设置页两个都不给。
- *
- *   这是有意的：三个页面的中间本来就该不一样，
- *   硬要一样就只能往导航里塞一个什么都不像的东西。
- *   但**两头必须一模一样** —— 那是"同一个产品"的观感来源。
- *
- * ── 页边距为什么不设 max-width ──
- *   1440 的屏上 max-w-1400 是各让 52px，看着正常；
- *   1920 的屏上同样的写法变成各让 292px，品牌被推到中间，角上一大片空。
- *   同一条写法在两种屏上差六倍，而宽屏才是多数人的屏。
- *   所以这里只有一个固定的 20px。
+ * 位置（左边的起点、右边的终点）、品牌、右侧那组统一；中间放什么由页面决定 ——
+ * 三个页面之前各写一套页边距，表现是换一个页面导航就横向跳一下。
+ * 不设 max-width：1440 屏上各让 52px 看着正常，1920 上同样的写法变成各让 292px。
  */
 
 export interface AppNavProps {
   /** 累计已花费（元）。null 表示还没花过，或还没登录 */
   spentCny: number | null;
   /**
-   * 当前用户。**null 表示还没登录** —— 那时右侧显示登录/注册，
-   * 而不是把用户区藏起来。
-   *
-   * 为什么要有这一档：`/welcome` 是唯一一个未登录也能看的页面。
-   * 原来它自己写了第四套顶栏（max-w-6xl 居中），
-   * 于是"未登录"和"已登录"之间，导航也会横跳一次。
-   * 两头本来就该在同一个位置 —— 变的只是右边那两个按钮。
+   * 当前用户。null 表示还没登录，那时右侧显示登录/注册，而不是把用户区藏起来。
+   * /welcome 是唯一未登录也能看的页面，原来它自己写了第四套顶栏，
+   * 于是「未登录」和「已登录」之间导航也会横跳一次。
    */
   user: { displayName: string; username: string } | null;
   /** 主题开关。服务端渲染好传进来 —— 客户端组件不能直接 import 服务端组件 */
@@ -62,18 +33,9 @@ export interface AppNavProps {
 }
 
 /*
-  三项，不是四项。
-
-  ── 为什么去掉了「产物」 ──
-    它原来指向 `/studio?tab=graph` —— 工作台的一个标签页。
-    工作台退役之后那一项就没有落点了。
-    而"产物"这件事本身没有消失：**成品预览就在画布下面那块**，
-    和画布是同一屏里的两半，不该再单开一个入口。
-
-  ── 为什么「构建」指向 /canvas 而不是 /studio ──
-    画布现在是主界面，而且它下面就是生成区。
-    导航里留一个指向退役页面的「构建」，比没有这一项更糟 ——
-    点进去是一个界面上再也回不去的地方。
+  三项，不是四项。「产物」那一项指向 /studio?tab=graph，工作台退役之后就没有落点了，
+  而产物本身没消失：成品预览就在画布下面那块，不该再单开一个入口。
+  「构建」指向 /canvas 而不是 /studio —— 留一个指向退役页面的入口比没有更糟。
 */
 const LINKS = [
   { href: "/", label: "首页" },
@@ -82,14 +44,11 @@ const LINKS = [
 ] as const;
 
 /**
- * 顶栏的横向内边距 —— 从 shell/gutter.ts 来，只在那一个地方定义。
+ * 顶栏的横向内边距从 shell/gutter.ts 来，只在那一个地方定义 ——
+ * 这个文件是客户端组件，而首页那三段是服务端组件，从客户端模块 import
+ * 一个纯字符串常量会把整个导航拖进服务端的依赖图里。
  *
- * 放在单独的文件里而不是这里，是因为这个文件是客户端组件：
- * 首页那三段是服务端组件，从客户端模块 import 一个纯字符串常量
- * 会把整个导航组件拖进服务端的依赖图里。
- *
- * ⚠️ `export { X } from "..."` 只是**转发**，不会把 X 带进本模块的作用域 ——
- *    所以下面还要一条 import。只写转发的话，本文件里用 X 会报「找不到名称」。
+ * export { X } from "..." 只是转发，不会把 X 带进本模块作用域，所以下面还要一条 import。
  */
 export { NAV_GUTTER } from "./gutter";
 import { NAV_GUTTER } from "./gutter";
@@ -107,17 +66,15 @@ export function AppNav({
 
   return (
     /*
-      data-app-nav 是给自动化测试认的。
-      不能靠"页面里第一个 header"去认顶栏 —— `<header>` 也是个合法的
-      语义化标签，卡片和区块都会用它（设置页就有三个），
-      按标签数会把它们一起数进来。
+      data-app-nav 是给自动化测试认的。不能靠「页面里第一个 header」去认顶栏 ——
+      header 是合法的语义化标签，卡片和区块都会用它（设置页就有三个）。
     */
     <header
       data-app-nav
       className="sticky top-0 z-20 border-b border-[var(--color-border-soft)] bg-[var(--color-canvas)]/85 backdrop-blur-md"
     >
       <div className={`flex h-16 items-center gap-6 ${NAV_GUTTER}`}>
-        {/* ---------- 品牌 ---------- */}
+        {/* 品牌 */}
         <Link href="/" className="flex flex-none items-center gap-2">
           <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-[var(--app-accent)]" />
           <span className="flex flex-col leading-none">
@@ -126,10 +83,10 @@ export function AppNav({
           </span>
         </Link>
 
-        {/* ---------- 中间：页面自己决定 ---------- */}
+        {/* 中间：页面自己决定 */}
         {center ?? (user ? <NavLinks pathname={pathname} /> : null)}
 
-        {/* ---------- 右侧：已登录和未登录各一档，但位置一样 ---------- */}
+        {/* 右侧：已登录和未登录各一档，但位置一样 */}
         <div className="ml-auto flex flex-none items-center gap-4">
           {user ? (
             <SignedIn user={user} spentCny={spentCny} themeToggle={themeToggle} actions={actions} />

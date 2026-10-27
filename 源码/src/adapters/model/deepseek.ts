@@ -1,26 +1,7 @@
 /**
- * DeepSeek 适配器
- * ============================================================
- * ModelPort 的真实实现。内核只认识 ModelPort 接口，
- * 换供应商只需另写一个这个文件。
- *
- * 本文件里每一个「看起来多余的判断」，都对应一次真实的踩坑或官方文档的明确限制：
- *
- *   ① 思考 token 计入输出预算
- *      实测：max_tokens 设为 20 时，模型把预算全花在思考上，
- *      content 返回空串、finish_reason 为 "length"。
- *      → 必须给出足够的默认预算，并把「被截断」显式标记出来。
- *
- *   ② 思考模式下 temperature 不生效
- *      官方文档明确：设置不会报错，但也不会生效。
- *      → 与其假装设置了，不如只在关闭思考时才传，并在这里写清楚。
- *
- *   ③ 关闭思考会连带减少输入 token
- *      实测：同一问题，开启思考输入 36 tokens，关闭思考只要 10 tokens ——
- *      服务端在开启思考时会自动注入一段思考引导提示词。
- *
- *   ④ 缓存命中的输入价格是未命中的 1/50
- *      → 用量字段必须区分 cache_hit 与 cache_miss，否则成本会算错一个量级。
+ * DeepSeek 适配器，ModelPort 的实现；换供应商只需另写一个此文件。
+ * 思考 token 计入 max_tokens，预算不足会返回空正文并标记 length；思考模式下 temperature 不生效。
+ * 缓存命中的输入价是未命中的 1/50，用量必须区分 cache_hit 与 cache_miss。
  */
 
 import { env } from "@/config/env";
@@ -36,18 +17,14 @@ import type {
   TokenUsage,
 } from "@/core/ports/model";
 
-/** 默认输出预算。给足余量，避免思考 token 把预算吃光 */
+/** 默认输出预算，给足余量，避免被思考 token 吃光 */
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
-/** 单次调用超时（毫秒）。构建任务可能很慢，给到 5 分钟 */
+/** 单次调用超时（毫秒）；构建任务可能很慢，给到 5 分钟 */
 const TIMEOUT_MS = 300_000;
 
 /**
- * 各档位的默认思考投入。
- *
- *   decide     —— 架构决策、方案裁决、复杂归因，必须深思
- *   execute    —— 写码改码，默认强度
- *   mechanical —— 重命名、样板代码、格式化，关掉思考
- *                 省时间（实测快 42%）也省钱（思考 token 按输出价计费）
+ * 各档位的默认思考投入：decide 求深思，execute 默认，mechanical 关掉思考。
+ * 关掉思考既省时也省钱：思考 token 按输出价计费。
  */
 const DEFAULT_EFFORT: Record<ModelTier, ModelEffort> = {
   decide: "high",
@@ -56,14 +33,8 @@ const DEFAULT_EFFORT: Record<ModelTier, ModelEffort> = {
 };
 
 /**
- * 模型接入点
- * ============================================================
- * 默认取自平台自己的环境变量；用户配置了自定义接入时，这一组值被替换掉。
- *
- * 为什么做成参数而不是让适配器直接读全局配置：
- *   适配器因此保持**无状态** —— 同一个进程里可以同时存在多个
- *   指向不同服务商的实例，互不干扰。将来要做「按运行选择模型」时，
- *   不用去改这里的任何一行。
+ * 模型接入点：默认取平台环境变量，配置了自定义接入时整组替换。
+ * 做成参数使适配器无状态，同一进程可并存指向不同服务商的实例。
  */
 export interface ModelEndpoint {
   baseUrl: string;
@@ -72,7 +43,7 @@ export interface ModelEndpoint {
   executeModel: string;
 }
 
-/** 平台自己的接入点（来自 .env.local），也是所有人的默认值 */
+/** 平台接入点（来自 .env.local），所有人的默认值 */
 export function platformEndpoint(): ModelEndpoint {
   return {
     baseUrl: env.model.baseUrl,
@@ -83,17 +54,11 @@ export function platformEndpoint(): ModelEndpoint {
 }
 
 /**
- * 档位 → 模型名。
- * 注意这是「职责切分」而不是「挑便宜的用」：
- * 机械档位用的是同一个模型，只是把思考关掉 —— 因为那类活儿不需要思考。
+ * 档位到模型名的映射。这是职责切分而非挑便宜的用：mechanical 用同一个模型，只关掉思考。
  */
 function modelForTier(tier: ModelTier, endpoint: ModelEndpoint): string {
   return tier === "decide" ? endpoint.decideModel : endpoint.executeModel;
 }
-
-/* ============================================================
-   请求体构造
-   ============================================================ */
 
 interface ApiContentPart {
   type: "text" | "image_url";
@@ -157,10 +122,6 @@ function buildBody(
   return body;
 }
 
-/* ============================================================
-   响应解析
-   ============================================================ */
-
 interface ApiUsage {
   prompt_tokens?: number;
   completion_tokens?: number;
@@ -186,14 +147,17 @@ function extractUsage(u: ApiUsage | undefined): TokenUsage {
   return {
     inputTokens: u?.prompt_tokens ?? 0,
     outputTokens: u?.completion_tokens ?? 0,
-    // 思考 token 不单独计费 —— 它已经包含在 outputTokens 里（官方计费口径是输入+输出总量）
+    // 思考 token 不单独计费：已包含在 outputTokens 里（官方口径为输入 + 输出总量）
     reasoningTokens: u?.completion_tokens_details?.reasoning_tokens ?? 0,
     cacheHitTokens: u?.prompt_cache_hit_tokens ?? 0,
     cacheMissTokens: u?.prompt_cache_miss_tokens ?? 0,
   };
 }
 
-/** 把 HTTP 层的失败翻译成能直接照做的中文提示 */
+/**
+ * 把 HTTP 失败翻译成能直接照做的中文提示。
+ * 按状态码给出密钥、余额、限速、供应商故障四类建议。
+ */
 async function describeFailure(res: Response): Promise<string> {
   let detail = "";
   try {
@@ -231,10 +195,6 @@ function assertConfigured(endpoint: ModelEndpoint) {
     );
   }
 }
-
-/* ============================================================
-   端口实现
-   ============================================================ */
 
 async function complete(
   req: ModelRequest,
@@ -278,11 +238,8 @@ async function complete(
 }
 
 /**
- * 流式调用：逐块产出正文与思考过程，最后给一次完整结果。
- *
- * 流式的价值不只是「打字机效果」——
- * 它是「AI 思考可视化」的数据来源：用户在还没出结果时就能看到模型在想什么，
- * 这对我们这套「把过程完全摊开给用户看」的产品定位是必需的。
+ * 流式调用：逐块产出正文与思考，最后给一次完整结果。
+ * 流式是思考可视化的数据来源，不只是打字机效果。
  */
 async function* stream(
   req: ModelRequest,
@@ -316,7 +273,8 @@ async function* stream(
   for await (const chunk of res.body) {
     buffer += decoder.decode(chunk as Uint8Array, { stream: true });
 
-    // SSE 以空行分隔事件；只处理完整行，残行留在缓冲区等下一块
+    // SSE 以空行分隔事件；只处理完整行，残行留在缓冲区等下一块。
+  // 流式响应的用量只在最后一个数据块里出现。
     const lines = buffer.split("\n");
     buffer = lines.pop() ?? "";
 
@@ -353,7 +311,8 @@ async function* stream(
     }
   }
 
-  // 价格与档位都由适配器算好再报出去 —— 内核不认识任何一家的价目表
+  // 价格与档位由适配器算好再报出，内核不认识任何一家的价目表。
+  // 价格表在 pricing.ts，换供应商只改那一个文件。
   const streamCost = computeCost(model, usage);
 
   yield {
@@ -373,11 +332,8 @@ async function* stream(
 }
 
 /**
- * 创建一个绑定到某个接入点的模型端口。
- *
- * 不传参数时用平台自己的接入点 —— 这也是绝大多数情况。
- * 用户配置了自定义接入时，调用方传入那一组值即可，
- * 适配器本身不需要知道「配置」这件事存在。
+ * 创建绑定到某个接入点的模型端口；不传参数时用平台接入点。
+ * 自定义接入由调用方传入，适配器不需要知道配置的存在。
  */
 export function createDeepSeekPort(endpoint?: ModelEndpoint): ModelPort {
   const resolved = endpoint ?? platformEndpoint();
@@ -387,5 +343,5 @@ export function createDeepSeekPort(endpoint?: ModelEndpoint): ModelPort {
   };
 }
 
-/** 全局单例：平台默认接入。适配器无状态，复用即可 */
+/** 平台默认接入的单例；适配器无状态，复用即可 */
 export const deepseekPort: ModelPort = createDeepSeekPort();

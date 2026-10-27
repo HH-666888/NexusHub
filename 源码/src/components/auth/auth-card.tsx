@@ -13,7 +13,6 @@ interface AuthCardProps {
 
 /**
  * 登录 / 注册页共用的卡片外壳
- * ============================================================
  * 两页视觉完全一致，只有表单内容与底部链接不同 ——
  * 把外壳抽出来，就不会出现「改了登录页忘了改注册页」的情况。
  */
@@ -27,7 +26,7 @@ export function AuthCard({
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm">
-        {/* 品牌区。点它去**欢迎页**而不是根路径 ——
+        {/* 品牌区。点它去欢迎页而不是根路径 ——
             根路径是需要登录的新首页，从登录页点它会被弹回登录页，
             形成一个点了没反应的死循环。 */}
         <div className="mb-8 text-center">

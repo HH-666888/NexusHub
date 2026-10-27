@@ -3,62 +3,29 @@ import type { OutlineRow } from "@/core/planning/outline";
 import { TONE_RGB, statusTone } from "@/core/planning/task-point";
 
 /**
- * 左侧任务点清单
- * ============================================================
- * 画布和它是**同一棵树的两种视图**（见 core/planning/outline.ts 开头那段）。
- * 所以这个组件里没有一行取数逻辑：rows 由服务端算好传进来，
- * 它只负责把 OutlineRow 画成能读、能点、能折叠的一列。
+ * 左侧任务点清单。画布和它是同一棵树的两种视图，所以这里没有一行取数逻辑：
+ * rows 由服务端算好传进来，它只负责画成能读、能点、能折叠的一列。
  *
- * ── 为什么是服务端组件（没有 "use client"）──
- *   清单的内容只取决于「这次运行的事件投影到了哪一步」，
- *   而那件事在服务端已经算完了（page.tsx 里 projectAt 那一步）。
- *   做成客户端组件的话，浏览器要等 JS 下载完、再请求一次事件，
- *   中间那一两百毫秒里左侧是一条空白 —— 而它恰恰是"有没有在跑"的指示器，
- *   空白会被读成"什么都没发生"。
+ * 服务端组件（没有 "use client"）：内容只取决于这次运行投影到了哪一步，
+ * 而那一步在服务端已经算完。做成客户端组件的话，左侧会先空一两百毫秒，
+ * 而它恰恰是「有没有在跑」的指示器。点击是 <a href>、折叠是原生 <details>，
+ * 两个都是浏览器自己就会的事，不该用一次水合去换。
  *
- *   ⚠️ 这一期它长出了两个交互（点击跳转 + 折叠），**仍然没有变成客户端组件**：
- *     跳转是 `<a href>`（URL 状态，见下）、折叠是原生 `<details>/<summary>`，
- *     两个都是浏览器自己就会的事，不需要一行 JS。
- *     为了让它们工作而加 "use client"，等于用一次水合换两个原生行为 ——
- *     而且会把上面那两百毫秒的空白买回来。这两条取舍写在下面各自的段落里。
- *
- * ── 为什么状态色要和画布一致 ──
- *   同一个任务点在两个地方出现时，颜色必须说同一句话。
- *   清单里"验收"是绿的、画布上"验收"是蓝的，用户第一个念头是
- *   "这是两件事吧" —— 然后他就不信任任何一边了。
- *   所以这里不自己挑颜色：status
- *   → 色调走内核的 statusTone（唯一一份映射，有单测遍历八种状态），
- *   色调 → RGB 用项目既有的那六个色值（和画布卡片、子方块同一套调色板）。
+ * 状态色不在这里挑：走内核的 statusTone → TONE_RGB，和画布卡片同一套调色板。
+ * 两处各留一份六色表的话，同一个任务点会在清单里是蓝的、画布上是灰的。
  */
 
-/**
- * ⚠️ 色值表**不在这里**，它搬去了 core/planning/task-point.ts（TONE_RGB）。
- *
- * 原因：画布上的一级 Agent 卡也要按同一套色调上色。
- * 两处各留一份六色表的话，改一处忘一处不会有任何报错 ——
- * 只会让同一个任务点在清单里是蓝的、在画布上是灰的。
- * 那也是 statusTone 住在内核里的同一个理由（唯一一份映射，有单测遍历八种状态）。
- */
+/* 色值表在 core/planning/task-point.ts（TONE_RGB）：画布上的一级 Agent 卡也要按同一套上色，
+   两处各留一份的话，改一处忘一处不会有任何报错。 */
 
 /**
  * 一行（或一组）点下去跳到哪儿。
  *
- * ── 为什么用 URL 而不是组件内部状态 ──
- *   和 `?run=<id>` 是同一个模式（见 app/canvas/page.tsx 开头那段）：
- *   焦点写在 URL 上，于是**刷新、分享、后退**三件事都自动成立。
- *   做成 useState 的话：
- *     · 刷新一下，用户刚点开的那一步就没了；
- *     · 把链接发给别人，对方打开看到的是默认视图 ——
- *       而"我正在看第 4 道工序下面的这一项"恰恰是最该能发出去的一句话；
- *     · 后退键会退出整个页面，而不是退回上一个视角。
+ * 用 URL 而不是组件内部状态：刷新、分享、后退三件事都自动成立。
+ * 「我正在看第 4 道工序下面的这一项」恰是最该能发出去的一句话。
+ * 也顺带守住了一件更要紧的事：焦点不是组件状态，清单不必变成客户端组件。
  *
- *   还顺带守住了一件更要紧的事：**清单不必变成客户端组件**。
- *   焦点如果是组件状态，"点了哪一行"就得存在浏览器里，
- *   而这个组件的全部价值就在于它是服务端算完直接吐出来的一列。
- *
- * ⚠️ 已有的 `?run=` 一个都不能丢。
- *    丢掉的话，点一行会跳到"最近一次运行"上 ——
- *    而那多半是**另一次运行**，用户看到的是别的树，还会以为清单点错了。
+ * 已有的 ?run= 一个都不能丢，否则点一行会跳到另一次运行上，用户看到的是别的树。
  */
 function focusHref(runId: string | null | undefined, nodeId: string): string {
   const focus = `focus=${encodeURIComponent(nodeId)}`;
@@ -71,19 +38,14 @@ export function PlanningOutline({
 }: {
   rows: readonly OutlineRow[];
   /**
-   * 当前选中的运行 id。**只用来拼链接**（见 focusHref）——
+   * 当前选中的运行 id。只用来拼链接（见 focusHref）——
    * 清单的内容仍然全部来自 rows，这里不拿它去查任何东西。
    */
   runId?: string | null;
 }) {
   /*
-    ---------- 分成「一级行 + 它下面的二级行」 ----------
-    清单在内核里本来就是按这个顺序吐出来的（toOutline 先 push 一级行、
-    再 push 它的二级行）；这里只是把它切成折叠需要的组。
-
-    ⚠️ 不重新排序、不按 parentId 去找父子关系：
-       那样等于在界面里重算一次树 —— 而"同一棵树只算一次"正是
-       outline.ts 文件头那条。顺序由内核给，界面只负责切段。
+    切成「一级行 + 它下面的二级行」。清单在内核里本来就是按这个顺序吐出来的，
+    这里只切段，不重排、不按 parentId 找父子 —— 「同一棵树只算一次」。
   */
   const groups: { head: OutlineRow; kids: OutlineRow[] }[] = [];
   for (const row of rows) {
@@ -98,27 +60,23 @@ export function PlanningOutline({
     <aside
       data-planning-outline
       /*
-        w-[17rem] + shrink-0 是硬性要求：清单是**导航**，
-        宽度随窗口变的话，每次拖动窗口它都在跳，
-        而用户是靠"第三行那个位置"记事情的。
+        w-[17rem] + shrink-0 是硬性要求：清单是导航，宽度随窗口变的话每次拖窗口它都在跳，
+        而用户是靠「第三行那个位置」记事情的。
       */
       className="flex h-full min-h-0 w-[17rem] shrink-0 flex-col overflow-y-auto border-r border-[var(--color-border-soft)] bg-[var(--color-surface)]"
     >
       <header className="border-b border-[var(--color-border-soft)] px-3.5 py-3">
         <h2 className="text-[12.5px] font-semibold text-[var(--ink-1)]">任务点清单</h2>
         {/*
-          这句副标题不是装饰，是在解释"清单和画布的关系"：
-          两处显示同一棵树，所以清单里有的画布上一定找得到。
-          不写的话，用户会以为左边是另一个东西（比如"待办列表"）。
+          这句副标题在解释清单和画布的关系：两处显示同一棵树。
+          不写的话，用户会以为左边是另一个东西（比如待办列表）。
         */}
         <p className="mt-1 text-[10.5px] leading-relaxed text-[var(--ink-5)]">
           画布上有什么，这里就有什么 —— 同一棵树的两种视图
         </p>
         {/*
-          这一句是**这一期新加的**，而且它必须说清楚两件事：
-          点标题会跳（跳的是视口，不是数据），点左边圆点会折叠。
-          不写的话，用户点一下标题发现画面动了，第一反应是
-          "我是不是改到什么了" —— 而这一类疑虑只能靠一句话消掉。
+          这一句要说清两件事：点标题会跳（跳的是视口，不是数据），点圆点会折叠。
+          不写的话，用户点一下标题发现画面动了，会以为自己改到了什么。
         */}
         <p className="mt-1 text-[10.5px] leading-relaxed text-[var(--ink-6)]">
           点标题 → 画布聚焦到那一步；点前面的圆点 → 折叠/展开
@@ -127,11 +85,8 @@ export function PlanningOutline({
 
       {rows.length === 0 ? (
         /*
-          空态。**没选中运行**时清单是空的，这不是故障：
-          没有运行就没有计划，六道工序此刻连"待规划"都谈不上 ——
-          它们是"这次运行的六道工序"，运行都还没有呢。
-
-          所以这里说清楚"去哪儿弄一条运行来"，而不是画六个灰条假装有东西。
+          空态。没选中运行时清单是空的，这不是故障：没有运行就没有计划，
+          六道工序此刻连「待规划」都谈不上。所以说清去哪儿弄一条运行来。
         */
         <div data-outline-empty className="px-3.5 py-4">
           <p className="text-[11.5px] text-[var(--ink-4)]">还没有选中的构建</p>
@@ -154,27 +109,14 @@ export function PlanningOutline({
 /**
  * 一个一级行 + 它下面所有的二级行（一个可折叠的组）。
  *
- * ── 为什么折叠用原生 `<details>`/`<summary>`，而不是受控的 useState ──
+ * 折叠用原生 <details>/<summary> 而不是受控 useState：这是服务端组件，
+ * 受控的话整个清单要变成客户端组件，用户先看到一条空清单。
+ * 原生 details 的展开状态是浏览器自己的，服务端写一个 open 就够了；
+ * 键盘可达也是白给的（天生可聚焦、Enter/Space 可切换、阅读器会播报展开状态），
+ * 自己用 div + onClick 做，aria-expanded、tabindex、焦点样式要一样样补回来。
  *
- *   一、**服务端就能用。** 这个清单是服务端组件（见文件头）。
- *       用受控折叠，整个清单必须变成客户端组件，用户先看到一条空清单 ——
- *       而左侧这一列恰恰是"有没有在跑"的指示器。
- *       原生 `<details>` 的展开状态是**浏览器自己的**，服务端渲染时
- *       写一个 `open` 就够了，不需要水合。
- *
- *   二、**键盘可达是白给的。** `<summary>` 天生可聚焦、Enter/Space 可切换，
- *       屏幕阅读器会把它读成"展开/折叠的按钮"并播报展开状态。
- *       自己拿 div + onClick 做，这些东西要一样样补回来 ——
- *       而补漏的那些（aria-expanded、tabindex、焦点样式）正是最容易被忘的。
- *
- *   三、**零 JS。** 折叠不产生任何请求、不需要存储、不参与数据流。
- *       这是"到点生成"那套设计里少有的、可以完全交给浏览器的一件事。
- *
- * ── 默认全部展开（`open`）──
- *   第一眼要看到全貌：这一列是"这件事走到哪了"的答案，
- *   六个组默认收起的话，用户看到的是六行标题加六个三角，
- *   还得先点六下才知道发生了什么 —— 而"有没有在跑"正是首屏要回答的问题。
- *   收起是**用户为了聚焦而做的动作**，不该是默认状态。
+ * 默认全部展开：第一眼要看到全貌，六个组默认收起的话还得先点六下才知道发生了什么。
+ * 收起是用户为了聚焦而做的动作，不该是默认状态。
  */
 function OutlineGroup({
   head,
@@ -187,10 +129,8 @@ function OutlineGroup({
 }) {
   const rgb = TONE_RGB[statusTone(head.status)];
   /*
-    一级行下面的二级点有几个。
-    这个数字就是这一组收起时会藏起来的东西 —— 不写的话，
-    收起之后那一行只剩一个标题，用户没有任何办法知道
-    "这里到底有没有东西、值不值得展开"。
+    一级行下面的二级点有几个。这就是这一组收起时会藏起来的东西 ——
+    不写的话，收起之后用户没有任何办法知道值不值得展开。
   */
   const count = kids.length;
 
@@ -200,10 +140,8 @@ function OutlineGroup({
       data-outline-level={1}
       data-outline-status={head.status}
       /*
-        data-outline-focus 写在**行**上（而不是只写在里面的链接上）：
-        它描述的是"这一行点下去聚焦到哪个节点"。
-        占位行没有这个属性 —— 见下面 OutlineItem 里那段：
-        没有对应节点的行不许假装可点。
+        写在行上而不是只写在里面的链接上：它描述的是「这一行点下去聚焦到哪个节点」。
+        占位行没有这个属性 —— 没有对应节点的行不许假装可点。
       */
       data-outline-focus={head.canvasNodeId ?? undefined}
     >
@@ -218,11 +156,9 @@ function OutlineGroup({
       >
         <summary
           /*
-            ⚠️ summary **不要**写成 flex ——
-               Chrome 下 display:flex 会让原生那个三角标记消失，
-              而那个三角是"这里能折叠"唯一的视觉线索。
-              布局交给里面那层 span 去做（见下）。
-          */
+          summary 不要写成 flex —— Chrome 下 display:flex 会让原生那个三角标记消失，
+          而它是「这里能折叠」唯一的视觉线索。布局交给里面那层 span。
+        */
           className="cursor-pointer rounded-md px-2 py-1 text-[12px] font-semibold text-[var(--ink-2)] hover:bg-[var(--color-surface-2)]"
           title="点前面的圆点折叠/展开；点标题聚焦到画布上的这一步"
         >
@@ -247,16 +183,9 @@ function OutlineGroup({
               className="mt-[5px] inline-block h-1.5 w-1.5 shrink-0 rounded-full"
             />
             {/*
-              ---------- 标题就是那个链接 ----------
-              它是这一行**唯一**可点的跳转目标，也是为什么 summary 里
-              还要再套一个 <a>：点击 summary 的本职是折叠，
-              而"跳到画布上那一步"是另一件事，两者共用一行、
-              但不该共用同一个手势。
-
-              好消息是浏览器分得开：点在这条 <a> 上时，
-              Chrome/Firefox 都只走链接、不切换折叠
-              （它们是"可点击控件"，summary 不会抢它的激活行为）。
-              于是这一行的两个动作各归各位：**点圆点折叠、点标题跳转**。
+              标题就是那个链接。它是这一行唯一可点的跳转目标，也是 summary 里还要套一个 <a>
+              的原因：点击 summary 的本职是折叠，「跳到画布上那一步」是另一件事。
+              浏览器分得开：点在这条 <a> 上时只走链接、不切换折叠。
             */}
             <a
               href={focusHref(runId, head.canvasNodeId ?? head.id)}
@@ -265,8 +194,7 @@ function OutlineGroup({
               {head.title}
             </a>
             {/*
-              下面有几个二级点。
-              ★ 收起时它是唯一还看得见的"这里有多少东西"。
+              下面有几个二级点。收起时它是唯一还看得见的「这里有多少东西」。
             */}
             <span
               data-outline-count={count}
@@ -314,17 +242,11 @@ function OutlineItem({ row, runId }: { row: OutlineRow; runId: string | null }) 
   const rgb = TONE_RGB[statusTone(row.status)];
 
   /*
-    ★ 占位行不可点 ★
-
-    canvasNodeId 为 null = 画布上没有对应的节点（见 outline.ts 里那个字段的说明）。
-    这时候**不许给它加 href**：
-      · 加了也没用 —— 画布查不到那个 id，点了什么都不发生。
-        而"点了没反应"会被读成功能坏了，用户会再点几次，然后不再相信这一列。
-      · 更糟的是"顺手指到父节点"那种做法：它让这一行看起来能点、
-        点下去也确实有反应（跳到了那道工序上），但说的是另一件事 ——
-        「待规划的就是这道工序」。而事实是「这道工序下面还没有东西」。
-    所以这里的分支不是"有没有链接"的样式问题，是**这一行有没有资格被点**。
-    没有资格的时候，它连 hover 态都不该有 —— 见下面那两条 class。
+    占位行不可点。canvasNodeId 为 null = 画布上没有对应的节点，这时候不许给它加 href：
+      · 加了也没用 —— 画布查不到那个 id，点了什么都不发生，用户会以为功能坏了。
+      · 更糟的是「顺手指到父节点」：它让这一行看起来能点、点下去也确实跳到了那道工序，
+        但说的是另一件事 ——「待规划的就是这道工序」。
+    没有资格被点的时候，它连 hover 态都不该有。
   */
   const clickable = row.canvasNodeId !== null;
 
@@ -340,37 +262,21 @@ function OutlineItem({ row, runId }: { row: OutlineRow; runId: string | null }) 
         className="mt-[5px] inline-block h-1.5 w-1.5 shrink-0 rounded-full"
       />
       {/*
-        ⚠️ 占位行的文字来自 row.title（outline.ts 里的 PENDING_TITLE =「待规划」）。
+        占位行的文字来自 row.title（outline.ts 的 PENDING_TITLE），不在这里写死：
+        两处各抄一份迟早漂开一个字符，界面上写着待规划、测试却在找另一个词。
 
-        为什么不在这里写死「待规划」四个字：
-        那个字符串在 outline.ts 里有一个常量、一份注释解释它为什么必须存在，
-        测试也认它。界面再抄一份的话，两处迟早漂开一个字符 ——
-        而漂开的后果是"界面上写着待规划、测试却在找另一个词"。
-
-        ── 为什么占位行**必须存在**（这个组件里最要紧的一条）──
-          一级任务点下面还没有任何执行点时，那一行空白有两种解释：
-            「还没轮到」
-            「已经跑完了，什么都没有」
-          用户分不出来，而这两种情况该做的事完全不同 ——
-          前者等着就行，后者得去查为什么没产出。
-          「待规划」这一行就是用一句话把第一种解释说死：
-          **这里将来会有东西，只是还没到点。**
-          这也是"到点生成"那套设计在界面上的样子：
-          执行点不是提前排好藏在某处的，它到点才出生；
-          出生之前，界面上说"待规划"是唯一诚实的说法。
+        占位行必须存在：一级任务点下面还没有执行点时，那一行空白有两种解释 ——
+        「还没轮到」和「已经跑完了，什么都没有」，用户分不出来，而两者该做的事完全不同。
+        「待规划」这一行就是用一句话把第一种解释说死：这里将来会有东西，只是还没到点。
       */}
       <span className="min-w-0 flex-1 truncate">{row.title}</span>
       {/*
-        ---------- 待规划行上的「卡在哪」标记 ----------
-        这一行不只是一个"还没到点"的占位：它的一级工序可能**根本还没接**
-        （blockedBy，见 pipeline/stages.ts）。这种时候光写「待规划」，
-        用户会一直等一件不会发生的事。
+        待规划行上的「卡在哪」：这一行的一级工序可能根本还没接（blockedBy），
+        光写「待规划」的话，用户会一直等一件不会发生的事。
 
-        ⚠️ 标记由 CSS 生成（.outline-blocked-mark::after），**不是文本节点**。
-           理由是有一条现有断言钉着「占位行的文字就是『待规划』」
-           （e2e-canvas 第十七步）—— 把 ⓘ 写成真文本会让那条断言变红，
-           而它验的是另一件事（占位行说的是不是那句话）。
-           机器要读的那份事实仍然在：data-outline-blocked-by 与 title。
+        标记由 CSS 生成（.outline-blocked-mark::after），不是文本节点 ——
+        有一条断言钉着「占位行的文字就是那四个字」，写成真文本会让它变红。
+        机器要读的事实仍在 data-outline-blocked-by 与 title 里。
       */}
       {row.blockedBy ? (
         <span
@@ -391,11 +297,9 @@ function OutlineItem({ row, runId }: { row: OutlineRow; runId: string | null }) 
   );
 
   /*
-    二级行的样式分两半：
-      · 位置/缩进/虚线边框 —— 两种行共用（占位行是"浅色虚线"，见下）
-      · hover 与 cursor —— **只有能点的行才有**
-    把 hover 也写在不可点的行上，等于用视觉承诺一件不会发生的事。
-  */
+        样式分两半：位置/缩进/虚线边框两种行共用；hover 与 cursor 只有能点的行才有 ——
+        写在不可点的行上等于用视觉承诺一件不会发生的事。
+      */
   const shape = `flex items-start gap-2 rounded-md px-2 py-1 pl-5 text-[11.5px] font-normal text-[var(--ink-4)] ${
     row.placeholder
       ? // 占位行用虚线和浅色：视觉上就是"这里还没有东西"，
@@ -419,15 +323,9 @@ function OutlineItem({ row, runId }: { row: OutlineRow; runId: string | null }) 
       /* 只有真的有对应节点时才带这个属性 —— 它同时是"这行可点"的标记 */
       data-outline-focus={row.canvasNodeId ?? undefined}
       /*
-        ---------- 待规划行：把"为什么还没接"交给界面 ----------
-        一级工序的 implementation 是 planned 时，它带着一条 blockedBy
-        （见 pipeline/stages.ts）。这一行据此带上三样东西：
-          · data-outline-blocked-by —— 机器可读的那份事实（e2e 认它）
-          · title                    —— 鼠标停一下就能看到为什么
-          · 行尾那个 ⓘ               —— 让人知道"这里有话要说，值得停一下"
-        ⚠️ 只有真有时才带这个属性。没有它的行必须与从前**一字不差** ——
-           一条恒挂在所有占位行上的属性，等于把"卡住了"和"还没轮到"
-           说成同一件事，那比不说更糟。
+        待规划行把「为什么还没接」交给界面：有 blockedBy 时带上机器可读的事实、
+        title 里的原因、行尾那个标记。没有它的行必须与从前一字不差 ——
+        一条恒挂的属性等于把「卡住了」和「还没轮到」说成同一件事。
       */
       data-outline-blocked-by={row.blockedBy ?? undefined}
       title={
@@ -442,10 +340,8 @@ function OutlineItem({ row, runId }: { row: OutlineRow; runId: string | null }) 
         <Link
           href={focusHref(runId, row.canvasNodeId as string)}
           /*
-            cursor-pointer 是必须的：<a> 默认就是 pointer，但这一行整体
-            是 flex 布局，鼠标落在 gap 上时指针会变回箭头 ——
-            而用户点的是"这一行"，不是"那几个字的缝"。所以整块都写死 pointer。
-            hover 态（底色 + 下划线）同理：它要覆盖整行，而不是只有文字。
+            cursor-pointer 是必须的：这一行整体是 flex，鼠标落在 gap 上时指针会变回箭头，
+            而用户点的是「这一行」，不是「那几个字的缝」。hover 态同理，要覆盖整行。
           */
           className={`${shape} cursor-pointer hover:bg-[var(--color-surface-2)] hover:text-[var(--ink-2)] hover:underline underline-offset-2`}
         >
@@ -453,9 +349,8 @@ function OutlineItem({ row, runId }: { row: OutlineRow; runId: string | null }) 
         </Link>
       ) : (
         /*
-          不可点的行用 div，不用 <a>：没有 href 的 <a> 是个陷阱 ——
-          它照样有 pointer 光标、照样能 Tab 聚焦，但按下去什么也不发生。
-          用非交互元素，键盘和鼠标都不会被它骗。
+          不可点的行用 div，不用 <a>：没有 href 的 <a> 照样有 pointer 光标、
+          照样能 Tab 聚焦，按下去却什么也不发生 —— 键盘和鼠标都会被它骗。
         */
         <div className={shape}>{body}</div>
       )}

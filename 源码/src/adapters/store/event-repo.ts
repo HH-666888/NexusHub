@@ -1,8 +1,5 @@
-/**
- * 事件存储（SQLite 实现）
- * ============================================================
- * 内核只认识 EventStore 接口，这里是它在 SQLite 上的落地。
- */
+/** 事件存储的 SQLite 实现：内核只认识 EventStore 接口。
+ * 读取按 seq 升序，回放依赖这个顺序。 */
 
 import { asc, eq, sql } from "drizzle-orm";
 import { db } from "./client";
@@ -14,8 +11,7 @@ import type { EventStore } from "@/core/ports/event-store";
 export const sqliteEventStore: EventStore = {
   async appendMany(events: readonly NewRunEvent[]): Promise<void> {
     if (events.length === 0) return;
-    // 一批一次事务。逐条插入会让 SQLite 每行 fsync 一次，
-    // 一次生成上千个片段时这是肉眼可见的卡顿来源。
+    // 一批一次事务：逐条插入会让 SQLite 每行 fsync，上千片段时肉眼可见地卡
     db.transaction((tx) => {
       for (const e of events) {
         tx.insert(runEvents)

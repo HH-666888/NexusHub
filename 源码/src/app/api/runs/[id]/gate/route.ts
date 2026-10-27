@@ -1,19 +1,6 @@
 /**
- * 门禁现状
- * ============================================================
- * GET /api/runs/<运行id>/gate
- *
- * 界面**刷新之后**靠它把门禁补回来：规格 + 现在到底还差哪几条 + 结论。
- *
- * ── 为什么需要这个接口（真实陷阱）──
- *   控制台原来只在实时收到 spec 事件时渲染疑问表单。用户一刷新，
- *   表单就没了 —— 屏幕上写着"规格里有 3 个疑问需要你确认后才能继续"，
- *   却没有任何地方可以回答：人被拦在门口，门却不见了。
- *
- * ── 为什么不是"把事件重放一遍、自己找 spec 事件" ──
- *   那样界面得自己算"哪几条答过了"，也就是把门禁的判据抄第二遍；
- *   抄的这一份迟早和服务器那份对不上。这里直接给结论，
- *   而且判据就是服务器自己用的那个 decideGate（buildGateView 只是换了个形状）。
+ * GET /api/runs/<id>/gate：返回规格、尚未确认的疑问与门禁结论，供刷新后重建门禁界面。
+ * 结论由服务端用 decideGate 现算，避免前端重抄判据而与服务端分叉。
  */
 
 import { sqliteRunStore } from "@/adapters/store/run-repo";
@@ -44,10 +31,11 @@ export async function GET(
   const run = await getOwnedRun(sqliteRunStore, id, user.id);
   if (!run) return new Response("找不到该构建", { status: 404 });
 
-  // 按文件名读（answers.json 也是 json，取"最新的那个"会读错，见 json-artifact.ts）
+  // 按文件名读：answers.json 也是 json，取最新会读错。
+  // 三个产物共用同一套读取方式。
   const loaded = await loadJsonArtifact<AppSpec>(run.id, SPEC_ARTIFACT_NAME);
   if (!loaded.ok) {
-    // 还没跑过生成：这不是错误，界面据此不显示规格面板
+    // 还没跑过生成，界面据此不显示规格面板
     return Response.json({
       runId: run.id,
       status: run.status,
@@ -61,10 +49,7 @@ export async function GET(
   const ack = await loadJsonArtifact<SpecAck>(run.id, ACK_ARTIFACT_NAME);
 
   const spec = loaded.value;
-  /*
-    兜底与否：spec.json 里没有这个字段（它只在当初那条 spec 事件里）。
-    这里用 domain 自己的判据现判 —— 与 spec 事件里的 fallback 同源。
-  */
+  // fallback 判据取自 domain：spec.json 不存该字段，它只出现在当初的 spec 事件里
   const gate = buildGateView(
     spec,
     answers.ok ? answers.value : null,

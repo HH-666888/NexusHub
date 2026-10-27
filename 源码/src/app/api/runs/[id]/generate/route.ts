@@ -1,21 +1,7 @@
 /**
- * 流式生成接口（SSE）
- * ============================================================
- * GET /api/runs/<运行id>/generate
- *
- * 为什么用 SSE 而不是 WebSocket：
- *   这里是单向的「服务器持续往客户端推」，SSE 正好；
- *   而且它基于普通 HTTP，不需要额外的协议升级与心跳处理。
- *   WebSocket 要用在真正双向的场景（比如协作编辑），这里用不上。
- *
- * 为什么用 GET：
- *   EventSource 只支持 GET。这是一个「有副作用的 GET」，
- *   严格来说不符合 HTTP 语义，但这是 SSE 的通行做法。
- *   我们靠下面的幂等保护来消除重复触发的风险。
- *
- * ⚠️ 一次点击只花一次钱：
- *   浏览器刷新会让 EventSource 自动重连，如果不加保护就会重复调用模型。
- *   所以这里先查是否已经产出过成品 —— 有就直接回放，不再花钱。
+ * GET /api/runs/<id>/generate：SSE 流式生成，按 规格 → 架构 → 界面 → 并行构建 → 装配 推进。
+ * 用 GET 是因为 EventSource 只支持 GET，靠成品幂等保护避免重连重复计费。
+ * 已有 html 产物时直接回放，不再调用模型。
  */
 
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
@@ -46,7 +32,7 @@ import {
 import { runSpecStage, SPEC_ARTIFACT_NAME } from "@/core/generate/spec-stage";
 import { runArchStage, ARCH_ARTIFACT_NAME } from "@/core/generate/arch-stage";
 import { runUiStage, UI_ARTIFACT_NAME } from "@/core/generate/ui-stage";
-// 本地检查是纯函数、不花钱：沿用盘上产物时现算一遍，而不是信存下来的旧结果
+// 本地检查是纯函数、不花钱：沿用盘上产物时现算，不信旧结果
 import { inspectArch } from "@/core/generate/arch-check";
 import { inspectUi } from "@/core/generate/ui-check";
 import { isFallbackArch } from "@/core/domain/arch";
@@ -73,32 +59,23 @@ import {
 } from "@/core/pipeline/callback";
 import { getOwnedRun } from "@/core/run/service";
 import { getCurrentUser } from "@/server/auth-context";
-// 按文件名读 json 产物（不能用"取最新那个 json"，见那个文件的说明）
+// 按文件名读 json 产物，不能取最新的那个
 import { readJsonArtifact } from "@/server/json-artifact";
 
 /**
- * 读规格与答案，判断该不该停下等人。
- *
- * ── specFallback 为什么是参数，而不是在这里读出来 ──
- *   规格是从盘上读的（readJsonArtifact），而"这份规格是不是兜底"
- *   只存在于**刚才那条 spec 事件**里 —— spec.json 本身没有这个字段。
- *   兜底规格的 questions 是空的，门禁靠 questions 判断就会一路放行，
- *   于是 reason 会写着"规格没有疑问，可以直接继续"，把兜底说成了没问题。
- *   所以调用方把事件里的 fallback 传进来，让门禁的结论说实话。
+ * 读规格与答案，判断是否该停下等人。
+ * specFallback 由调用方从 spec 事件传入：spec.json 没有这个字段，
+ * 而兜底规格的 questions 为空，不传会让门禁误报"规格没有疑问"。
+ * acknowledged 也按当前待确认清单核对：规格变了，旧 ack 不能放行新疑问。
  */
 async function readGateDecision(runId: string, specFallback = false) {
   const spec = await readJsonArtifact<AppSpec>(runId, SPEC_ARTIFACT_NAME);
   const answers = await readJsonArtifact<SpecAnswers>(runId, ANSWERS_ARTIFACT_NAME);
-  /*
-    「知悉并继续」的表态。
-    ⚠️ 交给 decideGate 之前，先用 isAcknowledged 确认那份 ack
-       **确实记着有没答的疑问** —— 空 ack（当时压根没疑问）
-       不能被当成"他同意我们替他猜"。
-  */
+  // 交给 decideGate 前先用 isAcknowledged 确认 ack 确实记着未答的疑问，
+  // 空 ack 不能当成用户同意替其猜测。
   const ack = await readJsonArtifact<SpecAck>(runId, ACK_ARTIFACT_NAME);
 
-  // 规格都读不出来就没什么可拦的 —— 让流程继续，
-  // 后面自然会在别处报错，而不是在这里拦一个说不清的理由
+  // 读不到规格就没有可拦的依据，跳过门禁，后续步骤会自行报错
   if (!spec) {
     return {
       pause: false,
@@ -110,11 +87,8 @@ async function readGateDecision(runId: string, specFallback = false) {
     };
   }
 
-  /*
-    ⚠️ 知悉要**对上具体那几条**：先算出现在待确认的是哪几条，
-       再问"他知悉的正是这几条吗"。只看"有没有那份记录"的话，
-       规格一变（例如疑问换了说法），旧记录就会替他放行他从没看过的疑问。
-  */
+  // 知悉要与具体条目对上：先算当前待确认的疑问，再确认 ack 记的正是这几条。
+  // 只看有无记录，会让规格变化后的旧 ack 放行用户没看过的疑问。
   const acknowledged = isAcknowledged(ack, pendingQuestions(spec, answers));
   const d = decideGate(spec, answers, specFallback, acknowledged);
   return {
@@ -128,16 +102,10 @@ async function readGateDecision(runId: string, specFallback = false) {
 }
 
 /**
- * 读这次运行已有的模块产出，决定哪些能沿用。
- *
- * ── 为什么要重算哈希，而不是信产物登记 ──
- *   登记里存的是"写那一刻"的 sha256。文件之后可能被人改过、
- *   可能写了一半就被杀、也可能被同名文件覆盖 ——
- *   登记本身不会知道。所以把内容读回来现算一遍，对得上才算"还是它"。
- *
- * ⚠️ 只认 `modules/<id>.json` 这个位置的文件：产物目录里还有
- *    spec.json / arch.json / answers.json / ack.json / index.html，
- *    它们都不是模块产出，混进来会让"沿用"变成"沿用了个别的什么东西"。
+ * 读本次运行已有的模块产出，决定哪些可以沿用。
+ * 哈希按内容重算：登记里存的是写入时的值，文件之后可能被改或写坏。
+ * 只认 modules/<id>.json，spec/arch/answers 等不属于模块产出。
+ * 复用能省下整条流水线里最贵的一段：并行构建通常占总花费的大头。
  */
 async function planResumeFromArtifacts(
   runId: string,
@@ -156,7 +124,7 @@ async function planResumeFromArtifacts(
     states.push({
       moduleId: id,
       present: raw !== null,
-      // 读不出来（文件被删）时 raw 是 null —— 强调用 false，别让它冒充"校验通过"
+      // 读不出来时 raw 为 null，sha256Ok 必须为 false，不能冒充校验通过
       sha256Ok: raw !== null && hashContent(raw) === hit.sha256,
     });
   }
@@ -165,11 +133,9 @@ async function planResumeFromArtifacts(
 }
 
 /**
- * 把"确定沿用"的那几个模块读回来，拼成批次里的 ModuleBuild。
- *
- * 记账字段全部按 0 填、并打上 reused 标记：
- * 这一趟确实没有任何调用，所以"这次花了 0 元"是实话；
- * 而 reused 让界面能说清"这 0 元是因为用的是上次的产出，不是模型白送的"。
+ * 读回确定沿用的模块，拼成 ModuleBuild。
+ * 记账字段全按 0 填并打 reused：这一趟确实没有调用，界面据此区分沿用与模型产出。
+ * reasoning 一律为空，那段文本不随模块产物落盘。
  */
 async function loadReusedBuilds(
   runId: string,
@@ -190,14 +156,12 @@ async function loadReusedBuilds(
     try {
       payload = JSON.parse(raw) as Partial<ModuleArtifactPayload>;
     } catch {
-      // 内容坏了本该到不了这里（哈希对不上就不会被选进 reuse），
-      // 真到了就跳过它 —— 少一个模块也比装配进半截代码好
+      // 内容坏了本不该走到这里（哈希对不上不会被选入 reuse），真到了就跳过
       continue;
     }
     out.push({
       moduleId: id,
-      // 沿用来的那份没有"这一句话说明"可读（它不是这一趟模型写的）——
-      // 从架构里取模块名，而不是编一句总结
+      // 沿用来的没有本次说明，摘要留空，模块名从架构取
       summary: "",
       html: typeof payload.html === "string" ? payload.html : "",
       css: typeof payload.css === "string" ? payload.css : "",
@@ -232,7 +196,7 @@ export async function GET(
   const { id } = await params;
   const run = await getOwnedRun(sqliteRunStore, id, user.id);
   if (!run) {
-    // 返回 404 而不是 403：不泄露「这个 id 是真实存在的」
+    // 404 而非 403：不泄露 id 是否存在
     return new Response("找不到该构建", { status: 404 });
   }
 
@@ -244,30 +208,23 @@ export async function GET(
       const send = (event: GenerateEvent) => {
         if (closed) return;
         try {
-          // SSE 格式：data: <一行 JSON>\n\n
-          // 用 JSON 而不是多行文本，是为了让事件里可以安全包含换行
+          // 用 JSON 承载事件，使内容里的换行不影响 SSE 分帧，前端也能直接 parse
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
           );
         } catch {
-          // 客户端断开后 enqueue 会抛错，标记为已关闭即可
+          // 客户端断开后 enqueue 会抛错，标记关闭即可
           closed = true;
         }
       };
 
       try {
-        // ---------- 幂等保护：已经出过成品就直接回放，不再花钱 ----------
-        // 浏览器刷新会让 EventSource 自动重连，没有这道闸门就会重复调用模型。
-        // 想重新生成请先 DELETE（它会清掉产物），这是刻意的：
-        // 「重新生成」应该是一个明确动作，而不是刷新的副作用。
+        // 幂等保护：已有成品直接回放，不重复调用模型。
+        // 想重新生成要先 DELETE 清掉产物，让它是明确动作而非刷新副作用。
         const existing = await fsArtifactStore.findLatest(run.id, "html");
         if (existing) {
-          /*
-            注意这里**不记录事件**。
-            刷新会走这条路，如果每次都追加，事件日志会被刷屏，
-            回放出来的时间线也就不是「那次生成」了。
-            事件只在真正调用模型的那一次写入。
-          */
+          // 回放不记录事件：追加会刷屏并破坏回放时间线。
+          // 事件日志只记真正调用过模型的那一次。
           send({
             kind: "phase",
             phase: "done",
@@ -277,9 +234,8 @@ export async function GET(
           return;
         }
 
-        // ---------- 决定这次用哪套模型接入 ----------
-        // 用户配了自定义就用他自己的；配了但没配全则明确拒绝，
-        // 不静默退回平台配置 —— 那会在用户不知情的情况下花掉平台的额度
+        // 自定义接入不完整时明确拒绝，不静默退回平台配置（会花掉平台额度）。
+        // 报错带上 resolveModelEndpoint 给出的 reason，用户知道补哪一项。
         const resolved = await resolveModelEndpoint();
         if (!resolved.ready) {
           send({
@@ -293,45 +249,26 @@ export async function GET(
 
         const spent = await sqliteCostStore.totalByRun(run.id);
 
-        /*
-          先把要用的两个字段取出来。
-          下面的 fullPipeline 是嵌套函数，TypeScript 的非空收窄
-          不会穿透到闭包里 —— 直接用 run.id 会一路报「可能为 null」。
-          取出常量同时也让闭包少依赖一个可变对象。
-        */
+        // 取出常量供嵌套函数使用：TS 的非空收窄不穿透闭包，直接用 run.id 会报可能为 null。
+        // 也减少闭包对可变对象的依赖。
         const runId = run.id;
         const runPrompt = run.prompt;
 
-        /*
-          ---------- 07 回流：先把上一轮捞出来 ----------
-          必须在清空事件**之前**读 —— 那些事件就是上一轮的全部记录。
-
-          参考图上闭环的最后一步是「下一轮的数据，回到起点」。
-          六道工序里原本没有这一环：跑完就结束，再点一次「重新生成」
-          等于把上一次原样重跑一遍，模型不知道上次哪里没过，
-          于是在同一个地方再错一次。用户看到的是"又花了钱，还是同样的毛病"。
-        */
+        // 07 回流：在清空事件之前读上一轮记录，供本次生成带上纠正上下文。
+        // 没有这一环，重新生成只是原样重跑，模型不知道上次错在哪里。
+        // 回流内容会落成 callback.json，装配前作为 system 消息发给模型。
         const priorEvents = await sqliteEventStore.listByRun(runId);
         const previous = extractPreviousAttempt(priorEvents);
         const callbackContext = buildCallbackContext(previous);
 
-        /*
-          重新生成会先走 DELETE 清掉旧事件，所以到这里事件日志应当是空的。
-          万一不是（比如上一次生成中途崩了、事件写了一半），
-          清掉再从 0 开始 —— 两条时间线混在一起比没有时间线更糟。
-
-          ⚠️ 顺序：上面已经读完了才清。反过来就什么也捞不到。
-        */
+        // 重新生成时 DELETE 已清空事件；若仍有残留（上次中途崩溃），清掉再从 0 开始。
+        // 顺序必须是先读完上面再清，反过来就什么也捞不到。
         if ((await sqliteEventStore.countByRun(runId)) > 0) {
           await sqliteEventStore.deleteByRun(runId);
         }
 
-        /*
-          把回流内容落成产物。
-          它是这次尝试的一部分，和 spec.json 平级 ——
-          事后能回答「这一次生成，模型到底被提醒了什么」。
-          没有这个文件的话，回流失效时只能靠翻日志猜。
-        */
+        // 回流内容落成产物，与 spec.json 平级：事后能回答这次生成提醒了模型什么。
+        // 没有它，回流失效时只能靠翻日志猜模型收到过什么。
         if (previous && callbackContext) {
           await fsArtifactStore.save({
             runId,
@@ -346,7 +283,8 @@ export async function GET(
           });
         }
 
-        // 端口只建一次，两个阶段共用 —— 它们本来就该用同一套接入配置
+        // 端口只建一次，两个阶段共用一套接入配置。
+        // 后续每道工序复用同一组端口，不重复读配置。
         const ports = {
           model: createDeepSeekPort(resolved.endpoint),
           artifacts: fsArtifactStore,
@@ -355,90 +293,38 @@ export async function GET(
         };
 
         /**
-         * 完整流程：先规格化，再生成。
-         *
-         * 顺序不能反 —— 规格是后面所有工序的判定依据，
-         * 先出成品再补规格，那份规格就只是事后解释，不是约束。
+         * 完整流程：先规格化，再生成。顺序不能反 —— 规格是后续工序的判定依据，
+         * 先出成品再补规格，那份规格只是事后解释。
          */
         async function* fullPipeline(): AsyncIterable<GenerateEvent> {
-          /*
-            ---------- 07 回流：先说给用户听 ----------
-            回流是**往模型上下文里塞东西** —— 一个用户看不见的动作。
-            不告诉他的话，他只会看到"这一次好像聪明了一点"，而不知道为什么。
-
-            更要紧的是：一个偷偷改提示词的系统，
-            和一个偷偷改代码的系统一样不可信。
-            所以说在生成开始之前，而不是混在中间某句日志里。
-          */
+          // 回流改的是模型上下文，属用户看不见的动作，须在生成开始前明确告知；
+          // 悄悄改提示词与悄悄改代码同样不可信。
           const callbackNote = describeCallback(previous);
           if (callbackNote) {
-            /*
-              phase 用 "spec" 而不是新造一个 "callback"。
-              GeneratePhase 是个封闭联合，加一个值要动事件类型、
-              落库校验、回放分帧、界面渲染——为一句提示语不值得。
-
-              而 note: "callback" 是给界面的标记位：
-              让它把这句话**留在固定位置**，而不是被后面一串
-              phase 事件顶掉。见 GenerateEvent 里那段说明。
-            */
+            // phase 用 "spec"：GeneratePhase 是封闭联合，为一个提示语不值当扩展类型。
+            // note: "callback" 是界面标记位，让这句话留在固定位置而不被后续 phase 顶掉。
             yield { kind: "phase", phase: "spec", label: callbackNote, note: "callback" };
           }
 
-          // ---------- 第一道：规格化 ----------
-          /*
-            ⚠️ 这一段顺手把规格**接下来**（specFromStage）。
-            第二道「架构定型」的输入就是它 —— 架构必须建立在真规格上，
-            它的第一条验收标准（规格里每条功能都能映射到至少一个模块）
-            没有规格根本判不了。
-
-            ── 为什么不改成"回头再读一次 spec.json" ──
-              读盘要经过"按文件名找产物 → 读内容 → JSON.parse"三步，
-              每一步都有失败分支（找不到、读不到、解析不了），
-              而那些分支在这里都不可达：规格是**刚刚**由上面的循环产出的。
-              凭空多三个"理论上不会发生"的分支，只会让人以为它们会真的发生。
-              真的需要落盘那份时（比如换了一条请求），再读盘也不迟。
-          */
+          // 第一道：规格化。产出 spec 事件并落 spec.json。
+          // 规格里的疑问随后由门禁处理，见下面的人工门禁段。
+          // 顺手把规格接下来（specFromStage）：架构定型的第一条验收标准需要它。
+          // 不回头读 spec.json：那会多出三个在此不可达的失败分支。
+          // SpecStageEvent 与 GenerateEvent 结构一致，命中时直接透传，不重新包装。
           let specFromStage: AppSpec | null = null;
-          /*
-            ⚠️ 兜底标记也要接下来（specFallbackFromStage）。
-
-            spec.json 里**没有**"这份规格是不是兜底"这个字段，它只存在于
-            刚才那条 spec 事件里。而门禁随后要拿它去说真话：兜底规格的
-            questions 是空的，门禁靠 questions 判断就会一路放行、reason 还写着
-            "规格没有疑问，可以直接继续" —— 把兜底说成了没问题。
-            所以这里必须把它接下来，交给下面的 readGateDecision。
-          */
+          // 兜底标记也接下来：spec.json 没有这个字段，而门禁要靠它把兜底如实说成兜底。
           let specFallbackFromStage = false;
 
           /**
-           * 这一趟是不是"续跑"（规格沿用了盘上已确认的那份，没有重跑规格化）。
-           *
-           * 它不只是说明文字的分支条件 —— 架构与界面设计也据此**沿用上次的**：
-           * 需求没变，模块划分就该稳定；否则上次构建好的模块全成了孤儿
-           * （实测续跑时只对上了 1/4 个模块）。
+           * 这一趟是否为续跑（沿用盘上已确认的规格）。
+           * 架构与界面设计也据此沿用：需求没变，模块划分应保持稳定。
            */
           let resumedSpec = false;
 
-          /*
-            ---------- 续跑：答完疑问再点生成时，不重跑规格化 ----------
-            门禁那一段的文档写着「再点生成 → 检查到答案存在，跳过门禁，
-            继续往下走」。但这里原来是**无条件重跑规格化**的，于是：
-            规格被重新生成 → 疑问换了一批新的 → 用户刚答的那几条对不上号
-            → 门禁又拦下。实测连点三次（3 个疑问 → 4 个 → 3 个），
-            一次都没走到架构，白花 ¥0.023，用户看到的是"答了又问"。
-
-            修兜底之前这个问题看不见：兜底规格没有疑问，门禁一路放行。
-            所以"兜底不再被说成就绪"的代价，就是这条路必须真的接上。
-
-            判据是纯函数（core/generate/gate.ts 的 isGateResume），
-            那里写了为什么"有规格 + 有非空回答（或知悉过）"这几条就够、
-            以及为什么"重新生成"不会误判成续跑（它走 DELETE 会清掉它们）。
-
-            ⚠️ "知悉过"也算续跑 —— 这一条是验收脚本抓出来的：
-               知悉之后续跑时规格化**又被跑了一遍**（账上两条 spec 流水），
-               于是疑问换了一批新的，而用户知悉的是原来那几条。
-               他按的是"我知道这些问题了"，不是"随便什么问题都行"。
-          */
+          // 续跑：答完疑问再点生成时不重跑规格化。重跑会换一批新疑问，
+          // 刚答的那几条对不上号，门禁又一次拦下；判据见 core/generate/gate.ts 的 isGateResume。
+          // 知悉过的情形也算续跑，否则规格被重跑，而用户知悉的是原来那几条。
+          // 重跑还会让账上多出一条规格化流水，钱白花。
           const storedSpec = await readJsonArtifact<AppSpec>(runId, SPEC_ARTIFACT_NAME);
           const storedAck = await readJsonArtifact<SpecAck>(runId, ACK_ARTIFACT_NAME);
           const storedAnswers = await readJsonArtifact<SpecAnswers>(
@@ -446,15 +332,9 @@ export async function GET(
             ANSWERS_ARTIFACT_NAME,
           );
 
-          /*
-            ---------- 用户点了「按我的回答重出一版规格」吗 ----------
-            点了的话这一趟**不沿用**旧规格，而是带着上一版规格与他的回答
-            重新出一版（多花一次规格化的钱 —— 那是他自己按的按钮，
-            界面上写着代价）。
-
-            ⚠️ 它必须排在"续跑沿用"之前判断：两者是同一时刻的两种选择，
-               而"重出"是更明确的那个（用户刚刚表达过）。
-          */
+          // 用户请求按回答重出一版规格时不沿用旧规格，而是带上上一版与回答重出。
+          // 该判断排在续跑判定之前：重出是用户刚表达的明确意图。
+          // 重出多花一次规格化调用，界面上写明了这个代价。
           const wantsRevision =
             storedAnswers?.revise === true &&
             storedSpec !== null &&
@@ -462,20 +342,16 @@ export async function GET(
 
           if (!wantsRevision && isGateResume(storedSpec, storedAnswers, storedAck) && storedSpec) {
             specFromStage = storedSpec;
-            // 规格是自己从盘上读的，兜底与否要现判 —— 它同样是界面必须看见的
+            // 规格读自盘上，兜底与否现判
             specFallbackFromStage = isFallbackSpec(storedSpec);
-            // 后面架构 / 界面设计据此一起沿用（需求没变，模块划分就该稳定）
+            // 后续架构与界面设计据此一并沿用
             resumedSpec = true;
 
             const answered = (storedAnswers?.answers ?? []).filter(
               (a) => a.answer.trim().length > 0,
             ).length;
-            /*
-              说明要分两种情况 —— 答过疑问的人与"知悉并继续"的人，
-              走的不是同一条路（后者是让模型替他决定，前者是给了他答案）。
-              混成一句"已答 N 个疑问"的话，知悉那条路上会写着"已答 0 个疑问"，
-              读起来像什么都没发生。
-            */
+              // 说明按两种情况分开：答过疑问与知悉并继续走的不是同一条路。
+              // 混成"已答 N 个疑问"时，知悉那条会读作什么都没发生。
             const viaAck = answered === 0 && isAcknowledged(storedAck, [
               ...storedSpec.questions,
             ]);
@@ -490,13 +366,8 @@ export async function GET(
                   `重跑会换一批新疑问，你刚答过的就对不上了`,
             };
 
-            /*
-              规格事件要**重新发一次**：每趟生成开始时事件日志会被清空
-              （见上面 deleteByRun 那一段），不复发的话，
-              工作台这一趟就看不到规格面板了。
-              gate 用 reviewSpec 现算：它是对规格本身的一次审阅，
-              纯函数、不花钱、也不改规格。
-            */
+              // 每次生成开始时事件日志会被清空，规格事件要重发一次，工作台才有规格面板。
+              // gate 由 reviewSpec 现算：纯函数、不花钱、不改规格。
             yield {
               kind: "spec",
               spec: storedSpec,
@@ -509,10 +380,7 @@ export async function GET(
               prompt: runPrompt,
               costLimitCny: env.run.costLimitCny,
               spentCny: spent,
-              /*
-                重出那一版：把上一版规格与他的回答一起交给模型。
-                （不重出时这里是 undefined —— 从零出规格，行为一个字没变。）
-              */
+              // 重出时把上一版规格与回答一起交给模型；不重出时为 undefined，行为不变。
               revision:
                 wantsRevision && storedSpec && storedAnswers
                   ? { previous: storedSpec, answers: storedAnswers }
@@ -522,21 +390,12 @@ export async function GET(
                 specFromStage = e.spec;
                 specFallbackFromStage = e.fallback;
               }
-              // SpecStageEvent 的几种事件与 GenerateEvent 结构一致，直接透传
+              // 与 GenerateEvent 结构一致，直接透传
               yield e as GenerateEvent;
             }
 
-            /*
-              重出成功了就把那个标记**消费掉**（改回 false 重写 answers.json）。
-
-              ── 为什么必须消费 ──
-                不消费的话，用户每点一次生成都会重出一版规格 ——
-                那是每次白花一次调用，而用户只按过一次按钮。
-                消费掉之后，后续续跑回到"沿用已确认的规格"（原来那条路）。
-
-              ⚠️ 出失败（降级成兜底规格）时也消费：否则每次点生成都重试，
-                而"重出失败"这件事已经通过 error 事件说清楚了。
-            */
+            // 重出成功后把 revise 标记消费掉，否则每次生成都会重出规格、每次多花一次调用。
+            // 失败降级时也消费：失败已通过 error 事件说明。
             if (wantsRevision && storedAnswers) {
               try {
                 await fsArtifactStore.save({
@@ -546,48 +405,30 @@ export async function GET(
                   content: JSON.stringify({ ...storedAnswers, revise: false }, null, 2),
                 });
               } catch {
-                // 消费失败不影响这一趟：最坏是下一次续跑又重出一版
+                // 消费失败不影响这一趟，最坏是下次续跑再重出一次
               }
             }
           }
 
-          /*
-            ---------- 人工门禁 ----------
-            规格里还有没回答的疑问就停下等人。
-
-            这是全流程唯一需要人的地方：其余工序的判断对错有契约和自检兜着，
-            唯独「你到底想要什么」模型没法自己判断，只能猜 ——
-            而猜错的代价要到最后一步才暴露，那时钱已经花完了。
-          */
+          // 人工门禁：规格里还有未答疑问就停下等人。这是全流程唯一需要人的环节，
+          // 其余工序有契约和自检兜底，而"到底想要什么"只能由用户回答。
           const decision = await readGateDecision(runId, specFallbackFromStage);
 
-          /*
-            ---------- 这一步该不该有人点头，由权限模型说了算 ----------
-            以前这里直接读 env.run.specGate，而 stages.ts 里那句
-            `humanGate: true` 没有任何代码读它 —— 两个互不相干的真相来源。
-            改成先问权限模型（resolveGatePolicy），环境变量降级成运行时覆盖。
-
-            覆盖仍然允许（开发时每次生成都被拦一次很烦），
-            但**覆盖不再是静默的**：下面两个分支都会把话说出来。
-          */
+          // 是否要人点头由权限模型决定，环境变量只作运行时覆盖。
+          // 两个来源冲突时以覆盖为准，但会被标成 overridden 写进事件流。
+          // 覆盖时不静默：下面两个分支都会把原因说出来。
           const policy = resolveGatePolicy("spec", env.run.specGate);
 
           if (decision.pause && policy.active) {
-            // 状态置为 paused，让列表上能看出「这条在等人」
+            // 置为 paused，列表上能看出这条在等人
             await sqliteRunStore.update(runId, { status: "paused" });
             yield { kind: "phase", phase: "awaiting", label: decision.reason };
-            // 直接结束这条流。用户答完再点生成，会从门禁之后继续。
+            // 结束流；用户答完再点生成会从门禁之后继续
             return;
           }
 
           if (decision.pause) {
-            /*
-              放行，但把两件事都说出来：
-                一、模型在替你猜哪些地方
-                二、这是**覆盖**了这一步自己的声明才发生的
-              只说不说第二件的话，界面上还写着「要人点头」而实际没停，
-              那比没有门禁更糟 —— 用户会以为有人把关过了。
-            */
+              // 放行但要说清两件事：模型在替用户猜哪些地方，以及这覆盖了工序自身的声明。
             yield {
               kind: "phase",
               phase: "spec",
@@ -599,48 +440,17 @@ export async function GET(
             yield { kind: "phase", phase: "spec", label: decision.reason };
           }
 
-          // ---------- 第二道：架构定型 ----------
-          /*
-            ── 为什么它必须在**门禁之后** ──
-              规格里还有没回答的疑问时，上面那个分支已经 return 了（相位 awaiting）。
-              架构如果排到门禁前面，就会在"用户还没确认要做什么"的时候
-              先把模块切好 —— 那等于替用户把需求拍死了，
-              而那道门禁存在的全部理由恰恰是"别替用户猜"。
-              所以顺序是：规格化 → 人工门禁 → 架构定型 → 并行构建。
-
-            ── 为什么先查一次钱 ──
-              规格那一道花完之后，钱可能已经到顶了。这里把最新的累计值
-              查出来交给架构闸门 —— 它宁可拒绝，也不会花完才说超了。
-              同一次查询的结果**不复用**给第四道：架构自己也会花钱，
-              第四道必须拿到含上这一笔的数（见下面那行）。
-          */
+          // 第二道：架构定型。必须在门禁之后 —— 否则会在需求未确认时先把模块切好。
+          // 先查一次钱：规格那一道花完后可能已到顶，闸门宁可拒绝也不花完才说超了。
+          // 该结果不复用给第四道：架构自身也会花钱。
           const spentBeforeArch = await sqliteCostStore.totalByRun(runId);
 
-          /*
-            specFromStage 为空只有一种情况：规格化那一道在预算闸门上
-            直接 return 了（它连 spec 事件都没发）。
-            那时候没有规格可依据，架构**不许硬造**一份出来 ——
-            跳过它，让第四道的预算闸门去说那句"已花费达到上限"。
-          */
+          // specFromStage 为空说明规格化在预算闸门处直接返回，没有规格可依据，不硬造。
+          // 跳过架构，让第四道的预算闸门去说那句"已花费达到上限"。
           let archFromStage: ArchSpec | null = null;
           if (specFromStage) {
-            /*
-              ---------- 续跑时：规格没变 → 架构也沿用上次的 ----------
-              ── 为什么必须一起沿用（真实运行暴露的）──
-                只沿用规格、却重跑架构的话，**模块划分会变**：
-                实测同一句需求，两次架构出来的是
-                「clock-ui / page-shell / persistence / timer-core」对
-                「另一批 id」—— 于是上次已经构建好的 4 个模块里只有 1 个对得上号，
-                另外 3 个白构建的产出全成了孤儿（续跑只沿用了 1 个）。
-                也就是说：模块级的断点续跑**依赖架构稳定**。
-
-              ── 为什么这条规则是安全的 ──
-                只有"用户刚答完疑问、继续往下走"这一趟才会走到这里
-                （resumedSpec 为真）。他并没有改需求，规格就是我们
-                刚刚沿用的那一份 —— 架构当然还是上次那份。
-                想换一套设计的话，走「重新生成」（DELETE 会清掉产物），
-                那条路上 resumedSpec 是假，架构照旧重跑。
-            */
+            // 续跑时架构一并沿用：只沿用规格会重划模块，上次已构建的产出大多对不上号。
+            // 只有"刚答完疑问继续"这一趟会走到这里，需求未变，架构自然不变。
             const storedArch = resumedSpec
               ? await readJsonArtifact<ArchSpec>(runId, ARCH_ARTIFACT_NAME)
               : null;
@@ -653,12 +463,11 @@ export async function GET(
                   "架构沿用上次的（你没有改需求）—— 不重跑定型，模块划分保持一致，" +
                   "上次已经构建好的模块才能接着用",
               };
-              // arch 事件要重新发一次：每趟开始时事件日志被清空，
-              // 不复发的话清单上那一批模块任务点这一趟就看不到了
+              // 事件日志每趟清空，arch 事件要重发一次，清单上才有这批模块任务点
               yield {
                 kind: "arch",
                 arch: storedArch,
-                // 本地检查是纯函数、不花钱，现算一遍：存下来的结果可能来自旧版本规则
+                // 本地检查是纯函数、不花钱，现算一遍，避免沿用旧版本规则的判定
                 check: inspectArch(storedArch, specFromStage),
                 fallback: isFallbackArch(storedArch),
               };
@@ -666,55 +475,27 @@ export async function GET(
               for await (const e of runArchStage(ports, {
                 runId,
                 prompt: runPrompt,
-                // 用户原话一字不改地传下去；规格作为"上一阶段的产物"一起带上
+                // 用户原话原样传下去，规格作为上一阶段产物一并带上
                 spec: specFromStage,
                 costLimitCny: env.run.costLimitCny,
                 spentCny: spentBeforeArch,
               })) {
-                /*
-                  ⚠️ 这一段顺手把架构**接下来**（archFromStage）。
-                  第三道「界面设计」的第三条验收标准（页面用到的数据
-                  都能对应到架构里的模块）没有架构根本判不了 ——
-                  理由同上面"规格为什么不回头读盘"：多三个不可达的失败分支
-                  只会让人以为它们会真的发生。
-                */
+                // 顺手把架构接下来：界面设计第三条验收标准需要它，理由同上不回头读盘。
                 if (e.kind === "arch") archFromStage = e.arch;
-                // 和上面同一个做法：ArchStageEvent 与 GenerateEvent 结构一致，直接透传
+                // ArchStageEvent 与 GenerateEvent 结构一致，直接透传
                 yield e as GenerateEvent;
               }
             }
           }
 
-          // ---------- 第三道：界面设计 ----------
-          /*
-            ── 为什么它排在架构之后、并行构建之前 ──
-              `stages.ts:238-239` 说这道工序的理由是「设计变量是并行开发时
-              视觉一致性的唯一保障。没有它，N 个执行 Agent 会做出 N 种风格」。
-              也就是说它**必须**排在第四道之前：等并行构建开跑之后再定变量表，
-              那几个模块早就各自写完自己的配色了。
-              而它又要排在架构之后：页面划分与 dataNeeds 都建立在模块划分上
-              （第三条验收标准判的就是"页面要的数据指不指得到某个模块"）。
-
-            ── 为什么先查一次钱 ──
-              架构那一道花完之后，钱可能已经到顶了。这里把最新的累计值查出来
-              交给界面闸门 —— 同一条理由：宁可拒绝，也不要花完才说超了。
-              同一次查询的结果**不复用**给第四道：界面自己也会花钱。
-
-            ── archFromStage 为空时为什么不硬造一份 ──
-              与上面 specFromStage 为空时同一条规矩。只有两种可能：
-              规格那一道被闸门挡了，或者架构那一道被闸门挡了 ——
-              两种情况下界面设计都没有可依据的上游产物。
-              这时候跳过它，让第四道的预算闸门去说那句话。
-          */
+          // 第三道：界面设计。必须在并行构建之前定变量表，也不得早于架构：
+          // 页面划分与 dataNeeds 都建立在模块划分上。
+          // 先查一次钱，理由同上；arch 为空时跳过，不硬造一份。
           const spentBeforeUi = await sqliteCostStore.totalByRun(runId);
 
           if (specFromStage && archFromStage) {
-            /*
-              续跑时界面设计也沿用上次的 —— 与架构同一条理由：
-              界面设计里的 dataNeeds / 设计变量都建立在模块划分上，
-              换了架构却留着一份旧界面，两边会对不上；
-              反过来，架构沿用了而界面没沿用，则等于白花一次钱重画同一套东西。
-            */
+              // 续跑时界面设计一并沿用：dataNeeds 与设计变量都建立在模块划分上，
+              // 换了架构留旧界面会两边对不上，反之则是白花一次钱重画。
             const storedUi = resumedSpec
               ? await readJsonArtifact<UiSpec>(runId, UI_ARTIFACT_NAME)
               : null;
@@ -734,74 +515,47 @@ export async function GET(
               for await (const e of runUiStage(ports, {
                 runId,
                 prompt: runPrompt,
-                // 两份上游产物一起带上：第一条检查要 spec，第三条检查要 arch
+                // 两份上游产物一起带上：第一条检查要 spec，第三条要 arch
                 spec: specFromStage,
                 arch: archFromStage,
                 costLimitCny: env.run.costLimitCny,
                 spentCny: spentBeforeUi,
               })) {
-                // UiStageEvent 的几种事件与 GenerateEvent 结构一致，直接透传
+                // 与 GenerateEvent 结构一致，直接透传
                 yield e as GenerateEvent;
               }
             }
           }
 
-          // ---------- 第四道：并行构建（按模块真的拆开） ----------
-          /*
-            ⚠️ 这一行必须在架构定型与界面设计**之后**重新查一次。
-            复用上一步的旧值的话，第四道拿到的 spentCny 会少掉后面那两笔，
-            于是"总花费已经到了上限、第四道却还在花钱"——
-            这种账要等到对账时才看得出来（runs.totalCostCny 对不上流水总额）。
-          */
+          // 第四道：并行构建。工序顺序在 core/pipeline/stages.ts 里声明。
+          // 这里必须重新查一次累计花费：复用旧值会漏掉架构与界面的两笔，
+          // 导致账到顶仍继续花钱。
+          // 复用的直接后果是对账时 runs.totalCostCny 与流水总额不符。
           const spentBeforeBuild = await sqliteCostStore.totalByRun(runId);
 
-          /*
-            ---------- 并发上限从哪来 ----------
-            env 的 MAX_PARALLEL_BUILD。没配（或配了个 <=0）时用默认 3 ——
-            这个默认值住在 domain/module-build.ts 里，不在这里再写一个字面量：
-            两处各写一个 3 的话，改一处另一处不会跟着动。
-
-            ── 为什么默认不是 1（串行）──
-              第四道叫"并行构建"。默认 1 等于默认不并行 ——
-              那样这次改动在真实运行里一点都看不出来，只有单测是绿的。
-              3 是一个保守的起点：模型调用是网络等待，不是本机算力，
-              三个同时在飞对本机内存几乎没有影响。
-          */
+          // 并发上限取自 env，未配置或非正时用 domain/module-build.ts 的默认值，不另写字面量。
+          // 默认不为 1：模型调用是网络等待而非本机算力，3 个并发对内存影响很小。
+          // 调 1 即退回串行，调大更激进。
           const concurrency =
             env.sandbox.maxParallelBuild > 0
               ? env.sandbox.maxParallelBuild
               : DEFAULT_BUILD_CONCURRENCY;
 
-          /*
-            ---------- 预算闸门 ----------
-            buildModules 自己没有 costLimit 参数（它的输入是"要构建什么"，
-            不是"还剩多少钱"）—— 所以闸门留在编排层，口径与前面三道一致：
-            **宁可在这里拒绝，也不要花完之后才说超了。**
-            钱到顶时 batch 保持 null，第四道走原来的单次路径，
-            而它自己的预算闸门会立刻把这次运行停下并说明原因。
-          */
+          // 预算闸门留在编排层：buildModules 只知道要构建什么，不知道还剩多少钱。
+          // 口径与前三道一致：宁可拒绝，也不要花完才说超了。
+          // 钱到顶时 batch 保持 null，第四道走单次路径，由它自己的闸门停下并说明原因。
           let batch: BuildBatch | null = null;
           if (specFromStage && archFromStage && spentBeforeBuild < env.run.costLimitCny) {
-            /*
-              ---------- 断点续跑：已经构建好、且校验通过的模块不再重跑 ----------
-              并行构建是最贵的一道（实测一次 ¥0.25 上下，占大头），
-              也最容易被外力打断（关浏览器、dev server 重启、网络断一下）。
-              已经落盘的那几个模块没有理由再花一次钱重写。
-
-              ⚠️ 判据是**内容哈希**，不是"文件在不在"：文件可能被手改过、
-                 可能写了一半就被杀、也可能被同名文件覆盖。
-                 对不上就重构建 —— 钱可以再花一次，把半截代码装配进产物不行。
-            */
+            // 断点续跑：已构建且校验通过的模块不再重跑。判据是内容哈希，不是文件是否存在；
+            // 对不上就重建：钱可以再花一次，把半截代码装配进产物不行。
+          // 并行构建也最容易被打断：关浏览器、dev server 重启、网络断一下。
             const resume = await planResumeFromArtifacts(
               runId,
               archFromStage.modules.map((m) => m.id),
             );
 
-            /*
-              只有"真的沿用了东西"才需要跟用户说一句。
-              一个都没有时不说 —— 那是第一次跑的正常情况，
-              说一句"没有可沿用的产出"只会让人以为出了问题。
-            */
+              // 只有真的沿用了东西才提示；一个都没有时是首次运行的正常情况。
+              // 沿用与重建的数量分开报，用户才知道这次花了多少。
             if (resume.reason) {
               yield {
                 kind: "phase",
@@ -831,16 +585,9 @@ export async function GET(
             batch = await buildModules(
               {
                 model: ports.model,
-                /*
-                  ---------- 边构建边落盘 ----------
-                  `modules/<模块id>.json` 是第四道在 stages.ts 里声明的产物契约
-                  （以前从来没写过 —— 契约与实际不符）。
-
-                  落盘时机是"这个模块刚构建好"，不是"整批跑完"：
-                  并行构建最贵也最慢，中途被打断（关浏览器、dev server 重启）
-                  时，已经好了的那几个必须已经在盘上 —— 否则下次只能从头再花钱。
-                  接着上次跑的逻辑见 resolveResume（它读的就是这些文件）。
-                */
+                // 边构建边落盘：modules/<模块id>.json 是第四道的产物契约，
+                // 在模块刚构建好时写，中途被打断时已完成的不必再次计费。
+                // 落盘时机是刚构建好，不是整批跑完。
                 onModuleBuilt: async (built) => {
                   const mod = archFromStage?.modules.find((x) => x.id === built.moduleId);
                   await fsArtifactStore.save({
@@ -869,23 +616,16 @@ export async function GET(
                 spec: specFromStage,
                 arch: archFromStage,
                 concurrency,
-                // 只补缺的那几个（全都要建时它是 undefined，行为与从前一致）
+                // 只补缺的那几个；全都要建时是 undefined，行为与从前一致
                 onlyModuleIds: resume.build.length === archFromStage.modules.length
                   ? undefined
                   : resume.build,
               },
             );
 
-            /*
-              ---------- 把沿用的那几份并回批次 ----------
-              并回去的理由：装配（第五道）与 modules 事件都只认 batch.modules ——
-              不并的话，沿用的那几个模块在产物里、在清单上都会"消失"。
-
-              ⚠️ batch 的 totalCostCny / totalUsage **不并入**沿用那几份：
-                 那些钱上一次已经记过流水了，并进来就是重复计账。
-                 沿用那几份自身的 costCny=0、usage=0、reused=true，
-                 界面上因此能分开说"这次没花钱，用的是上次的产出"。
-            */
+              // 沿用那几份并回批次：装配与 modules 事件只认 batch.modules。
+              // 它们的 totalCostCny / totalUsage 不并入，那些钱上次已记流水。
+              // 不并进 modules 的话，沿用的模块在产物里、清单上都会消失。
             const reusedBuilds = await loadReusedBuilds(
               runId,
               archFromStage.modules.map((m) => m.id),
@@ -894,7 +634,7 @@ export async function GET(
             if (reusedBuilds.length > 0) {
               const byId = new Map<string, ModuleBuild>();
               for (const b of [...reusedBuilds, ...batch.modules]) byId.set(b.moduleId, b);
-              // 顺序跟架构走，不跟"谁先跑完"、也不跟"谁是沿用的"走
+              // 顺序跟架构走，不跟完成顺序走
               batch = {
                 ...batch,
                 modules: archFromStage.modules
@@ -903,27 +643,14 @@ export async function GET(
               };
             }
 
-            /*
-              落盘已经在 buildModules 的 onModuleBuilt 回调里做过了（每个模块一好就写）——
-              这里不再补写一遍：那会是同一份内容写两次，多占一份产物登记，
-              而且会掩盖"回调没被调用"这种真问题。
-            */
-            /*
-              ---------- 记账：每一次模块调用各一行流水 ----------
-              含**失败的那几次**。理由有两条，都很实际：
-                · 调用成功、解析失败的那一类，钱是真的花了；
-                  不记的话这条运行的账会比实际少，而对账时才看得出来；
-                · 失败也要能回答"钱花在哪个模块上了" —— 这正是成本流水
-                  存在的意义（只看累计值回答不了这个问题）。
-              nodeId 写成 `build:<模块id>`：和清单上那个任务点同一个 id，
-              于是"哪一行账对应树上哪一个点"不用再猜。
-
-              记账失败不影响主流程（和另三道同一个取舍）：钱已经花了，
-              用户要的是产物，不能因为账没记上就整条流水线崩掉。
-            */
+            // 落盘已在 onModuleBuilt 里做过，这里不再补写
+              // 记账：每次模块调用一行流水，含失败的那几次 —— 钱确实花了，
+              // 也要能回答花在哪个模块，这正是成本流水的用途。
+              // nodeId 与树上任务点同 id；记账失败不影响主流程。
+              // 调用成功但解析失败的同样花了钱，不记会让这条运行的账比实际少。
             try {
               for (const m of batch.modules) {
-                // 沿用来的模块**不写新的流水行**：那一笔钱上次已经记过，再记就是重复计账
+                // 沿用来的模块不写新流水：那笔钱上次已记
                 if (m.reused) continue;
                 await sqliteCostStore.record({
                   runId,
@@ -939,8 +666,7 @@ export async function GET(
                 });
               }
               for (const f of batch.failed) {
-                // 一次没花到钱的失败（调用直接抛错）不占一行账：
-                // 它的"失败"由事件与任务点如实呈现，账本这里只记真的花掉的
+                // 未花钱的失败不占流水，它的失败由事件与任务点呈现
                 if (f.costCny <= 0 && f.model === null) continue;
                 await sqliteCostStore.record({
                   runId,
@@ -959,28 +685,18 @@ export async function GET(
               // 记账失败不影响主流程
             }
 
-            /*
-              ---------- 模块调用的 token 也要并进这条运行的累计用量 ----------
-              runs 那一行是界面右侧"实时成本"的数据来源（输入 / 输出 / 思考 /
-              缓存命中）。上面那个循环只把模块的花费记进了流水，用量却没进这一行 ——
-              不并的话，3~4 次模块调用的 token 会凭空消失。
-              实测一条真实运行：并之前这里显示的思考是 0，而流水里合计 16446。
-              （累加由适配器负责，见 adapters/store/run-repo.ts 的 update。）
-            */
+              // 模块调用的 token 并进本条运行的累计用量（界面右侧实时成本的数据源），
+              // 不并的话这部分用量会凭空消失；累加由 run-repo 的 update 负责。
+              // runs 那一行是界面实时成本的唯一来源，模块调用的 token 都在这里。
             try {
               await sqliteRunStore.update(runId, { usage: batch.totalUsage });
             } catch {
-              // 与上面同一个取舍：账目是附加能力，不能因此中断生成
+              // 同一取舍：账目是附加能力，不因此中断生成。
+              // 用量累加同样如此，失败时界面只是少一点数字。
             }
 
-            /*
-              ---------- 有模块因为截断重试过，要说出来 ----------
-              重试是内部动作，但**不能悄悄做**：
-              不说的话，用户只看到一个慢了一倍的模块（两次的思考都发出来了），
-              不知道它第一次顶满了预算。而"顶满预算"正是该让他看见的信号 ——
-              它意味着这个模块比预想的大，下次该从架构上拆。
-              结果本身在下面的模块状态里：成功 / 失败 / 截断，各是各的。
-            */
+              // 因截断重试过就要说出来：重试是内部动作，但用户应看到模块顶满过长度上限，
+              // 那意味着它比预想的大，下次该从架构上拆。
             if (batch.retriedModules.length > 0) {
               yield {
                 kind: "phase",
@@ -991,29 +707,10 @@ export async function GET(
               };
             }
 
-            /*
-              ---------- 把各模块的思考发出来 ----------
-              并行构建也是"会思考的写码"（GENERATE_DEFAULT_EFFORT = "high"）。
-              真实运行里单个模块的思考量到过 12706 tokens，而它原先躺在
-              批次结果里没人取 —— 界面上这一步的「思考」tab 永远写着
-              "这一步没有返回思考内容"，模型其实想了很多。
-              这和 spec / arch / ui 那三道是同一个毛病（修法 2），只是发生在
-              第四道；"看得见的思考"是这个产品的卖点，这一道不能缺席。
-
-              ── 顺序与归属 ──
-                并行调用没有"谁先谁后"的时序可言，所以按 arch 顺序逐条发
-                （与下面 modules 事件里的顺序一致），每条前面标出模块 id。
-                那是**归属**，不是时序 —— 标成时序就是编。
-                失败的那几个也要发：截断的模块往往正是想得最多的
-                （实测思考 13997 把预算吃光、正文一个字没吐出来），
-                不发的话用户只看到"失败"两个字，不知道它其实认真想过。
-
-              ── 为什么用 reasoning 事件而不是新造一种 ──
-                它天然属于"当前步骤"，界面会收进「思考」tab；
-                而且它**不进规划日志**（planning/from-run.ts 里
-                text / reasoning / usage / artifact 一律交给画布），
-                所以清单和树不会因此多出节点。
-            */
+              // 并行构建同样会思考（effort = high），按架构顺序逐条发出，前面标模块 id。
+              // 那是归属不是时序；失败的也要发，截断的模块往往想得最多。
+              // 用 reasoning 事件而不是新类型：它天然归入当前步骤，也不进规划日志。
+              // 不发的话，这一步的思考 tab 会永远写着没有返回内容。
             for (const m of batch.modules) {
               if (m.reasoning.trim().length > 0) {
                 yield {
@@ -1031,13 +728,9 @@ export async function GET(
               }
             }
 
-            /*
-              ★ 把这一批的结果发出去 ★
-              这是 modules 事件的唯一来源。清单里 `build:<模块id>` 那批任务点
-              就是由它投影出来的（planning/from-run.ts 的 modulePoints），
-              失败模块在那里是红色的 failed —— 部分失败如实呈现的关键一步。
-              载荷是**摘要**（不带代码片段），理由见 domain/module-build.ts。
-            */
+              // modules 事件的唯一来源：清单里 build:<模块id> 那批任务点由它投影，
+              // 失败模块在那里呈红色；载荷是摘要，不带代码片段。
+              // 完整内容在各模块产物里，摘要只够画卡片。
             yield { kind: "modules", batch: summarizeBatch(batch, archFromStage) };
 
             yield {
@@ -1047,13 +740,9 @@ export async function GET(
             };
           }
 
-          /*
-            ---------- 第五道：装配 ----------
-            ⚠️ 这里必须**重新查一次钱**：
-            模块那几笔刚刚记进流水（上面那个 for），复用 spentBeforeBuild 的话，
-            装配拿到的 spentCny 会少掉这一批 —— 于是"账上已经到顶、
-            装配却还在花钱"。理由与上面 spentBeforeBuild 那一段逐字相同。
-          */
+          // 第五道：装配，把各模块片段拼成单文件产物。
+          // 装配前必须重新查一次钱：模块那几笔刚记进流水，复用旧值会漏掉这一批。
+          // 到顶时装配不再调用模型，由它自己的闸门报错。
           const spentAfterBuild = await sqliteCostStore.totalByRun(runId);
 
           yield* generateApp(ports, {
@@ -1061,22 +750,16 @@ export async function GET(
             prompt: runPrompt,
             costLimitCny: env.run.costLimitCny,
             spentCny: spentAfterBuild,
-            // 07 回流：上一轮没过的地方，这一段会作为一条 system 消息发给模型
+            // 07 回流：上一轮没过的地方作为 system 消息发给模型
             callbackContext,
-            /*
-              ★ 把并行构建的产出交给装配 ★
-              传了它，装配那一次调用的用户消息里就真的带上各模块写出来的
-              html / css / js 片段，而且产物检查会多一条"模块代码确实进入了产物"
-              的探针逐模块核对。不传（预算被挡、没有架构）时，装配的行为
-              与这次改动之前**完全一致**。
-            */
+            // 传给装配后，调用的用户消息会带上各模块的 html / css / js，
+            // 产物检查也会逐模块核对代码是否进入产物；不传时行为与从前一致。
             batch,
             arch: archFromStage,
           });
         }
 
-        // 包一层记录器：事件原样推给浏览器，同时合并落库供事后回放。
-        // 生成内核本身一行不用改。
+        // 包一层记录器：事件原样推送，同时合并落库供回放
         const recorded = recordRunEvents(fullPipeline(), sqliteEventStore, runId);
 
         for await (const event of recorded) {
@@ -1101,16 +784,18 @@ export async function GET(
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream; charset=utf-8",
-      // 三层都不缓存：任何一层缓存了，用户就会看到「卡住不动」
+      // 三层都不缓存，任一层缓存都会让用户看到卡住不动。
+      // no-transform 阻止中间层压缩，keep-alive 保长连接。
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
-      // 部署到 nginx 后面时，这一条是让 SSE 不被缓冲的关键
+      // nginx 后置部署时，这一条是 SSE 不被缓冲的关键。
+      // Connection: keep-alive 与 no-transform 同理，都是防中间层改写或断开。
       "X-Accel-Buffering": "no",
     },
   });
 }
 
-/** 删除产物：清掉文件和登记，让「重新生成」从干净状态开始 */
+/** 删除产物与事件，让重新生成从干净状态开始 */
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -1122,17 +807,14 @@ export async function DELETE(
   const run = await getOwnedRun(sqliteRunStore, id, user.id);
   if (!run) return new Response("找不到该构建", { status: 404 });
 
-  // removeByRun 已经把文件与登记一并清掉，这里不需要再删一次
+  // removeByRun 已一并清掉文件与登记
   const removed = await fsArtifactStore.removeByRun(run.id);
 
-  // 事件日志也清掉：重新生成意味着上一条时间线作废。
-  // 留着旧事件的话，回放出来的是「上一次的过程 + 这一次的产物」，
-  // 两者对不上，比没有回放更误导。
+  // 事件也清掉：留着旧事件会让回放变成上一次的过程加这一次的产物。
   const removedEvents = await sqliteEventStore.deleteByRun(run.id);
 
-  // 刻意不清零 totalCostCny：那是「这条运行一共花了多少钱」的真实记录。
-  // 清掉它只会制造一个好看但虚假的数字 —— 钱是真花出去了。
-  // 预算闸门读的是成本流水表，所以清零也不能让下一次重跑「变便宜」。
+  // 不清零 totalCostCny：那是真实花费，清零只制造虚假数字；
+  // 预算闸门读成本流水表，清零也不会让下次重跑变便宜。
   await sqliteRunStore.update(run.id, { status: "cancelled" });
 
   return Response.json({ removed, removedEvents });

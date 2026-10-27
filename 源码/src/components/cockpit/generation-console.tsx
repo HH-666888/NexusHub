@@ -8,39 +8,22 @@ import { ProcessBlocks } from "./process-blocks";
 import { RunTimeline } from "./run-timeline";
 
 /**
- * 实时生成控制台
- * ============================================================
- * 连上 SSE 接口，把模型的输出、成本、检查结果实时摊开在用户面前。
+ * 实时生成控制台：连 SSE，把模型的输出、成本、检查结果摊开在用户面前。
  *
- * 这是整个产品定位「把过程完全摊开」最直接的体现：
- *   用户不需要盯着转圈图标猜它在干什么 —— 模型正在写什么、
- *   这一步花了多少钱、已经通过了几项检查，全都看得见。
- *
- * 两个实现上的关键点：
- *
- *   ① 收到的 `done` / `failed` 阶段事件后**主动关闭连接**。
- *      浏览器原生的 EventSource 在连接被服务端正常关闭后会**自动重连**，
- *      不关的话就会变成「生成完了 → 重连 → 服务端说已有成品 → 关闭 → 再重连」
- *      这样一条无限循环。虽然服务端有幂等保护不会重复花钱，
- *      但会一直打请求，日志也会被刷满。
- *
- *   ② 流式内容按帧批量写入 state，而不是收到一块写一次。
- *      一次生成会推来三千多个片段，逐块 setState 会造成三千多次渲染。
- *      用 requestAnimationFrame 合并成每帧一次，渲染次数降到几十次。
+ * 收到 done / failed 后主动关连接：EventSource 在服务端正常关闭后会自动重连，
+ * 不关就成了「生成完 → 重连 → 服务端说已有成品 → 关闭」的死循环。
+ * 流式内容按帧批量写 state：一次生成推来三千多个片段，逐块 setState 是三千多次渲染。
  */
 
 /*
-  这两张表是 Record<GeneratePhase, …>，**穷尽**的：
-  GeneratePhase 多一个值时编译器会在这里报错，逼着人当场给它一个名字和一种颜色。
-  写成 Partial 的话，新阶段会静默落到 undefined —— 界面上就是一个没有文字的
-  徽章，而"空白徽章"看起来像样式问题，不像数据缺失。
+  两张表都是 Record<GeneratePhase, …>，穷尽的：新增阶段会在编译期报错，
+  逼着当场给它一个名字和一种颜色。写成 Partial 的话，新阶段会静默变成无字徽章。
 */
 const PHASE_LABEL: Record<GeneratePhase, string> = {
   spec: "需求规格化",
   arch: "架构定型",
   ui: "界面设计",
-  // 并行构建（第四道）与后面的"装配"分开写：这一期交付的正是这两段的区别 ——
-  // 一段是 N 个模块同时在写，另一段是把它们拼成一个成品
+  // 并行构建与装配分开：这一段是 N 个模块同时写，下一段才拼成成品
   building: "并行构建",
   awaiting: "等你确认",
   generating: "正在生成",
@@ -52,13 +35,11 @@ const PHASE_LABEL: Record<GeneratePhase, string> = {
 
 const PHASE_TONE: Record<GeneratePhase, string> = {
   spec: "border-violet-700 bg-violet-950/40 text-violet-300",
-  // 和规格化同一个色调：两者都是"AI 在写自己的产物"（决策级），
-  // 而生成 / 检查 / 保存是执行级。色调分的是**谁在做**，不是序号
+  // 与规格化同色调：两者都是 AI 在写决策级产物，色调分的是「谁在做」不是序号
   arch: "border-violet-700 bg-violet-950/40 text-violet-300",
-  // 界面设计和架构定型同为决策级：它定的变量表是第四道所有并行单元的共同口径
+  // 同为决策级：这里定的变量表是第四段所有并行单元的共同口径
   ui: "border-violet-700 bg-violet-950/40 text-violet-300",
-  // 并行构建是执行级（真的在写码），与 generating 同色调 ——
-  // 色调分的是"谁在做"，不是序号
+  // 并行构建是执行级（真的在写码），与 generating 同色调
   building: "border-blue-700 bg-blue-950/40 text-blue-300",
   awaiting: "border-amber-700 bg-amber-950/40 text-amber-300",
   generating: "border-blue-700 bg-blue-950/40 text-blue-300",
@@ -69,17 +50,9 @@ const PHASE_TONE: Record<GeneratePhase, string> = {
 };
 
 /**
- * 实时事件的序号号段。
- *
- * ── 为什么实时事件需要一个"假"seq ──
- *   切块（toStepBlocks）靠 seq 认身份：id 就是 `step-<起始 seq>`。
- *   而实时事件**还没落库、也就还没有 seq** —— 库里的号是记录器写的，
- *   浏览器这边拿不到。
- *
- *   所以给它们一段**明显在真实号段之外**的号（真实 seq 从 0 开始往上数）。
- *   于是两边切出来的块 id 永远不会撞：`step-1000000` 一眼就知道
- *   是"还没落库的那一份"。运行结束、服务端刷新回来之后，
- *   这些临时块会被真实块**整批替换**掉（见下面 liveBlocks 那段）。
+ * 实时事件的号段。切块靠 seq 认身份（id 就是 `step-<起始 seq>`），
+ * 而实时事件还没落库、没有 seq，所以给它们一段明显在真实号段之外的号 ——
+ * 两边切出来的块 id 永远不会撞，刷新回来之后由真实块整批替换。
  */
 const LIVE_SEQ_BASE = 1_000_000;
 
@@ -96,11 +69,8 @@ export function GenerationConsole({
   /** 生成结束时通知外层刷新数据 */
   onSettled: () => void;
   /**
-   * 已经落库、由服务端切好的步骤块。
-   *
-   * ⚠️ **不传**表示这个上下文没有把事件通道接进来（退役的 /studio 工作台
-   * 就是这么用的）。那时这一栏退回老样子 —— 一整条连续日志。
-   * 两条路都留着不是偷懒：不传就按老样子渲染，页面上才不会平白空出一块。
+   * 已落库、由服务端切好的步骤块。不传 = 这个上下文没接事件通道，
+   * 这一栏退回一整条连续日志（退役的 /studio 就是这么用的）。
    */
   blocks?: StepBlock[];
   /** 服务端认定的"当前这一步"（/canvas 传的是最后一个块） */
@@ -108,14 +78,13 @@ export function GenerationConsole({
 }) {
   const [running, setRunning] = useState(false);
   /*
-    每跑完一次生成就加一，用来让时间轴重新拉取事件。
-    刚跑完那一刻事件才写进库，不重新拉的话时间轴还是空的 ——
-    用户会以为「录像没录上」，其实只是没去取。
+    每跑完一次加一，让时间轴重新拉事件 —— 刚跑完那一刻事件才写进库，
+    不重新拉的话时间轴还是空的，用户会以为「录像没录上」。
   */
   const [refreshKey, setRefreshKey] = useState(0);
   /*
-    规格化阶段的产出。它是这一阶段唯一值得展示的东西 ——
-    用户要看的是「它把我的需求理解成了什么」，而不是「规格已就绪」。
+    规格化阶段的产出。用户要看的是「它把我的需求理解成了什么」，
+    而不是「规格已就绪」。
   */
   const [spec, setSpec] = useState<{
     goal: string;
@@ -126,7 +95,6 @@ export function GenerationConsole({
     fallback: boolean;
   } | null>(null);
 
-  /* ---------- 人工门禁的交互状态 ---------- */
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   /** 「知悉并继续」提交中 */
@@ -134,22 +102,12 @@ export function GenerationConsole({
   const [gateMsg, setGateMsg] = useState<string | null>(null);
 
   /**
-   * 刷新之后把门禁补回来。
+   * 刷新之后把门禁补回来。spec 原来只由实时 SSE 填：用户一刷新、
+   * 或从列表点进那条停在门禁上的运行，就只剩下「有 3 个疑问待确认」的提示，
+   * 没有任何地方能回答。
    *
-   * ── 为什么必须有这一步（真实陷阱）──
-   *   spec 状态原来只由**实时 SSE** 填。用户一刷新页面、或者从列表里
-   *   点进那条停在门禁上的运行，表单就没了 ——
-   *   屏幕上写着"规格里有 3 个疑问需要你确认后才能继续"，
-   *   却没有任何地方可以回答。人被拦在门口，门却不见了。
-   *
-   *   /gate 接口给的是"现在到底还差哪几条"（判据在服务端，
-   *   与门禁自己用的那个 decideGate 同源），所以这里渲染的
-   *   只有**还没答**的疑问 —— 答过的不再问第二遍。
-   *
-   * ⚠️ 只在还没拿到规格时补（`setSpec((s) => s ?? …)`）：
-   *    正在实时跑的时候不许被这一次请求覆盖掉。
-   * ⚠️ 它必须放在 setSpec / setGateMsg 之后 —— React Compiler 的规则
-   *    不允许"先用后声明"，lint 会直接报错（这次就报了一次）。
+   * /gate 给的是「现在到底还差哪几条」，与 decideGate 同源，所以答过的不再问第二遍。
+   * 只在还没拿到规格时补（s ?? …），正在实时跑的时候不许被这次请求覆盖。
    */
   useEffect(() => {
     let cancelled = false;
@@ -192,13 +150,9 @@ export function GenerationConsole({
   }, [runId]);
 
   /**
-   * 提交回答。
-   *
-   * @param revise 是否同时要求"按这些回答重出一版规格"。
-   *   ⚠️ 这个参数**必须显式传**：它原来是 onClick 直挂的，
-   *      而 onClick 会把点击事件当第一个参数传进来（对象 → 真值）——
-   *      那样每个用户都会"顺手"多花一次模型调用。所以按钮那边写成
-   *      `onClick={() => void submitAnswers(false)}`，不留默认值。
+   * 提交回答。revise = 是否同时要求按这些回答重出一版规格。
+   * revise 必须显式传：它原来直挂 onClick，而 onClick 会把点击事件当第一个参数（对象 → 真值），
+   * 那样每个用户都会顺手多花一次模型调用。
    */
   const submitAnswers = useCallback(
     async (revise: boolean) => {
@@ -246,14 +200,8 @@ export function GenerationConsole({
 
   /**
    * 「知悉并继续」：我看了这些问题，但不回答 —— 这次你替我决定。
-   *
-   * ── 为什么要有它（和"留空提交"的区别）──
-   *   留空提交也表达"你替我决定"，但它要求用户**逐条**看完再点提交；
-   *   问题多的时候（实测有 4 条的）那更像是在收集噪声：
-   *   用户对"要不要提示音"确实没有偏好，逼他编一个答案没有意义。
-   *
-   * ⚠️ 代价必须写在按钮旁边，不能只写"继续"：
-   *   模型会替他猜，猜错了要到验收那一步才暴露 —— 那时钱已经花完了。
+   * 与「留空提交」的区别是它不要求逐条看完，问题一多那更像在收集噪声。
+   * 代价必须写在按钮旁边：模型会替他猜，猜错了要到验收那一步才暴露。
    */
   const acknowledge = useCallback(async () => {
     if (!spec || submitting || acknowledging) return;
@@ -279,12 +227,8 @@ export function GenerationConsole({
   const [phase, setPhase] = useState<GeneratePhase | null>(null);
   const [phaseLabel, setPhaseLabel] = useState("");
   /**
-   * 回流（07）那句提示，单独留一份。
-   *
-   * 不放进 phaseLabel：那个值会被后面一串 phase 事件一路顶掉，
-   * 而「这一次带上了上一轮的问题」需要留在界面上 ——
-   * 不然用户回头看时，唯一的证据已经没了。
-   * 空串表示这一轮没有回流。
+   * 回流（07）那句提示，单独留一份：phaseLabel 会被后面一串 phase 事件顶掉，
+   * 而「这一次带上了上一轮的问题」需要留在界面上。空串表示这一轮没有回流。
    */
   const [callbackNote, setCallbackNote] = useState("");
   const [text, setText] = useState("");
@@ -304,30 +248,20 @@ export function GenerationConsole({
   const pendingRef = useRef({ text: "", reasoning: "" });
   const rafRef = useRef<number | null>(null);
 
-  /* ---------- 运行中实时攒出来的步骤块 ---------- */
   /*
-    ── 为什么要有这一份 ──
-      服务端传下来的 blocks 是**已经落库**的事件切出来的，生成过程中它是静止的；
-      而"看着它一步步往下走"正是这一栏存在的理由。
-      所以运行期间另攒一份：把 SSE 收到的每一条事件按到达顺序喂给
-      同一个切块函数（core/planning/step-blocks.ts），于是右边的块
-      和运行结束后落库切出来的块**是同一套规则**，不会"实时看着是这样、
-      刷新完变成那样"。
+    运行中实时攒出来的步骤块。服务端那份 blocks 是已落库事件切的，生成过程中静止，
+    而「看着它一步步往下走」正是这一栏存在的理由 ——
+    所以运行期间另攒一份，喂给同一个切块函数，实时与落库后是同一套规则。
 
-    ── 它什么时候退场（这一条很要紧）──
-      当服务端那份 blocks 变成**新的一份**（说明这一轮的事件已经落库、
-      页面刷新过了），实时块立刻退场，由真实块接手 —— 否则同一批事件
-      会在列表里显示两遍。
-      判据用的是**数组身份**（`blocksAtStart === blocks`），不是长度：
-      长度可能碰巧相等（比如这一轮只多了一条 phase、又少了一条 check），
-      而身份变了只可能意味着"服务端重新算过一遍"。
+    服务端那份 blocks 换成新的一份（说明这一轮已落库、页面刷新过）时，实时块退场，
+    否则同一批事件会显示两遍。判据用数组身份而不是长度：长度可能碰巧相等。
   */
   const [liveBlocks, setLiveBlocks] = useState<StepBlock[]>([]);
   const [blocksAtStart, setBlocksAtStart] = useState<StepBlock[] | null>(null);
   const liveEventsRef = useRef<{ seq: number; payload: GenerateEvent }[]>([]);
   const liveSeqRef = useRef(0);
 
-  /* ---------- 按帧合并流式片段 ---------- */
+  /* 按帧合并流式片段 */
   const flush = useCallback(() => {
     rafRef.current = null;
     const pending = pendingRef.current;
@@ -342,10 +276,8 @@ export function GenerationConsole({
       setReasoning((prev) => prev + chunk);
     }
     /*
-      步骤块和正文**同一个节拍**重算。
-      一次生成会推来三千多个片段，逐条重算就是三千多次渲染；
-      合并到每帧一次之后，渲染次数降到几十次 ——
-      和上面那两行 setText / setReasoning 是同一条理由。
+      步骤块和正文同一个节拍重算。一次生成推来三千多个片段，
+      逐条重算就是三千多次渲染，合并到每帧一次只剩几十次。
     */
     if (liveEventsRef.current.length > 0) {
       setLiveBlocks(toStepBlocks(liveEventsRef.current));
@@ -357,7 +289,7 @@ export function GenerationConsole({
     rafRef.current = requestAnimationFrame(flush);
   }, [flush]);
 
-  /* ---------- 关闭连接并清理 ---------- */
+  /* 关闭连接并清理 */
   const stop = useCallback(() => {
     sourceRef.current?.close();
     sourceRef.current = null;
@@ -374,20 +306,20 @@ export function GenerationConsole({
   // 组件卸载时一定要断开，否则离开页面后连接还挂着
   useEffect(() => stop, [stop]);
 
-  /* ---------- 计时器 ---------- */
+  /* 计时器 */
   useEffect(() => {
     if (!running || startedAt === null) return;
     const timer = setInterval(() => setElapsed(Date.now() - startedAt), 200);
     return () => clearInterval(timer);
   }, [running, startedAt]);
 
-  /* ---------- 自动滚到底 ---------- */
+  /* 自动滚到底 */
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [text, reasoning, showReasoning]);
 
-  /* ---------- 发起生成 ---------- */
+  /* 发起生成 */
   const start = useCallback(() => {
     if (sourceRef.current) return;
 
@@ -406,9 +338,8 @@ export function GenerationConsole({
     setElapsed(0);
     pendingRef.current = { text: "", reasoning: "" };
     /*
-      实时块从零开始 —— **服务端那份 blocks 原样留着**，
-      它排在实时块**前面**，于是"旧的留在上方、新的追加在下方"这条
-      在重新生成时同样成立：上一轮那几步不会被清掉。
+      实时块从零开始，服务端那份 blocks 原样留着并排在前面 ——
+      于是「旧的留在上方、新的追加在下方」在重新生成时同样成立。
     */
     liveEventsRef.current = [];
     liveSeqRef.current = 0;
@@ -427,9 +358,8 @@ export function GenerationConsole({
       }
 
       /*
-        每一条事件都进实时缓冲 —— **正文与思考的片段也进**：
-        切块要看的正是"这一步里所有 delta 按顺序拼起来是什么"。
-        落库那份由记录器合并，这里不合并（界面要的是逐字的实时感）。
+        每条事件都进实时缓冲，正文与思考的片段也进：切块要看的是
+        「这一步里所有 delta 按顺序拼起来是什么」。界面要的是逐字的实时感，不在这里合并。
       */
       liveEventsRef.current.push({
         seq: LIVE_SEQ_BASE + liveSeqRef.current++,
@@ -441,18 +371,14 @@ export function GenerationConsole({
         case "phase":
           setPhase(event.phase);
           /*
-            回流（07）单独留一份。
-            phaseLabel 会被后面一串 phase 事件一路顶掉，
-            而「回流真的发生了」这件事需要留在固定的地方 ——
-            否则用户回头看时，唯一的证据已经没了。
+            回流（07）单独留一份：phaseLabel 会被后面一串 phase 事件顶掉，
+            而「回流真的发生了」这件事需要留在固定的地方。
           */
           if (event.note === "callback") setCallbackNote(event.label);
           else setPhaseLabel(event.label);
           /*
-            注意这里**没有**把 awaiting 也当成结束。
-            门禁停下时流确实结束了，但用户接下来要做的是回答问题、
-            不是看结果 —— 所以不触发 onSettled（那会去刷新运行列表），
-            让界面停在「等你确认」这个状态上。
+            这里没有把 awaiting 当成结束：门禁停下时流确实结束了，
+            但用户接下来要做的是回答问题 —— 所以不触发 onSettled（那会去刷新运行列表）。
           */
           if (event.phase === "done" || event.phase === "failed") {
             stop();
@@ -474,9 +400,8 @@ export function GenerationConsole({
 
         case "usage":
           /*
-            用量事件两个阶段都会发（规格化一次、生成一次）。
-            花费要**累加**而不是覆盖 —— 覆盖的话，
-            界面上的数字会从规格那笔变成生成那笔，总额永远少一截。
+            用量事件两个阶段都会发，花费要累加而不是覆盖 ——
+            覆盖的话界面上的数字会从规格那笔变成生成那笔，总额永远少一截。
           */
           setCost((c) => (c ?? 0) + event.costCny);
           setLatency((l) => (l ?? 0) + event.latencyMs);
@@ -527,26 +452,21 @@ export function GenerationConsole({
     };
   }, [runId, stop, scheduleFlush, onSettled, phase, blocks]);
 
-  /* ---------- 渲染 ---------- */
+  /* 渲染 */
   const passed = checks?.filter((c) => c.pass).length ?? 0;
   const total = checks?.length ?? 0;
   const activeText = showReasoning ? reasoning : text;
 
   /*
-    实时块什么时候还算数：只有**服务端那份 blocks 一动不动**的时候。
-    它一变（页面带着新数据刷新回来），实时块退场 —— 理由见上面 liveEventsRef 那段。
+    实时块只有服务端那份 blocks 一动不动时才算数；
+    它一变（页面带着新数据刷新回来），实时块退场，理由见上面 liveBlocks 那段。
   */
   const liveVisible =
     blocks !== undefined && blocksAtStart !== null && blocksAtStart === blocks;
 
   /**
-   * 真正摆到界面上的块列表：
-   *   服务端那份（旧的，在上面） + 运行中实时攒出来的（新的，追加在下面）。
-   *
-   * ⚠️ 这里**只追加、不重排、不清空** ——
-   *    这就是"旧的推上去但不销毁"在数据侧的写法：
-   *    老块的 id 不变（React 于是保留同一个 DOM 节点），
-   *    新块长在数组末尾（于是长在屏幕下方）。
+   * 真正摆到界面上的块列表：服务端那份（旧的，在上）+ 运行中实时攒的（新的，追加在下）。
+   * 只追加、不重排、不清空 —— 老块 id 不变，React 保留同一个 DOM 节点。
    */
   const shownBlocks = useMemo<StepBlock[] | null>(() => {
     if (blocks === undefined) return null; // 通道没接：退回一条连续日志
@@ -607,11 +527,8 @@ export function GenerationConsole({
         )}
 
         {/*
-          回流（07）的痕迹。
-          放在这一排状态里，而不是跟着 phase 文案一闪而过 ——
-          「这一次带上了上一轮的问题」是需要事后也能看到的事实。
-          它同时对应一个 callback.json 产物，用户可以打开看
-          到底被提醒了什么。
+          回流（07）的痕迹。放在状态排里而不是跟着 phase 文案一闪而过 ——
+          「这一次带上了上一轮的问题」需要事后也看得到。
         */}
         {callbackNote && (
           <span
@@ -667,10 +584,8 @@ export function GenerationConsole({
         </div>
       )}
 
-      {/* 规格
-          这是规格化阶段唯一值得展示的东西。用户要看的不是「规格已就绪」，
-          而是「它到底把我的需求理解成了什么」——
-          理解错了要在这里就能发现，而不是等成品出来才发现。 */}
+      {/* 规格：用户要看的是「它把我的需求理解成了什么」，
+          理解错了要在这里就发现，而不是等成品出来 */}
       {spec && (
         <div className="border-b border-[var(--color-border-soft)] bg-violet-950/15 px-4 py-2.5">
           <div className="flex flex-wrap items-center gap-2">
@@ -734,9 +649,8 @@ export function GenerationConsole({
 
           {spec.questions.length > 0 ? (
             /*
-              人工门禁：这是全流程唯一需要人的地方。
-              疑问做成可填写的表单，而不是只提示一句「有 2 个问题」——
-              提示了却没有地方回答，等于把人拦在门口又不给开门。
+              人工门禁：全流程唯一需要人的地方。疑问做成可填写的表单，
+              只提示一句「有 2 个问题」而不给回答的地方，等于把人拦在门口又不给开门。
             */
             <div className="mt-2 rounded border border-amber-900/50 bg-amber-950/25 px-2.5 py-2">
               <div className="text-[10.5px] text-amber-300">
@@ -768,9 +682,8 @@ export function GenerationConsole({
                   {submitting ? "提交中…" : "提交回答"}
                 </button>
                 {/*
-                  「按我的回答重出一版规格」：回答不只是"确认"，而是真的改进规格。
-                  它多花一次规格化的钱，所以单独一个按钮 + 写明代价，
-                  绝不默认勾选（默认仍然是沿用已确认的那份）。
+                  「按我的回答重出一版规格」：回答不只是确认，而是真的改进规格。
+                  它多花一次规格化的钱，所以单独一个按钮并写明代价，绝不默认勾选。
                 */}
                 <button
                   type="button"
@@ -782,8 +695,7 @@ export function GenerationConsole({
                   提交回答并按回答重出规格
                 </button>
                 {/*
-                  「知悉并继续」：第三条路。
-                  与「提交回答」并列放在这里，是因为它俩是同一个决定的两个方向：
+                  「知悉并继续」与「提交回答」并列：它们是同一个决定的两个方向，
                   要么我把疑问答清楚，要么我认了让你替我猜。
                 */}
                 <button
@@ -846,12 +758,8 @@ export function GenerationConsole({
         </ul>
       )}
 
-      {/* 流式内容
-          ⚠️ 接上了事件通道（有 blocks）→ 按**步骤块**显示：
-             一步一块、块间有分隔线、旧的留在上方、新的追加在下面。
-             没接（退役的 /studio 工作台）→ 退回原来那条连续日志，
-             页面上不会平白空出一块。
-          两条路的实时性是一样的：块列表同样按帧追加，正文照样逐字往外蹦。 */}
+      {/* 流式内容。接上了事件通道（有 blocks）就按步骤块显示：一步一块、旧的在上、
+          新的追加在下；没接（退役的 /studio）退回一条连续日志，两条路实时性一样 */}
       {shownBlocks ? (
         <ProcessBlocks
           blocks={shownBlocks}
@@ -878,10 +786,8 @@ export function GenerationConsole({
       )}
 
       {/*
-        时间轴回放。放在实时日志下面，因为它是同一件事的「事后」形态：
-        上面是正在发生，下面是已经发生过、可以来回拖。
-        只有真正调用过模型的那一次生成才会有录像，
-        重新生成之前这里是空的 —— 空的时候会说明原因，不留一块白。
+        时间轴回放，放在实时日志下面：上面是正在发生，下面是已经发生过、可以来回拖。
+        只有真正调用过模型的那一次生成才有录像，重新生成之前这里是空的。
       */}
       <div className="border-t border-[var(--color-border-soft)] px-4 py-2.5">
         <RunTimeline runId={runId} refreshKey={refreshKey} />

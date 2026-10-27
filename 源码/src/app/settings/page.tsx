@@ -21,16 +21,9 @@ export const metadata: Metadata = {
 };
 
 /**
- * 设置页 /settings
- * ============================================================
- * 需要登录。目前任何登录用户都能修改站点级配置 —— 这是刻意的简化，
- * 真正的产品需要角色体系，但那要连带做用户管理、邀请、审计，
- * 不适合塞进当前这一轮。
- *
- * 关于「平台默认接入」的展示：
- *   这里只把地址和模型名传给界面，**密钥永远不出现**。
- *   platformInfo 这个对象里根本没有 apiKey 字段 ——
- *   不是靠界面不去显示它，而是它压根没被传出来。
+ * 设置页 /settings：需登录，可改站点级配置，尚无角色体系。
+ * 传给界面的只有地址与模型名，platformInfo 不含 apiKey 字段。
+ * 外观立即生效，模型接入在下一次调用时生效。
  */
 export default async function SettingsPage() {
   const user = await requireUser();
@@ -47,12 +40,7 @@ export default async function SettingsPage() {
 
   return (
     <div className="min-h-screen">
-      {/*
-        顶栏：全局统一的那一个。
-        中间放「返回工作台 | 设置」—— 两头的品牌和右侧那组和别的页面一模一样。
-        以前这里是第四套顶栏（max-w-5xl 居中 + px-6），
-        于是从首页点进设置时导航会**横向跳 450 像素**。
-      */}
+      {/* 顶栏全局统一：此前这里另有一套布局，从首页进入时导航会横向跳动 */}
       <AppNav
         spentCny={spent > 0 ? spent : null}
         user={{ displayName: user.displayName, username: user.username }}

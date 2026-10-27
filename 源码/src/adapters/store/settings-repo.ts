@@ -1,5 +1,5 @@
 /**
- * 站点配置存取的 SQLite 实现
+ * 站点配置存取。值统一是 JSON 文本，键的语义由 core/settings/service 定义。
  */
 
 import { eq } from "drizzle-orm";
@@ -18,9 +18,7 @@ export const sqliteSettingsStore: SettingsStore = {
   },
 
   async set(key: string, value: string, updatedBy: number | null): Promise<void> {
-    // 用 upsert 而不是「先查再决定插还是改」：
-    // 后者在并发下会出现两个请求都判定为「不存在」然后一起插入，
-    // 其中一个撞主键报错。交给数据库的 ON CONFLICT 处理才稳。
+    // 用 upsert 而非先查再插：并发下两个请求会同时判定不存在，其中一个撞主键
     db.insert(settings)
       .values({ key, value, updatedAt: Date.now(), updatedBy })
       .onConflictDoUpdate({

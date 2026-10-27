@@ -13,20 +13,9 @@ import { requireUser } from "@/server/auth-context";
 import { serverNow } from "@/server/clock";
 
 /**
- * 工作台 /studio
- * ============================================================
- * 一次请求里做完四件事：
- *   1. 鉴权：未登录直接跳转登录页
- *   2. 取该用户的构建记录列表
- *   3. 解析 URL 上的 run 参数，取出当前选中的那条
- *   4. 把「多久以前」这类描述算好再传给客户端
- *
- * 第 4 条是有意为之：服务端才是「现在」的权威。
- * 让客户端自己算时间，一来违反组件的纯函数规则，
- * 二来服务端渲染与客户端水合两次结果可能不同，会造成水合告警。
- *
- * 取选中记录时会校验归属 —— 运行 id 虽然是随机串，
- * 但仍然必须确认它属于当前用户，否则猜到 id 就能看别人的构建内容。
+ * 工作台 /studio：鉴权、取构建列表、解析 run 参数、预计算时间与花费标签。
+ * 时间在服务端算好：服务端是当前的权威，也避免 SSR 与水合结果不一致。
+ * 选中记录须校验归属，否则猜到 id 就能看到他人构建内容。
  */
 export default async function StudioPage({
   searchParams,
@@ -43,44 +32,32 @@ export default async function StudioPage({
     timeLabel: describeTime(r.createdAt, now),
   }));
 
+  // 选中的运行先校验归属，不属于当前用户时按不存在处理
   let selectedRun = null;
   if (runId) {
     selectedRun = await getOwnedRun(sqliteRunStore, runId, user.id);
-    // id 存在但不属于当前用户：当作不存在处理，不泄露「这个 id 是有效的」
+    // 不属于当前用户时按不存在处理，不泄露 id 是否有效
     if (!selectedRun) {
       notFound();
     }
   }
 
-  // 没指定 run 时，默认选中最近的一条
+  // 未指定 run 时选中最近一条，与画布保持一致
   if (!selectedRun && runs.length > 0) {
     selectedRun = runs[0];
   }
 
-  /*
-    查一下选中的这次构建有没有成品。
-    只把「大小」这一个数字传下去，不传内容 —— 内容有二十多 KB，
-    放进页面会让每次进工作台都多传一份，而多数时候用户并不看它。
-    「有没有成品」决定底部默认停在「预览」还是「生成过程」。
-  */
+  // 只传产物大小不传内容（二十多 KB，多数时候不看）；有无成品决定底部默认标签。
+  // 大小也足够判断预览是否可用。
   const artifact = selectedRun
     ? await fsArtifactStore.findLatest(selectedRun.id, "html")
     : null;
 
-  /*
-    累计花费：顶栏右侧要显示它。
-    以前工作台顶栏只显示 @用户名，没有这个数 —— 换成全局统一的顶栏之后，
-    三个页面右侧那一组必须一模一样，所以这里也得查出来传下去。
-  */
+  // 顶栏右侧显示累计花费，三个页面的这一组须一致
+  // 累计花费：顶栏右侧要显示，三个页面必须一致
   const spent = await sqliteCostStore.totalByUser(user.id);
 
-  /*
-    分阶段的花费。
-    cost_records 的每一行本来就带 stage —— 也就是说「钱花在哪道工序」
-    一直记着，只是界面上没用上，于是摆了两个假数字：
-    写死的 ¥0.0000，以及把整次运行的总数挂在某一个阶段旁边。
-    在服务端算好再传下去，客户端就不用为了这一件事再去请求一次。
-  */
+  // cost_records 每行本就带 stage；服务端算好，避免客户端为此再请求一次
   let costByStage: CostByStage = {};
   if (selectedRun) {
     const records = await sqliteCostStore.listByRun(selectedRun.id);
@@ -96,9 +73,8 @@ export default async function StudioPage({
       artifactBytes={artifact?.bytes ?? null}
       costByStage={costByStage}
       /*
-        人工门禁的运行时覆盖。
-        服务端读环境变量 —— 客户端组件不该直接碰 process.env，
-        而且这个值本来就该在服务端定格（同一个页面渲染两次不该看到两个值）。
+        门禁覆盖值在服务端从环境变量读取定稿：客户端组件不该碰 process.env，
+        同一页面渲染两次也不该看到两个值。
       */
       gateOverride={env.run.specGate}
       themeToggle={<ThemeToggleServer />}

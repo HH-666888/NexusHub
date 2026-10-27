@@ -13,13 +13,8 @@ export const metadata: Metadata = {
 };
 
 /**
- * 让浏览器自己的 UI（手机状态栏等）跟随主题。
- * 不做这一步，浅色主题下手机上会顶着一条深色状态栏。
- *
- * ⚠️ 这个值**必须和 globals.css 里的 --color-canvas 一致**。
- *    它写死在两处（CSS 变量一处、这里一处），改一处忘一处，
- *    手机上就会看到状态栏和页面底色对不上的一条色带。
- *    底色抬过两次（#08090c → #0c0d11 → #171922），这里跟着走。
+ * 让浏览器 UI（手机状态栏等）跟随主题。
+ * 取值必须与 globals.css 的 --color-canvas 一致，两处写死需同步。
  */
 export const viewport: Viewport = {
   themeColor: [
@@ -29,26 +24,10 @@ export const viewport: Viewport = {
 };
 
 /**
- * 根布局
- * ============================================================
- * 外观配置在这里被翻译成一组 CSS 变量 + 两个 data 属性，挂在 <html> 上。
- *
- * ── 主题的两层结构 ──
- *   站点默认（数据库）  ← 在「设置」里改，影响所有人
- *   个人偏好（Cookie）  ← header 上的快捷开关，只影响自己
- *
- *   为什么快捷开关不直接写数据库：
- *     它要的是「点一下立刻变」。走服务端动作意味着一次往返，
- *     而且任何访客都能改掉全站的默认主题 —— 那不合理。
- *     个人偏好放 Cookie，客户端直接改，零延迟。
- *
- *   优先级：Cookie > 数据库默认。解析逻辑在 server/theme.ts，
- *   布局和开关共用同一份，避免两处判断不一致。
- *
- * ── 为什么 theme 不走 CSS 变量 ──
- *   CSS 没法按变量值去选规则（没有「如果 --x 等于 y 就怎样」这回事）。
- *   而主题要换的是**一整套**语义颜色，必须用属性选择器。
- *   其余配置项（字体、字号、主色、辅助色、圆角）都是单个值，走变量即可。
+ * 根布局：外观配置译为 CSS 变量与 data-theme/data-backdrop，挂在 <html> 上。
+ * 主题优先级为 Cookie 高于数据库默认，解析在 server/theme.ts，布局与开关共用。
+ * theme 只能用属性选择器（CSS 无法按变量值选规则），其余配置项走变量。
+ * data-backdrop 同时驱动背景装饰层的显隐，规则在 globals.css 第四节。
  */
 export default async function RootLayout({
   children,
@@ -66,7 +45,8 @@ export default async function RootLayout({
       data-theme={theme}
       data-backdrop={appearance.backdrop}
       style={vars as CSSProperties}
-      // 快捷开关会在客户端直接改这两个属性，声明一下避免水合告警
+      // 快捷开关在客户端改这两个属性，声明以避免水合告警
+      // 属性由客户端脚本写入，与服务端渲染结果可能不同步
       suppressHydrationWarning
     >
       <body className="antialiased">{children}</body>

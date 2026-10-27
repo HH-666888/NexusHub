@@ -1,13 +1,7 @@
 /**
- * 产物存取的 SQLite + 文件系统实现
- * ============================================================
- * 这个适配器同时管两件事：往磁盘写文件、往数据库写登记。
- * 合成一个操作是刻意的 —— 分开的话调用方很容易忘掉一步，
- * 造成「数据库有记录但文件不存在」这种最难排查的不一致。
- *
- * 顺序上先写文件再登记：
- *   万一登记失败，留下的是一个没人引用的孤儿文件（无害，可清理）；
- *   反过来先登记再写文件，失败就会留下「有记录但读不出内容」的坏数据（有害）。
+ * 产物存取的 SQLite + 文件系统实现：写文件与写登记合为一个操作。
+ * 顺序是先写文件再登记：登记失败只留孤儿文件，反过来会留下有记录但读不出内容的坏数据。
+ * bytes 与 sha256 在写入时算好，之后不再变更。
  */
 
 import fs from "node:fs/promises";
@@ -45,10 +39,7 @@ function workspaceRoot(): string {
 }
 
 /**
- * 把相对路径解析成绝对路径，并确认它没有跑出工作区。
- *
- * 这是**路径穿越**的最后一道防线：即使前面所有校验都被绕过，
- * 只要这里发现解析结果不在工作区内，就直接拒绝。
+ * 把相对路径解析为绝对路径并确认未越出工作区，是路径穿越的最后一道防线。
  */
 function resolveInsideWorkspace(relativePath: string): string {
   const root = workspaceRoot();
@@ -137,7 +128,7 @@ export const fsArtifactStore: ArtifactStore = {
 
     db.delete(artifacts).where(eq(artifacts.runId, runId)).run();
 
-    // 顺手把这次运行的目录删掉（可能残留空目录或未登记的文件）
+    // 顺手删掉运行目录：可能残留空目录或未登记的文件
     if (isSafePathSegment(runId)) {
       try {
         await fs.rm(resolveInsideWorkspace(runId), { recursive: true, force: true });

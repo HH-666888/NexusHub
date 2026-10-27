@@ -12,29 +12,9 @@ import { requireUser } from "@/server/auth-context";
 import { serverNow } from "@/server/clock";
 
 /**
- * 首页 /（登录之后的落地页）
- * ============================================================
- * 版式参考的是 RunningHub 的创作首页：
- * 居中大标题、一排类型分段、一个巨型输入框，下面是项目卡片与能力展示。
- *
- * ── 和欢迎页是什么关系 ──
- *   两个页面回答的是两个不同的问题：
- *     /          已经登录的人：我要做什么、上次做到哪了
- *     /welcome   还没注册的人：这是什么东西、值不值得试
- *   把这两个问题塞进一个页面，两边都答不好 —— 所以分成两页。
- *
- *   ── 为什么首页在 / 而不是 /home ──
- *     一开始建在 /home 上（为了不动原来的欢迎页）。但那样打开网站
- *     第一眼看到的还是旧的欢迎页，「首页换了」这件事要输地址才看得到。
- *     所以把新首页挪到了根路径，欢迎页原样搬到 /welcome，
- *     /home 留作重定向。
- *     两个页面**内容一行没改**，只是换了地址。
- *
- * ── 这一版是「画面版」 ──
- *   版式、层级、留白都按最终形态做，但按钮还没接真实动作。
- *   唯一接真数据的是两处**只读**的地方：项目卡片行与累计已花费。
- *   之所以接上而不是写死：编几条假项目摆上去好看，
- *   但用户点进去会发现不存在 —— 那比空着更糟。
+ * 首页：已登录用户的创作落地页。
+ * 与 /welcome 分工——已登录看这里，未注册看欢迎页；/home 重定向到根路径。
+ * 项目卡片与累计花费取自真实数据，其余为静态版式。
  */
 export default async function HomePage() {
   const user = await requireUser();
@@ -46,20 +26,13 @@ export default async function HomePage() {
     timeLabel: describeTime(r.createdAt, now),
   }));
 
-  /*
-    累计已花费。没花过时传 null 而不是 0 ——
-    界面上要能区分「还没跑过」和「跑了但花了零元」。
-  */
+  // 未跑过时传 null 而非 0，界面需区分尚未运行与运行但花费为零。
   const spent = await sqliteCostStore.totalByUser(user.id);
 
   return (
-    /*
-      点阵底纹铺在最外层。
-      它和已有的径向光晕叠加：点阵给空白一个尺度感，
-      光晕给页面一个视觉中心 —— 两者管的事不一样，不冲突。
-    */
+    // 点阵底纹在最外层，与径向光晕叠加：前者给空白尺度感，后者给视觉中心。
     <div className="dot-grid relative min-h-screen bg-[var(--color-canvas)]">
-      {/* 光晕。放在点阵之上、内容之下，不参与交互 */}
+      {/* 光晕：位于点阵之上、内容之下，不参与交互，故 pointer-events-none */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-[520px]"

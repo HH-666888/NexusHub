@@ -3,30 +3,18 @@ import { tintVarAt } from "@/core/domain/appearance";
 import { STAGES } from "@/core/pipeline/stages";
 
 /**
- * 首页核心视觉：一句话 → 六道工序 → 一个成品
- * ============================================================
- * 这段动画的全部成本说明（因为性能是硬约束，不是事后优化）：
+ * 首页核心视觉：一句话 → 六道工序 → 一个成品。
  *
- *   · 它跑在**访客的浏览器**上，服务器一次也不用参与。
- *     页面本身是静态标记，服务端只做一次渲染。
+ * 性能是硬约束：动效只改 transform 与 opacity（跳过布局与绘制，直接由 GPU 合成），
+ * 「节点点亮」用覆盖层的 opacity 而不是改 background-color 或 box-shadow —— 后者每帧重绘。
+ * 全场没有一张图片、没有一行动画 JS，引入库带来的几十 KB 在这里是 0。
  *
- *   · 每一个动效只改 transform 与 opacity。
- *     浏览器渲染分三步：布局 → 绘制 → 合成。
- *     这两个属性跳过前两步，直接由 GPU 合成，所以不占 CPU 主线程。
- *
- *   · 「节点点亮」做成一个覆盖层的 opacity 变化，而不是去改节点的
- *     background-color 或 box-shadow —— 后者无法 GPU 合成，会变成每帧重绘。
- *
- *   · 全场没有一张图片、没有一行动画 JS。
- *     framer-motion 之类的库光是引入就要几十 KB，而这里增加的是 0。
- *
- * 阶段数据直接取自 core/pipeline/stages ——
- * 首页讲的六道工序，就是产品里真正跑的那六道，不会各说各话。
+ * 阶段数据取自 core/pipeline/stages：首页讲的六道工序就是产品里真正跑的那六道。
  */
 export function PipelineFlow() {
   return (
     <div className="relative mx-auto w-full max-w-3xl">
-      {/* ---------- 输入：用户说的那一句话 ---------- */}
+      {/* 输入：用户说的那一句话 */}
       <div className="animate-rise mx-auto max-w-xl" style={{ animationDelay: "0.15s" }}>
         <div className="flex items-center gap-3 rounded-xl border border-[var(--color-border-soft)] bg-[var(--color-surface)] px-4 py-3">
           <span aria-hidden className="text-slate-500">
@@ -52,7 +40,7 @@ export function PipelineFlow() {
         style={{ animationDelay: "0.3s" }}
       />
 
-      {/* ---------- 流水线：六道工序依次点亮 ---------- */}
+      {/* 流水线：六道工序依次点亮 */}
       <div
         className="animate-rise relative"
         style={{ animationDelay: "0.45s" }}

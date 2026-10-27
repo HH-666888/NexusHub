@@ -1,23 +1,7 @@
 /**
- * 「知悉并继续」
- * ============================================================
- * POST /api/runs/<运行id>/acknowledge
- *
- * 人工门禁的第三条路：用户看过了那些疑问，但选择**不回答**，
- * 让模型替他决定。存成 ack.json 产物，状态放回 running，
- * 之后用户再点生成就会被放行（放行时事件里会写明"这是知悉后放行的"）。
- *
- * ── 为什么要有这条路 ──
- *   门禁的另一半是"答不了也得能往前走"。有些疑问用户确实没有偏好
- *   （"要不要提示音？" —— 都行），逼他逐条编一个答案反而是在收集噪声；
- *   而"留空提交"虽然也表达"你替我决定"，但它要求用户**逐条**看完并点提交，
- *   在移动端或问题多的时候很烦。
- *   这条路的代价是明确的：模型会替他猜，猜错了要到验收那一步才暴露 ——
- *   所以界面上那个按钮的文字必须把这句代价写出来，不能只写"继续"。
- *
- * ── 为什么状态也放回 running ──
- *   与提交回答同一条理由：让人来决定什么时候继续，
- *   而不是提交完就立刻开始花钱。
+ * POST /api/runs/<id>/acknowledge：知悉并继续，替用户放行未回答的疑问。
+ * 存 ack.json 并把状态放回 running，由用户决定何时继续，而非提交即开始计费。
+ * 代价是模型替用户猜测，猜错要到验收才暴露，故按钮文案需写明。
  */
 
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
@@ -49,7 +33,7 @@ export async function POST(
   const run = await getOwnedRun(sqliteRunStore, id, user.id);
   if (!run) return new Response("找不到该构建", { status: 404 });
 
-  // 读规格（按文件名，不能取"最新的那个 json"—— answers.json 也是 json）
+  // 按文件名读规格：answers.json 也是 json，不能取最新的那个
   const loaded = await loadJsonArtifact<AppSpec>(run.id, SPEC_ARTIFACT_NAME);
   if (!loaded.ok) {
     return Response.json(
@@ -67,10 +51,7 @@ export async function POST(
 
   const answers = await loadJsonArtifact<SpecAnswers>(run.id, ANSWERS_ARTIFACT_NAME);
 
-  /*
-    用 decideGate 现算"还差哪几条" —— 判据只有一份。
-    已经用 answers 答完的疑问，不该被记进 ack（它不是"知悉但没答"）。
-  */
+  // 用 decideGate 现算还差哪几条：判据只有一份，已答过的疑问不记进 ack
   const decision = decideGate(spec, answers.ok ? answers.value : null);
   if (decision.pending.length === 0) {
     return Response.json(
@@ -96,7 +77,7 @@ export async function POST(
 
   return Response.json({
     ok: true,
-    // 界面上要说清"他知悉的是哪几条"，而不是只回一个 true
+    // 返回具体条目，界面需说清放行的是哪几条
     acknowledged: decision.pending.length,
     pending: decision.pending,
   });

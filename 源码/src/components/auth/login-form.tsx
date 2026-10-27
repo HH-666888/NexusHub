@@ -9,13 +9,9 @@ import { FormField } from "./form-field";
 const INITIAL: FormState = {};
 
 /**
- * 登录表单
- * ============================================================
- * 只需要两样东西：用户名 + 密码。
- *
- * 用 useActionState 而不是自己管 fetch：
- *   表单提交、错误回填、提交中状态，全部由 React 统一处理，
- *   不需要额外写 loading / error 的状态机。
+ * 登录表单：用户名 + 密码。
+ * 用 useActionState 而不是自己管 fetch —— 提交、错误回填、提交中状态由 React 统一处理，
+ * 不需要再写一个 loading / error 的状态机。
  */
 export function LoginForm() {
   const [state, formAction, isPending] = useActionState(loginAction, INITIAL);

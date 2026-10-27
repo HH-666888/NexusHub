@@ -1,22 +1,7 @@
 /**
- * 解析「这一次调用该用哪套模型接入」
- * ============================================================
- * 规则：
- *   配了自定义且配全了 → 用自定义
- *   配了自定义但没配全 → **不静默退回平台配置**，而是明确拒绝
- *   没配自定义         → 用平台自己的（默认，永远可用）
- *
- * 为什么「没配全」不退回平台：
- *   用户切到自定义的意图是「用我的额度」。如果因为少填一项就
- *   悄悄用平台的钱去跑，他会在完全不知情的情况下消耗别人的额度 ——
- *   这比直接报错糟糕得多。宁可让他看到一句「接口地址没填」，
- *   也不要让他以为自己在用自己的账号。
- *
- * 为什么放在 adapters 而不是 server/：
- *   它只是「读一次配置、挑一组值」，不依赖 cookies() 或任何
- *   Next.js 请求上下文。放进 server/ 会让命令行脚本没法复用它
- *   （server/ 目录带着 server-only 守卫，脚本一引入就报错）。
- *   server/ 只留给真正需要请求上下文的东西。
+ * 解析本次调用使用哪套模型接入：自定义配全用自定义，未配置用平台默认。
+ * 自定义未配全时明确拒绝而不退回平台，避免用户在不知情时消耗平台额度。
+ * 放在 adapters 而非 server：不依赖请求上下文，命令行脚本也能复用。
  */
 
 import { platformEndpoint, type ModelEndpoint } from "@/adapters/model/deepseek";
@@ -26,7 +11,7 @@ import { describeModelSource, loadModelConfig } from "@/core/settings/service";
 export interface ResolvedEndpoint {
   endpoint: ModelEndpoint;
   source: "platform" | "custom";
-  /** 当前配置能不能直接拿来跑 */
+  /** 当前配置能否直接拿来跑 */
   ready: boolean;
   /** 不能跑时的中文原因，可直接显示给用户 */
   reason?: string;

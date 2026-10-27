@@ -1,28 +1,7 @@
 /**
- * 导入接口
- * ============================================================
- * POST /api/runs/import
- *
- * 收一个 `.nexus.json`（multipart 表单的 file 字段），
- * 把里面那条运行**新建**到当前用户名下，然后 303 跳过去看它。
- *
- * ── 为什么是"新建"而不是"覆盖" ──
- *   导出文件里带着原来那条运行的 id，但导入**不认这个 id**：
- *   它属于另一个账号、另一台机器上的一次导入。
- *   照原 id 写回去，轻则撞主键，重则把别人库里的同名运行覆盖掉。
- *   所以每次都新建一条（新 id、属于当前用户），
- *   而原来的那条运行**一动不动** —— 导入的语义是"也留一份"，
- *   不是"搬过来"。这一点必须有测试钉着（e2e 第二十七步验了）。
- *
- * ── 为什么写完之后是 303 而不是 200 ──
- *   这是一个**表单提交**（用户选了文件点导入），浏览器会当导航处理。
- *   返回 200 + JSON 的话，用户看到的是屏幕上一坨花括号 ——
- *   而他刚做完的动作是"把项目导进来"，他期望看到的是那个项目。
- *   303 的语义正是"POST 完了，去 GET 那个地址"，而画布就是那个地址。
- *
- * ── 这一层只做三件事 ──
- *   把请求读成对象、把不合规的东西**说清哪里不合规**、把合规的交给存储层。
- *   真正的写入（含"先验后写"与失败补偿）在 adapters/store/import-repo.ts。
+ * POST /api/runs/import：收 .nexus.json（multipart 的 file 字段），新建运行后 303 跳到画布。
+ * 不认文件里的原 id：它可能属于别的账号或机器，照写会撞主键或覆盖他人运行。
+ * 写入细节在 adapters/store/import-repo.ts；本层只做读取、报错与语义复核。
  */
 
 import { importRun, type ImportRunPayload } from "@/adapters/store/import-repo";
@@ -37,7 +16,7 @@ import { getCurrentUser } from "@/server/auth-context";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** 落库时 kind 这一列是文本，读回来要靠这里收窄成合法值 */
+/** 落库时 kind 存为文本，读回来要收窄成合法值 */
 const RUN_EVENT_KINDS: ReadonlySet<string> = new Set<RunEventKind>([
   "phase",
   "text",
@@ -58,20 +37,14 @@ const ARTIFACT_KINDS: ReadonlySet<string> = new Set<ArtifactKind>([
   "text",
 ]);
 
-/** 400 + 一句具体原因。形状按约定固定成 { error } */
+/** 400 + 具体原因，响应体形状固定为 { error } */
 function reject(reason: string, status = 400): Response {
   return Response.json({ error: reason }, { status });
 }
 
 /**
- * 解析失败时给出**具体**原因。
- *
- * ⚠️ 这里不是校验器 —— 校验器只有一个（parseExport）。
- *    本函数只在它已经返回 null 之后被调用，用来把"不行"翻译成人话。
- *    最要紧的两条（format / version）单独说，因为用户最常遇到的就是
- *    「拖错了文件」和「文件来自更新的版本」；其余情况给一句
- *    "一个合法的文件里必须有什么"，而不是重复一遍校验规则 ——
- *    两处各写一遍规则，迟早会分叉，而分叉的那天没人会发现。
+ * 解析失败后的具体原因。只在 parseExport 返回 null 后调用，不重复校验规则。
+ * format 与 version 单独说明，因为拖错文件和版本过新最常见。
  */
 function describeShapeProblem(raw: unknown): string {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
@@ -100,7 +73,7 @@ function describeShapeProblem(raw: unknown): string {
   );
 }
 
-/** 事件的 kind 从 payload 里读 —— 落库那一列存的就是它 */
+/** 从 payload 读取事件 kind，未知类型整份拒绝 */
 function kindOfEvent(payload: unknown): RunEventKind | null {
   if (typeof payload !== "object" || payload === null) return null;
   const kind = (payload as { kind?: unknown }).kind;
@@ -112,7 +85,6 @@ export async function POST(req: Request): Promise<Response> {
   const user = await getCurrentUser();
   if (!user) return new Response("未登录", { status: 401 });
 
-  /* ---------- ① 读表单 ---------- */
   let form: FormData;
   try {
     form = await req.formData();
@@ -130,7 +102,6 @@ export async function POST(req: Request): Promise<Response> {
   const text = await file.text();
   if (text.trim() === "") return reject("文件是空的");
 
-  /* ---------- ② 解析 ---------- */
   let raw: unknown;
   try {
     raw = JSON.parse(text);
@@ -141,14 +112,8 @@ export async function POST(req: Request): Promise<Response> {
   const bundle = parseExport(raw);
   if (!bundle) return reject(describeShapeProblem(raw));
 
-  /* ---------- ③ 语义校验：能补的已经补过，剩下这些补不了 ---------- */
-  /*
-    为什么 stage / status 要额外复核：
-    parseExport 对**缺失**的它们是补默认值（补出来的一定合法），
-    但文件里如果写着一个我们不认识的值（比如来自另一个产品线的文件），
-    补是不行的 —— 那会把一条运行画到一棵根本不存在的工序树上。
-    这种时候明确拒绝，比画出一棵假树强。
-  */
+  // stage/status 需额外复核：parseExport 只补缺失值，未知值会画出不存在的工序树。
+  // 明确拒绝比画出一棵假树强。
   if (!isStageId(bundle.run.stage)) {
     return reject(`导出文件里的 stage 不是合法工序：「${bundle.run.stage}」`);
   }
@@ -165,12 +130,8 @@ export async function POST(req: Request): Promise<Response> {
     artifactKinds.push(a.kind as ArtifactKind);
   }
 
-  /*
-    时间基准：老形状的导出文件里没有事件的 at。
-    那时候按"运行创建那一刻 + 序号"补 —— 序号是递增的，
-    于是时间轴仍然单调，回放拖起来不会来回跳。
-    没有可信的创建时间（0）时用导入这一刻，而不是 1970。
-  */
+  // 老导出文件没有事件 at：按创建时间 + seq 补齐以保持时间轴单调；无可信创建时间时用导入时刻。
+  // seq 递增，于是回放拖起来不会来回跳。
   const created = bundle.run.createdAt > 0 ? bundle.run.createdAt : Date.now();
 
   const events: ImportRunPayload["events"] = [];
@@ -193,11 +154,8 @@ export async function POST(req: Request): Promise<Response> {
   const costs: ImportRunPayload["costs"] = bundle.costs.map((c) => ({
     stage: c.stage,
     nodeId: c.nodeId ?? null,
-    /*
-      tier / purpose 是 cost_records 上的 NOT NULL 列，而它们在老形状的
-      导出文件里没有。默认值取"最不冒充信息"的那两个：
-      execute 是绝大多数调用真实所属的档位，空串是一句诚实的"不知道用途"。
-    */
+    // tier / purpose 是 cost_records 的 NOT NULL 列，老导出文件没有：默认 execute 与空串。
+    // 空串表示用途未知，比编一个更诚实。
     tier: c.tier ?? "execute",
     model: c.model,
     purpose: c.purpose ?? "",
@@ -212,19 +170,14 @@ export async function POST(req: Request): Promise<Response> {
     createdAt: c.createdAt > 0 ? c.createdAt : created,
   }));
 
-  /* ---------- ④ 写 ---------- */
   try {
     const result = await importRun({
       userId: user.id,
-      // 用户那句话**原样保留** —— 它是这条运行的起点，不许被归一化改写
+      // prompt 原样保留，它是这条运行的起点，不做归一化改写
       prompt: bundle.run.prompt,
       stage: bundle.run.stage,
       status,
-      /*
-        workflowVersion 不在导出文件里：它不是"这条运行的事实"，
-        而是"这份产物是照哪一版工作流做出来的"。导入之后，
-        它将要被这一版的工序继续处理，所以写当前版本。
-      */
+      // workflowVersion 不在导出文件里：记录继续处理这条运行的当前工作流版本
       workflowVersion: env.run.workflowVersion,
       createdAt: created,
       updatedAt: bundle.run.updatedAt > 0 ? bundle.run.updatedAt : created,
@@ -234,10 +187,12 @@ export async function POST(req: Request): Promise<Response> {
     });
     if (!result.ok) return reject(result.reason);
 
-    // 303：POST 完了，去 GET 画布。用户该看到的是刚导进来的那个项目
+    // 303：POST 后去 GET 画布，用户应看到刚导入的项目。
+    // 200 加 JSON 会让用户看到屏幕上一坨花括号。
     return Response.redirect(new URL(`/canvas?run=${result.runId}`, req.url), 303);
   } catch (err) {
-    // 走到这里说明是真正的 IO 失败（存储层已经把自己写的东西撤干净了）
+    // 真正的 IO 失败；存储层已撤销自己写入的数据
+    // 回 500 而不是 400，因为请求本身是合法的
     return reject(
       `导入时写入失败：${err instanceof Error ? err.message : String(err)}`,
       500,

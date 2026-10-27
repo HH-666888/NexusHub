@@ -9,6 +9,7 @@ export const metadata: Metadata = {
 };
 
 export default async function RegisterPage() {
+  // 已登录时直接进画布，与登录页一致
   if (await getCurrentUser()) redirect("/canvas");
   return <RegisterForm />;
 }
