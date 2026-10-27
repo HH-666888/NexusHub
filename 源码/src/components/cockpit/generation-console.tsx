@@ -77,6 +77,10 @@ export function GenerationConsole({
   currentBlockId?: string | null;
 }) {
   const [running, setRunning] = useState(false);
+  /** 清空重跑进行中（DELETE + 重新生成） */
+  const [regenerating, setRegenerating] = useState(false);
+  /** 删掉产物之后按钮文案要跟着变，所以本地也留一份 */
+  const [hasArtifactLocal, setHasArtifactLocal] = useState(hasArtifact);
   /*
     每跑完一次加一，让时间轴重新拉事件 —— 刚跑完那一刻事件才写进库，
     不重新拉的话时间轴还是空的，用户会以为“录像没录上”。
@@ -472,6 +476,29 @@ export function GenerationConsole({
     };
   }, [runId, stop, scheduleFlush, onSettled, phase, blocks]);
 
+  /**
+   * 清空重跑：先删产物，再走一次生成。
+   * 有成品时点「开始生成」只会回放（不花钱），想真正重做必须走这里。
+   */
+  const regenerate = useCallback(async () => {
+    if (sourceRef.current || regenerating) return;
+    setRegenerating(true);
+    try {
+      const res = await fetch(`/api/runs/${runId}/generate`, { method: "DELETE" });
+      if (!res.ok) {
+        setError({ message: `清空失败（HTTP ${res.status}）` });
+        return;
+      }
+      setHasArtifactLocal(false);
+      onSettled();
+      start();
+    } catch (e) {
+      setError({ message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setRegenerating(false);
+    }
+  }, [runId, regenerating, onSettled, start]);
+
   /* 渲染 */
   const passed = checks?.filter((c) => c.pass).length ?? 0;
   const total = checks?.length ?? 0;
@@ -577,13 +604,28 @@ export function GenerationConsole({
               叫停
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={start}
-              className="rounded bg-[var(--app-accent)] px-3 py-1 text-[11px] font-medium text-white transition-[transform,background-color] duration-150 ease-out hover:-translate-y-px hover:opacity-90"
-            >
-              {hasArtifact ? "重新生成（会再花一次钱）" : "开始生成"}
-            </button>
+            <div className="flex items-center gap-2">
+              {hasArtifactLocal && (
+                <button
+                  type="button"
+                  onClick={regenerate}
+                  disabled={regenerating}
+                  data-regenerate
+                  title="清空这条运行的产物，从规格化开始重跑（会花钱）"
+                  className="rounded border border-[var(--color-border-soft)] px-2.5 py-0.5 text-[11px] text-slate-400 transition-colors duration-150 hover:border-slate-500 hover:text-slate-200 disabled:opacity-50"
+                >
+                  {regenerating ? "清空中…" : "清空重跑"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={start}
+                data-generate
+                className="rounded bg-[var(--app-accent)] px-3 py-1 text-[11px] font-medium text-white transition-[transform,background-color] duration-150 ease-out hover:-translate-y-px hover:opacity-90"
+              >
+                {hasArtifactLocal ? "回放生成过程" : "开始生成"}
+              </button>
+            </div>
           )}
         </div>
       </div>

@@ -407,6 +407,36 @@ async function main() {
   });
   check(anonAnswers.status === 401, "未登录不能提交回答", `返回 ${anonAnswers.status}`);
 
+  // 「清空重跑」按钮走的就是这个 DELETE：有成品时点开始生成只会回放，重做必须先清产物。
+  const clearOwn = await fetch(`${BASE}/api/runs/${runIdA}/generate`, {
+    method: "DELETE",
+    headers: { cookie: cookieA },
+  });
+  check(
+    clearOwn.ok,
+    "本人可以清空这条运行的产物（清空重跑的前提）",
+    `返回 ${clearOwn.status}`,
+  );
+
+  const clearAgain = await fetch(`${BASE}/api/runs/${runIdA}/generate`, {
+    method: "DELETE",
+    headers: { cookie: cookieA },
+  });
+  check(
+    clearAgain.ok,
+    "没有产物时再清一次也是 200（幂等，不报错）",
+    `返回 ${clearAgain.status}`,
+  );
+
+  const clearAnon = await fetch(`${BASE}/api/runs/${runIdA}/generate`, {
+    method: "DELETE",
+  });
+  check(
+    clearAnon.status === 401,
+    "未登录不能清空别人的运行",
+    `返回 ${clearAnon.status}`,
+  );
+
   heading("第十三步 · 首页（登录后的落地页）与欢迎页");
 
   const homeRes = await fetch(`${BASE}/`, { headers: { cookie: cookieA } });

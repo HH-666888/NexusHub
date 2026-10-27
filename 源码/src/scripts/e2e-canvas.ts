@@ -3119,7 +3119,7 @@ async function main() {
     /* 真点那个按钮：它没有 data-* 把手，按文字找、按坐标点 */
     const genBox = await cdp.send("Runtime.evaluate", {
       expression: `(() => {
-        const b = [...document.querySelectorAll('button')].find((el) => /开始生成|重新生成/.test(el.textContent));
+        const b = document.querySelector('button[data-generate]');
         if (!b) return JSON.stringify({ missing: true });
         const r = b.getBoundingClientRect();
         return JSON.stringify({
@@ -3137,7 +3137,7 @@ async function main() {
       label: string;
     };
     if (genAt.missing) {
-      info("页面上找不到“开始生成 / 重新生成”按钮 —— 下面这一组会红");
+      info("页面上找不到 data-generate 按钮 —— 下面这一组会红");
     } else {
       info(
         `点了“${genAt.label}”（页面坐标 ${genAt.x}, ${genAt.y}）—— 走的是幂等回放分支，不会调模型`,
