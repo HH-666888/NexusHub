@@ -797,6 +797,133 @@ const PICK_BODY = "这一段正文来自倒数第二步；收尾的「完成」�
 /** 反例夹具里**最后一步自己**写的正文 */
 const LAST_STEP_BODY = "最后一步自己写了正文，面板停在它身上，不需要再往前找。";
 
+/* ============================================================
+   导出 / 导入（第二十七步）用的夹具
+   ------------------------------------------------------------
+   这一步要验的是**一条运行能整个搬走、再整个搬回来**：
+   清单、画布、产物、事件四样都得对上。
+
+   ⚠️ 夹具必须"有内容"，否则这一步是空转：
+      一条什么事件都没有的运行，导出再导入当然处处相同 ——
+      但它什么也没证明。所以下面把四道工序的产物事件
+      （spec / arch / ui / modules）、一次验收（check）、一笔账（cost）
+      和两份真产物都放进去。
+      清单和画布就是从这些事件投影出来的，它们有内容，
+      「导入前后一致」这句话才有分量。
+
+   ⚠️ 产物用 **fsArtifactStore** 写，不手抄路径与哈希：
+      路径约定（<运行id>/<文件名>）与 sha256 都由产品自己定，
+      脚本再写一遍就等于有了第二份约定。第二十六步那批夹具
+      已经是这么做的（见那条 liveRun）。
+   ============================================================ */
+
+/** 这条运行的用户那句话 —— 导出/导入之后必须一字不改 */
+const PORTABLE_PROMPT = "端到端夹具：一个可以搬走的番茄钟";
+
+/**
+ * 夹具的产物内容。
+ * ⚠️ 刻意取一段**独一无二**的正文：导入之后要拿它比对
+ *    "导出那条运行的产物有没有被新导入的覆盖掉"。
+ *    两边的 HTML 长得一样的话，覆盖了也看不出来。
+ */
+const PORTABLE_HTML =
+  '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">' +
+  "<title>可以搬走的番茄钟</title></head><body><h1>番茄钟</h1>" +
+  '<p id="portable-marker">这一行是夹具专属的，导入不许把它改掉。</p></body></html>';
+
+/**
+ * 一条"四道工序都跑过"的运行：spec + arch + ui + modules + check + 一笔账。
+ *
+ * runs 那一行的 stage/status 取 'build' / 'done' ——
+ * 那正是并行构建跑完、还没开始装配时库里的真实取值（与 seedModulesRun 同一份）。
+ */
+async function seedPortableRun(username: string): Promise<string> {
+  const runId = `e2e-port-${Date.now().toString(36)}`;
+  const db = new Database("./data/nexus.db");
+  try {
+    const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
+      | { id: number }
+      | undefined;
+    if (!user) throw new Error(`找不到测试账号 ${username}`);
+
+    const now = Date.now();
+
+    db.prepare(
+      `INSERT INTO runs (id, user_id, prompt, stage, status, workflow_version, created_at, updated_at)
+       VALUES (?, ?, ?, 'build', 'done', 'e2e-fixture', ?, ?)`,
+    ).run(runId, user.id, PORTABLE_PROMPT, now, now);
+
+    const rows: Array<[string, unknown]> = [
+      ["phase", stepPhase("spec", "正在把你的需求整理成规格")],
+      ["spec", { kind: "spec", spec: ARCH_SPEC, gate: reviewSpec(ARCH_SPEC), fallback: false }],
+      ["phase", stepPhase("arch", "正在把规格切分成模块")],
+      ["arch", { kind: "arch", arch: ARCH_ARTIFACT, check: ARCH_CHECK, fallback: false }],
+      ["phase", stepPhase("ui", "正在把架构变成页面与设计变量")],
+      ["ui", { kind: "ui", ui: UI_ARTIFACT, check: UI_CHECK, fallback: false }],
+      ["phase", stepPhase("building", "正在并行构建 3 个模块（并发上限 3）")],
+      ["modules", MODULES_EVENT],
+      ["usage", stepUsage(0.0234, 1200, 800, 300)],
+      ["check", stepCheck()],
+    ];
+
+    const ins = db.prepare(
+      `INSERT INTO run_events (run_id, seq, at, kind, payload) VALUES (?, ?, ?, ?, ?)`,
+    );
+    rows.forEach(([kind, payload], seq) => {
+      ins.run(runId, seq, now + seq * 1000, kind, JSON.stringify(payload));
+    });
+
+    /*
+      一笔账。它验的是"成本流水也一起搬走"——
+      金额与 token 是导入之后唯一还能回答"这条运行花了多少"的东西。
+    */
+    db.prepare(
+      `INSERT INTO cost_records
+         (run_id, stage, node_id, tier, model, purpose,
+          input_tokens, output_tokens, reasoning_tokens, cache_hit_tokens, cache_miss_tokens,
+          cost_cny, price_tier, latency_ms, created_at)
+       VALUES (?, 'build', 'build:task-store', 'execute', 'e2e-fixture-model', '并行构建：task-store',
+               1200, 800, 300, 0, 1200, 0.0234, 'offPeak', 2100, ?)`,
+    ).run(runId, now);
+  } finally {
+    db.close();
+  }
+
+  /*
+    产物在库连接关掉之后写：fsArtifactStore 用的是它自己的连接，
+    和上面那个 Database 实例互不相干（写文件 + 写 artifacts 表）。
+    顺序反过来也不会错，只是这样读起来更清楚"事件归事件、产物归产物"。
+  */
+  await fsArtifactStore.save({
+    runId,
+    kind: "html",
+    path: `${runId}/index.html`,
+    content: PORTABLE_HTML,
+  });
+  await fsArtifactStore.save({
+    runId,
+    kind: "json",
+    path: `${runId}/spec.json`,
+    content: JSON.stringify(ARCH_SPEC, null, 2),
+  });
+
+  return runId;
+}
+
+/** 清掉一条夹具运行：产物文件 + 产物登记 + 事件 + 成本流水 + runs 那一行 */
+async function cleanupPortableRun(runId: string): Promise<void> {
+  // removeByRun 把磁盘目录与 artifacts 登记一起清掉
+  await fsArtifactStore.removeByRun(runId);
+  const db = new Database("./data/nexus.db");
+  try {
+    db.prepare("DELETE FROM cost_records WHERE run_id = ?").run(runId);
+    db.prepare("DELETE FROM run_events WHERE run_id = ?").run(runId);
+    db.prepare("DELETE FROM runs WHERE id = ?").run(runId);
+  } finally {
+    db.close();
+  }
+}
+
 const BASE = process.env.NEXUS_BASE ?? "http://localhost:3000";
 const EDGE = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const PORT = 9337;
@@ -5755,6 +5882,312 @@ async function main() {
       "待规划行说清卡在哪：「集成装配」（planned）的占位行带 data-outline-blocked-by 与 title、" +
         "值里说到「沙箱」、行尾渲染出 ⓘ 而文字仍是「待规划」；" +
         "而已接入的「架构定型」占位行没有这个属性（对照组验过，不是恒真的）—— 全部通过",
+    );
+
+    /* ---------- 27. ★ 导出 / 导入一个文件：换一台电脑旧项目也还在 ---------- */
+    /* ★ 这一期真正要兑现的那句话，就在这一步里 ★
+
+      ── 用户的原话 ──
+        「换一个地方旧项目就没有了，或者打开是空的」。
+        所以这一步不验"接口返回了 200"，验的是**搬回来之后东西还在不在**：
+        清单的每一行文字、画布上的每一个节点、产物、事件，两边必须一样。
+
+      ── 为什么要走"页面内的 fetch"，而不是脚本自己发请求 ──
+        会话是 httpOnly Cookie，脚本这边拿不到它的值
+        （signUp 拿到的令牌只喂给了 CDP 的 setCookie）。
+        页面里的 fetch 自带 Cookie —— 于是"导出和导入到底要不要登录"
+        这件事是被真实验过的，而不是脚本拼个 header 绕过去。
+        同理，303 重定向也是浏览器真的跟了一次。
+
+      ── 为什么要有"原运行还在"和"产物没被覆盖"两条 ──
+        导入最危险的实现方式是**照原 id 写回去**：那样看起来也能过，
+        清单画布一样对得上，但它把用户原来那条运行覆盖掉了。
+        只验"新页面一致"是抓不住这种实现的 ——
+        必须回头看一眼**原来那条**：它得还在，而且产物一个字没变。
+
+      ── 为什么对照的是同一条运行的两个不同 id ──
+        两次快照（导入前 / 导入后）分别来自两条不同的运行记录。
+        如果只是刷新同一个页面，这个对照就是恒真的（自己等于自己）——
+        所以下面同时钉住"新 id ≠ 原 id"。
+    */
+    heading("第二十七步 · 导出成一个文件、再导入回来（清单 / 画布 / 产物 / 事件一致）");
+
+    const portable = await seedPortableRun(username);
+    info(
+      `造了一条有内容的运行 ${portable.slice(0, 8)}：` +
+        "spec / arch / ui / modules / check 事件各就位 + 两份产物 + 一笔成本流水",
+    );
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${portable}` });
+    await sleep(4200);
+
+    interface PortableSnap {
+      rows: { text: string; status: string | null; placeholder: boolean }[];
+      stages: number;
+      children: number;
+      roots: number;
+    }
+
+    /**
+     * 一次"这个项目长什么样"的快照。
+     *
+     * ⚠️ 清单取的是**每一行的文字**，不是行数 ——
+     *    行数相同而某一行写成「待规划」或者少了个状态，是这一步
+     *    最该抓到的那种坏。画布取三层节点的个数（根 / 工序 / 执行点），
+     *    理由同 canvas 上那三条布局断言：少一层都说明投影没走通。
+     */
+    const READ_PORTABLE = `(() => {
+      const rows = [...document.querySelectorAll('[data-outline-row]')].map((el) => ({
+        text: el.textContent.trim(),
+        status: el.getAttribute('data-outline-status'),
+        placeholder: el.hasAttribute('data-outline-placeholder'),
+      }));
+      return JSON.stringify({
+        rows,
+        stages: document.querySelectorAll('[data-pipeline-stage]').length,
+        children: document.querySelectorAll('[data-canvas-child]').length,
+        roots: document.querySelectorAll('[data-pipeline-root]').length,
+      });
+    })()`;
+
+    const readPortable = async (): Promise<PortableSnap> => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: READ_PORTABLE,
+        returnByValue: true,
+      });
+      return JSON.parse(r.result!.value!) as PortableSnap;
+    };
+
+    /** 页面里跑一段异步 IIFE 并把它的返回值取回来 */
+    const inPage = async (expression: string): Promise<string> => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      return r.result!.value!;
+    };
+
+    const before = await readPortable();
+    info(
+      `导入前：清单 ${before.rows.length} 行 · ` +
+        `画布 根 ${before.roots} + 工序 ${before.stages} + 执行点 ${before.children}`,
+    );
+
+    /* ★ 1. 前提：这一条运行真的有内容，不是一条空运行 */
+    expect_(
+      before.rows.length >= 6 && before.roots === 1 && before.stages === 6 && before.children > 0,
+      `前提成立：导入前这条运行是有内容的（清单 ${before.rows.length} 行、根 ${before.roots}、` +
+        `工序 ${before.stages}、执行点 ${before.children}）—— 空运行比不出东西来`,
+      `夹具形状不对，这一步会变成空转：清单 ${before.rows.length} 行、根 ${before.roots}、` +
+        `工序 ${before.stages}、执行点 ${before.children}`,
+    );
+
+    /* ★ 2. 走完整条路：导出 → 变成一个文件 → 导入 → 跟随 303 */
+    const transferRaw = await inPage(`(async () => {
+      const exp = await fetch('/api/runs/${portable}/export');
+      const body = await exp.text();
+
+      const fd = new FormData();
+      fd.append('file', new File([body], 'portable.nexus.json', { type: 'application/json' }));
+      const res = await fetch('/api/runs/import', { method: 'POST', body: fd, redirect: 'follow' });
+      const landed = await res.text();
+
+      return JSON.stringify({
+        exportStatus: exp.status,
+        contentType: exp.headers.get('content-type'),
+        disposition: exp.headers.get('content-disposition'),
+        body,
+        importRedirected: res.redirected,
+        finalUrl: res.url,
+        landedLooksLikeCanvas: landed.includes('data-canvas-stage'),
+      });
+    })()`);
+
+    const transfer = JSON.parse(transferRaw) as {
+      exportStatus: number;
+      contentType: string | null;
+      disposition: string | null;
+      body: string;
+      importRedirected: boolean;
+      finalUrl: string;
+      landedLooksLikeCanvas: boolean;
+    };
+
+    /* ★ 3. 导出确实是一份"能存下来的文件"，不是一段裸 JSON */
+    expect_(
+      transfer.exportStatus === 200 &&
+        (transfer.contentType ?? "").includes("application/json") &&
+        (transfer.disposition ?? "").includes("attachment") &&
+        (transfer.disposition ?? "").includes("filename*=UTF-8''"),
+      `导出返回 200，是 application/json 的**附件下载**（带中文名的 filename*）：` +
+        `${transfer.disposition}`,
+      `导出响应不对：status=${transfer.exportStatus}、type=${transfer.contentType}、` +
+        `disposition=${transfer.disposition}`,
+    );
+
+    /* ★ 4. 文件本身过形状校验 */
+    interface ExportBundle {
+      format?: unknown;
+      version?: unknown;
+      run?: { id?: unknown; prompt?: unknown };
+      events?: unknown[];
+      artifacts?: unknown[];
+      skipped?: unknown[];
+    }
+    let bundle: ExportBundle | null = null;
+    try {
+      bundle = JSON.parse(transfer.body) as ExportBundle;
+    } catch {
+      bundle = null;
+    }
+
+    expect_(
+      bundle !== null &&
+        bundle.format === "nexus-run" &&
+        bundle.version === 1 &&
+        Array.isArray(bundle.events) &&
+        (bundle.events?.length ?? 0) > 0,
+      `导出文件形状对：format=${bundle?.format}、version=${bundle?.version}、` +
+        `events ${bundle?.events?.length} 条`,
+      `导出文件形状不对：${transfer.body.slice(0, 220)}`,
+    );
+
+    /* ★ 5. 用户那句话原样保留在文件里 */
+    expect_(
+      bundle?.run?.prompt === PORTABLE_PROMPT,
+      `run.prompt 原样在文件里：「${bundle?.run?.prompt}」`,
+      `run.prompt 被改写了：文件里是「${bundle?.run?.prompt}」，期望「${PORTABLE_PROMPT}」`,
+    );
+
+    /* ★ 6. 两份产物都在文件里，而且一份都没被悄悄跳过 */
+    expect_(
+      bundle?.artifacts?.length === 2 && bundle?.skipped?.length === 0,
+      `两份产物都装进了文件（artifacts ${bundle?.artifacts?.length} 份），skipped 为空 —— 没有悄悄丢东西`,
+      `产物没带全：artifacts ${bundle?.artifacts?.length} 份、skipped ${bundle?.skipped?.length} 条 —— ` +
+        `这一步的产物对照会因此失真`,
+    );
+
+    /* ★ 7. 导入之后 303 落在画布上，而且是一条新运行 */
+    const newRunId = /[?&]run=([^&]+)/.exec(transfer.finalUrl)?.[1] ?? "";
+    expect_(
+      transfer.importRedirected === true &&
+        newRunId !== "" &&
+        transfer.finalUrl.includes("/canvas?run=") &&
+        transfer.landedLooksLikeCanvas,
+      `导入后浏览器真的跟了一次重定向，落在画布上（新运行 ${newRunId.slice(0, 8)}）`,
+      `导入没有按预期重定向到画布：redirected=${transfer.importRedirected}、` +
+        `finalUrl=${transfer.finalUrl}、落到画布=${transfer.landedLooksLikeCanvas}`,
+    );
+
+    /* ★ 8. 新运行与原运行是两条记录 —— 导入是"也留一份"，不是"搬过来" */
+    const isNewRun = newRunId !== "" && newRunId !== portable;
+    expect_(
+      isNewRun,
+      `新运行（${newRunId.slice(0, 8)}）与原运行（${portable.slice(0, 8)}）是两条记录 —— ` +
+        "导入没有覆盖原来那一条",
+      newRunId === ""
+        ? "没能从重定向地址里解析出新运行 id，下面的对照不可信"
+        : `新运行 id 和原运行相同（${newRunId}）—— 那是覆盖，不是导入`,
+    );
+
+    /* ★ 9. 打开新运行，逐项对照清单与画布 */
+    if (isNewRun) {
+      await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${newRunId}` });
+      await sleep(4200);
+    }
+    const after = isNewRun
+      ? await readPortable()
+      : { rows: [], stages: -1, children: -1, roots: -1 };
+
+    info(
+      `导入后：清单 ${after.rows.length} 行 · ` +
+        `画布 根 ${after.roots} + 工序 ${after.stages} + 执行点 ${after.children}`,
+    );
+
+    /*
+      先算一次"第几行开始不一样" —— 只为了失败时能说出**具体哪一行**。
+      不算的话，失败信息只能是"两边对不上"，而清单有十几行，
+      排查的人还得自己去比。
+    */
+    const firstDiff = before.rows.findIndex(
+      (r, i) => JSON.stringify(r) !== JSON.stringify(after.rows[i]),
+    );
+
+    expect_(
+      isNewRun &&
+        after.roots === before.roots &&
+        after.stages === before.stages &&
+        after.children === before.children &&
+        JSON.stringify(after.rows) === JSON.stringify(before.rows),
+      `★ 导入回来的运行与导出前**逐项一致**：清单 ${after.rows.length} 行（每行文字与状态都比过）、` +
+        `画布 根 ${after.roots} + 工序 ${after.stages} + 执行点 ${after.children}`,
+      `导入前后对不上：清单 ${before.rows.length} → ${after.rows.length} 行、` +
+        `根 ${before.roots} → ${after.roots}、工序 ${before.stages} → ${after.stages}、` +
+        `执行点 ${before.children} → ${after.children}；` +
+        (firstDiff >= 0
+          ? `清单第 ${firstDiff + 1} 行：${JSON.stringify(before.rows[firstDiff])} → ` +
+            `${JSON.stringify(after.rows[firstDiff])}`
+          : "清单行内容一致（差在行数或画布节点上）"),
+    );
+
+    /* ★ 10. 原运行还在，事件一条不少 */
+    const origEventsRaw = await inPage(`(async () => {
+      const r = await fetch('/api/runs/${portable}/events');
+      const j = await r.json();
+      return JSON.stringify({ status: r.status, count: j.count });
+    })()`);
+    const origEvents = JSON.parse(origEventsRaw) as { status: number; count: number };
+
+    expect_(
+      origEvents.status === 200 && origEvents.count === bundle?.events?.length,
+      `原运行还在，事件一条不少（${origEvents.count} 条）—— 导入没有动它`,
+      `原运行被动了：HTTP ${origEvents.status}、事件 ${origEvents.count} 条，` +
+        `而导出时是 ${bundle?.events?.length} 条`,
+    );
+
+    /* ★ 11. 导出那条运行的产物**没有被覆盖**（这是导入最容易犯的错） */
+    const origArtifactRaw = await inPage(`(async () => {
+      const r = await fetch('/api/runs/${portable}/artifact');
+      const t = await r.text();
+      return JSON.stringify({ status: r.status, body: t });
+    })()`);
+    const origArtifact = JSON.parse(origArtifactRaw) as { status: number; body: string };
+
+    expect_(
+      origArtifact.status === 200 && origArtifact.body === PORTABLE_HTML,
+      "导出那条运行的产物一个字没变 —— 导入写的是新运行自己的目录",
+      `原运行的产物被改了：HTTP ${origArtifact.status}、` +
+        `内容${origArtifact.body === PORTABLE_HTML ? "一致" : "不一致（很可能被导入的产物覆盖了）"}`,
+    );
+
+    /* ★ 12. 新运行也有自己的产物，内容与原来一模一样 */
+    const newArtifactRaw = isNewRun
+      ? await inPage(`(async () => {
+          const r = await fetch('/api/runs/${newRunId}/artifact');
+          const t = await r.text();
+          return JSON.stringify({ status: r.status, body: t });
+        })()`)
+      : JSON.stringify({ status: 0, body: "" });
+    const newArtifact = JSON.parse(newArtifactRaw) as { status: number; body: string };
+
+    expect_(
+      isNewRun && newArtifact.status === 200 && newArtifact.body === PORTABLE_HTML,
+      "新运行自己的产物也读得到，而且内容与原来逐字相同 —— 产物真的搬过来了",
+      `新运行的产物不对：HTTP ${newArtifact.status}、` +
+        `内容${newArtifact.body === PORTABLE_HTML ? "一致" : "与原来不同或为空"}`,
+    );
+
+    /* ---------- 清理：原运行与导入的运行都删掉 ---------- */
+    if (isNewRun) await cleanupPortableRun(newRunId);
+    await cleanupPortableRun(portable);
+    info("两条夹具（原运行 + 导入进来的那条）都已清理");
+
+    ok(
+      "导出 / 导入单文件：导出是带中文名的附件下载、文件形状与 prompt 原样、" +
+        "两份产物一份没跳；导入后 303 落到**新**运行的画布上，" +
+        "清单每行文字与状态、画布根 / 工序 / 执行点三层节点数与导出前逐项一致；" +
+        "原运行仍在、事件一条不少、产物一个字没被覆盖 —— 全部通过",
     );
 
     cdp.close();
