@@ -1362,6 +1362,7 @@ const BUILD_BATCH: BuildBatch = {
     },
   ],
   concurrency: 2,
+  retriedModules: [],
   totalCostCny: 0.022,
   totalUsage: ZERO_USAGE,
   wallClockMs: 45,

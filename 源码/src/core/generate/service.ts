@@ -24,7 +24,7 @@ import type { ArchCheck } from "./arch-check";
 import type { UiCheck } from "./ui-check";
 import type { ArtifactStore } from "../ports/artifact-store";
 import type { CostStore } from "../ports/cost-store";
-import type { ModelEffort, ModelPort, TokenUsage } from "../ports/model";
+import type { ModelEffort, ModelMessage, ModelPort, TokenUsage } from "../ports/model";
 import type { RunStore } from "../ports/run-store";
 import {
   extractHtml,
@@ -33,6 +33,8 @@ import {
   inspectArtifact,
   SYSTEM_PROMPT,
 } from "./prompt";
+import { MAX_OUTPUT_TOKENS_CEILING } from "./truncation-retry";
+import { addUsage, ZERO_USAGE } from "../domain/module-build";
 
 /* ============================================================
    事件定义
@@ -286,80 +288,162 @@ export async function* generateApp(
       })
     : input.prompt;
 
-  /* ---------- 调用模型，边收边转发 ---------- */
-  let finalResult: Awaited<ReturnType<ModelPort["complete"]>> | null = null;
+  /*
+    ---------- 调用模型，边收边转发 ----------
+    ⚠️ 截断了就**加倍预算重来一次** —— 与并行构建同一套策略
+       （常数怎么来的、为什么只重试一次，见 truncation-retry.ts）。
 
-  try {
-    const stream = model.stream({
+    ── 为什么这里自己写循环，而不是用那个助手 ──
+      装配走的是 stream()，助手只包 complete()。而流式的重试必须**另起一段**：
+      第一次那半截正文已经推到界面上了，直接再来一遍会和它拼成一段
+      前后矛盾的文字。所以两次之间发一条 phase 事件，界面据此新开一块，
+      读起来就是"第一次顶满了 → 重来一次 → 这次作数"。
+  */
+  const messages: ModelMessage[] = [
+    { role: "system", content: SYSTEM_PROMPT },
+    /*
+      回流（任务 07）。
+
+      ── 为什么单独一条 system 消息，而不是拼进用户那句话 ──
+        拼进去的话，用户的原话就被改了 ——
+        而那句话是这次运行的**起点**（run.prompt 里存着原文），
+        改了之后"模型看到的"和"记录里存的"就不是一回事了。
+
+      ── 为什么放在用户那句话前面 ──
+        它是**背景**，不是这次的诉求。
+        放在后面会让模型把它当成新的指令，冲淡用户真正想要的东西。
+    */
+    ...(input.callbackContext
+      ? [{ role: "system" as const, content: input.callbackContext }]
+      : []),
+    { role: "user", content: userContent },
+  ];
+
+  let budget = input.maxOutputTokens ?? GENERATE_MAX_OUTPUT_TOKENS;
+  /** 最多试几次：一次原调用 + 一次加倍重试 */
+  const MAX_ATTEMPTS = 2;
+  /** 作数的那一次的结果（最后一次成功拿到的） */
+  let result: Awaited<ReturnType<ModelPort["complete"]>> | null = null;
+  /** 累计用量与花费（**含被重试掉的那一次**） */
+  let spentUsage: TokenUsage = ZERO_USAGE;
+  let spentCny = 0;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let attemptResult: Awaited<ReturnType<ModelPort["complete"]>> | null = null;
+
+    try {
+      const stream = model.stream({
+        tier: "execute",
+        effort: input.effort ?? GENERATE_DEFAULT_EFFORT,
+        maxOutputTokens: budget,
+        messages,
+      });
+
+      for await (const chunk of stream) {
+        if (chunk.kind === "reasoning") {
+          yield { kind: "reasoning", delta: chunk.delta };
+        } else if (chunk.kind === "text") {
+          yield { kind: "text", delta: chunk.delta };
+        } else {
+          attemptResult = chunk.result;
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await runs.update(input.runId, { status: "failed" });
+      yield { kind: "error", message };
+      yield { kind: "phase", phase: "failed", label: "生成失败" };
+      return;
+    }
+
+    if (!attemptResult) {
+      await runs.update(input.runId, { status: "failed" });
+      yield { kind: "error", message: "模型没有返回结果" };
+      yield { kind: "phase", phase: "failed", label: "生成失败" };
+      return;
+    }
+
+    /*
+      这一次要不要重试：截断了、**还有下一次**、而且加倍之后确实还能更大。
+
+      ⚠️ `attempt < MAX_ATTEMPTS` 这一条不能省 —— 少了它就会出现一句**空话**：
+         最后一次尝试仍然截断时，事件里会写着"已加倍到 N 重新装配"，
+         而循环到此为止，那次装配根本没发生。
+         这是强制截断实验抓出来的（事件里连写两条"重新装配"，
+         账上却只有两次调用）。说出去的话，必须是真发生过的事。
+    */
+    const nextBudget = attemptResult.truncated
+      ? Math.min(budget * 2, MAX_OUTPUT_TOKENS_CEILING)
+      : 0;
+    const willRetry =
+      attempt < MAX_ATTEMPTS && attemptResult.truncated && nextBudget > budget;
+
+    /*
+      ---------- 记账：先记事实，再管结果 ----------
+      每一次调用各记一行 —— **含被重试掉的那一次**。
+      它没产出可用的东西，但钱是真花掉的，而且往往是更贵的那一次
+      （思考把预算吃光才会被截断）。不记的话，这条运行的账会比实际少，
+      而对账要等到事后才发现。
+
+      ⚠️ 记账放在**循环里**（而不是等循环结束再一起记）：
+         第二次调用可能直接抛错，那时如果还没记，第一次那笔钱就丢了。
+    */
+    await costs.record({
+      runId: input.runId,
+      stage: "build",
+      nodeId: null,
       tier: "execute",
-      effort: input.effort ?? GENERATE_DEFAULT_EFFORT,
-      maxOutputTokens: input.maxOutputTokens ?? GENERATE_MAX_OUTPUT_TOKENS,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        /*
-          回流（任务 07）。
-
-          ── 为什么单独一条 system 消息，而不是拼进用户那句话 ──
-            拼进去的话，用户的原话就被改了 ——
-            而那句话是这次运行的**起点**（run.prompt 里存着原文），
-            改了之后"模型看到的"和"记录里存的"就不是一回事了。
-
-          ── 为什么放在用户那句话前面 ──
-            它是**背景**，不是这次的诉求。
-            放在后面会让模型把它当成新的指令，冲淡用户真正想要的东西。
-        */
-        ...(input.callbackContext
-          ? [{ role: "system" as const, content: input.callbackContext }]
-          : []),
-        { role: "user", content: userContent },
-      ],
+      model: attemptResult.model,
+      purpose: willRetry
+        ? `生成应用（输出顶满预算，已重试）：${input.prompt.slice(0, 30)}`
+        : `生成应用：${input.prompt.slice(0, 40)}`,
+      usage: attemptResult.usage,
+      costCny: attemptResult.costCny,
+      priceTier: attemptResult.priceTier,
+      latencyMs: attemptResult.latencyMs,
     });
 
-    for await (const chunk of stream) {
-      if (chunk.kind === "reasoning") {
-        yield { kind: "reasoning", delta: chunk.delta };
-      } else if (chunk.kind === "text") {
-        yield { kind: "text", delta: chunk.delta };
-      } else {
-        finalResult = chunk.result;
-      }
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await runs.update(input.runId, { status: "failed" });
-    yield { kind: "error", message };
-    yield { kind: "phase", phase: "failed", label: "生成失败" };
-    return;
+    spentUsage = addUsage(spentUsage, attemptResult.usage);
+    spentCny += attemptResult.costCny;
+    await runs.update(input.runId, {
+      totalCostCny: spent + spentCny,
+      usage: attemptResult.usage,
+    });
+
+    yield {
+      kind: "usage",
+      usage: attemptResult.usage,
+      costCny: attemptResult.costCny,
+      priceTier: attemptResult.priceTier,
+      model: attemptResult.model,
+      latencyMs: attemptResult.latencyMs,
+      truncated: attemptResult.truncated,
+    };
+
+    result = attemptResult;
+    if (!willRetry) break;
+
+    /*
+      说清楚"上一次不算数"：不说的话，界面上会并排出现两段正文，
+      用户不知道哪一段是成品 —— 而产物是从**后一段**里抽出来的。
+    */
+    yield {
+      kind: "phase",
+      phase: "generating",
+      label:
+        `输出顶满了长度上限（思考把预算吃光了），已把预算加倍到 ${nextBudget} tokens 重新装配 —— ` +
+        `上面那一段只算过程，这一次的产出作数`,
+    };
+    budget = nextBudget;
   }
 
-  if (!finalResult) {
+  if (!result) {
+    // 逻辑上到不了：循环里每一次拿到结果就赋了值，否则上面已经 return
     await runs.update(input.runId, { status: "failed" });
     yield { kind: "error", message: "模型没有返回结果" };
     yield { kind: "phase", phase: "failed", label: "生成失败" };
     return;
   }
-
-  const result = finalResult;
-
-  /* ---------- 记账：先记事实，再管结果 ---------- */
-  await costs.record({
-    runId: input.runId,
-    stage: "build",
-    nodeId: null,
-    tier: "execute",
-    model: result.model,
-    purpose: `生成应用：${input.prompt.slice(0, 40)}`,
-    usage: result.usage,
-    costCny: result.costCny,
-    priceTier: result.priceTier,
-    latencyMs: result.latencyMs,
-  });
-
-  const totalCost = spent + result.costCny;
-  await runs.update(input.runId, {
-    totalCostCny: totalCost,
-    usage: result.usage,
-  });
 
   /*
     ⚠️ 模块那几笔**不在这里记**。
@@ -368,24 +452,16 @@ export async function* generateApp(
        调用成功、解析失败的那一类**也是花了钱的**），并把总额并进
        传进来的 spentCny。在这里再记一遍就是重复记账：
        runs.totalCostCny 会凭空多出一倍，而对账要到事后才发现。
-       所以上面那个 totalCost 是「(已含模块调用的) spent + 这次装配」。
+       所以上面那两笔是「(已含模块调用的) spent + 装配这一次（含重试）」。
   */
-
-  yield {
-    kind: "usage",
-    usage: result.usage,
-    costCny: result.costCny,
-    priceTier: result.priceTier,
-    model: result.model,
-    latencyMs: result.latencyMs,
-    truncated: result.truncated,
-  };
 
   if (result.truncated) {
     yield {
       kind: "error",
       message: "输出被长度上限截断，产物可能不完整",
-      hint: "这是预算问题不是能力问题：提高 maxOutputTokens 后重跑即可",
+      hint:
+        `这是预算问题不是能力问题：已经加倍重试过一次（当前 ${budget} tokens）—— ` +
+        `还不够就说明这一次装配的规模本身太大，该从架构上拆，而不是继续抬常数`,
     };
   }
 

@@ -7,6 +7,10 @@ import type { RunStore } from "@/core/ports/run-store";
 import type { ModelChunk, ModelPort, ModelRequest, ModelResult } from "@/core/ports/model";
 import type { Artifact, NewArtifact } from "@/core/domain/artifact";
 import type { NewCostRecord } from "@/core/domain/cost";
+import { GENERATE_MAX_OUTPUT_TOKENS } from "@/core/generate/prompt";
+
+/** 装配那一道的默认预算，测试里当"第一次"的预算用 */
+const GEN_BUDGET = GENERATE_MAX_OUTPUT_TOKENS;
 
 /**
  * 生成编排（装配那一段）：单测
@@ -97,6 +101,7 @@ const BATCH: BuildBatch = {
   modules: [moduleBuild({ moduleId: "task-store" }), moduleBuild({ moduleId: "board-ui" })],
   failed: [],
   concurrency: 3,
+  retriedModules: [],
   totalCostCny: 0.02,
   totalUsage: {
     inputTokens: 20,
@@ -149,6 +154,19 @@ async function run(opts: {
   spentCny?: number;
   costLimitCny?: number;
   modelThrows?: string;
+  /** 输出预算（不传 = 用 GENERATE_MAX_OUTPUT_TOKENS） */
+  maxOutputTokens?: number;
+  /**
+   * 按次给"每一次流式调用"的形态 —— 用来验截断重试。
+   * 第 N 项对应第 N 次调用；超出的次数沿用 text / 不截断。
+   */
+  attempts?: Array<{
+    text?: string;
+    truncated?: boolean;
+    costCny?: number;
+    outputTokens?: number;
+    reasoning?: string;
+  }>;
 }): Promise<Harness> {
   const h: Harness = {
     events: [],
@@ -166,10 +184,25 @@ async function run(opts: {
     async *stream(req: ModelRequest): AsyncIterable<ModelChunk> {
       h.requests.push(req);
       if (opts.modelThrows) throw new Error(opts.modelThrows);
-      const text = opts.text ?? PLAIN_HTML;
-      yield { kind: "reasoning", delta: "先把结构想清楚" };
+      const nth = h.requests.length;
+      const spec = opts.attempts?.[nth - 1];
+      const text = spec?.text ?? opts.text ?? PLAIN_HTML;
+      yield { kind: "reasoning", delta: spec?.reasoning ?? "先把结构想清楚" };
       yield { kind: "text", delta: text };
-      yield { kind: "done", result: makeResult(text) };
+      yield {
+        kind: "done",
+        result: makeResult(text, {
+          truncated: spec?.truncated ?? false,
+          costCny: spec?.costCny ?? 0.05,
+          usage: {
+            inputTokens: 100,
+            outputTokens: spec?.outputTokens ?? 200,
+            reasoningTokens: 0,
+            cacheHitTokens: 0,
+            cacheMissTokens: 100,
+          },
+        }),
+      };
     },
   };
 
@@ -244,6 +277,7 @@ async function run(opts: {
       costLimitCny: opts.costLimitCny ?? 5,
       spentCny: opts.spentCny ?? 0,
       batch: opts.batch,
+      maxOutputTokens: opts.maxOutputTokens,
     },
   )) {
     h.events.push(e);
@@ -562,5 +596,127 @@ describe("装配那一次调用失败时的行为不变", () => {
     expect(h.requests).toHaveLength(0);
     const err = h.events.find((e) => e.kind === "error");
     expect(err && err.kind === "error" && err.message).toContain("达到上限");
+  });
+});
+
+/* ============================================================
+   截断即加倍预算重试（装配这一道）
+   ------------------------------------------------------------
+   为什么装配这一道要单独一组：它走的是 stream()，重试**必须另起一段**。
+   两次的正文如果拼在同一个块里，用户会看到"第一次写了一半 + 第二次从头写"
+   的一段前后矛盾的文字，而产物只从后一段里抽 —— 那是会让人怀疑产物来路的那种错。
+   ============================================================ */
+
+const RETRY_PHASE = (label: string) => label.includes("加倍") && label.includes("作数");
+
+describe("装配截断重试", () => {
+  it("【关键】第一次顶满预算 → 加倍重来一次，产物取第二次的正文", async () => {
+    const firstHalf = "<html><body><h1>写了一半";
+    const h = await run({
+      attempts: [
+        { text: firstHalf, truncated: true, costCny: 0.07, outputTokens: GEN_BUDGET },
+        { text: PLAIN_HTML, costCny: 0.03, outputTokens: 200 },
+      ],
+    });
+
+    // 两次流式调用，第二次预算翻倍
+    expect(h.requests).toHaveLength(2);
+    expect(h.requests[0].maxOutputTokens).toBe(GEN_BUDGET);
+    expect(h.requests[1].maxOutputTokens).toBe(GEN_BUDGET * 2);
+
+    // ★ 产物是**第二次**的正文，不是两次拼起来的
+    expect(h.saved).toHaveLength(1);
+    expect(h.saved[0].content).toBe(PLAIN_HTML);
+    expect(h.saved[0].content).not.toContain("写了一半");
+  });
+
+  it("两次之间有一条 phase 事件，说清「上一次不算数」—— 界面据此另起一段", async () => {
+    const h = await run({
+      attempts: [{ truncated: true, costCny: 0.07 }, { text: PLAIN_HTML, costCny: 0.03 }],
+    });
+    const retryLabels = h.events
+      .filter((e) => e.kind === "phase")
+      .map((e) => (e.kind === "phase" ? e.label : ""))
+      .filter(RETRY_PHASE);
+    expect(retryLabels).toHaveLength(1);
+    expect(h.events.filter((e) => e.kind === "usage")).toHaveLength(2); // 两次各一笔用量
+  });
+
+  it("【关键】两次调用的钱都进账，跑完的累计金额含被重试掉的那一次", async () => {
+    const h = await run({
+      spentCny: 0.1,
+      attempts: [
+        { truncated: true, costCny: 0.07, outputTokens: GEN_BUDGET },
+        { text: PLAIN_HTML, costCny: 0.03, outputTokens: 200 },
+      ],
+    });
+
+    expect(h.costRecords).toHaveLength(2);
+    expect(h.costRecords[0].purpose).toContain("已重试"); // 被重试掉的那笔也要标出来
+    expect(h.costRecords[1].purpose).not.toContain("已重试");
+    // 最后一次写进 runs 的累计值 = 之前的 0.1 + 两次装配
+    // （收尾那条更新只改 stage/status，不带金额，所以要挑出带金额的那几条）
+    const withCost = h.runUpdates.filter((u) => u.totalCostCny !== undefined);
+    expect(withCost).toHaveLength(2);
+    expect(Number(withCost[0].totalCostCny)).toBeCloseTo(0.17, 6); // 0.1 + 第一次 0.07
+    expect(Number(withCost[1].totalCostCny)).toBeCloseTo(0.2, 6); // 再加第二次 0.03
+    /*
+      每次写进去的是**那一次自己**的用量，不是一个累加值 ——
+      累加是 store 的职责（见 adapters/store/run-repo.ts 的 update）。
+      这里钉的是"两次都写进去了"，而不是"服务里自己算了两遍"。
+    */
+    expect((withCost[0].usage as { outputTokens: number }).outputTokens).toBe(GEN_BUDGET);
+    expect((withCost[1].usage as { outputTokens: number }).outputTokens).toBe(200);
+  });
+
+  it("★ 反例：没截断 → 只调一次、没有重试说明、也只有一个 usage", async () => {
+    const h = await run({ attempts: [{ text: PLAIN_HTML, costCny: 0.05 }] });
+
+    expect(h.requests).toHaveLength(1);
+    expect(
+      h.events
+        .filter((e) => e.kind === "phase")
+        .map((e) => (e.kind === "phase" ? e.label : ""))
+        .some(RETRY_PHASE),
+    ).toBe(false);
+    expect(h.events.filter((e) => e.kind === "usage")).toHaveLength(1);
+    expect(h.costRecords).toHaveLength(1);
+  });
+
+  it("★ 反例：重试之后**仍然**截断 → 只重试一次，并如实报「截断」", async () => {
+    const h = await run({
+      attempts: [
+        { truncated: true, costCny: 0.07, text: "<html>第一次" },
+        { truncated: true, costCny: 0.09, text: "<html>第二次还是截断" },
+      ],
+    });
+
+    expect(h.requests).toHaveLength(2); // 不无限重试
+    /*
+      ★ 而且"重新装配"这句话只能说**一次**。
+        强制截断实验抓到过一句空话：第二次仍截断时事件里又写了一条
+        "已加倍到 800 重新装配"，而循环已经结束了 —— 那次装配根本没发生。
+        说出去的话必须是真的发生过的事。
+    */
+    const retryNotes = h.events
+      .filter((e) => e.kind === "phase")
+      .map((e) => (e.kind === "phase" ? e.label : ""))
+      .filter(RETRY_PHASE);
+    expect(retryNotes).toHaveLength(1);
+    const err = h.events.find((e) => e.kind === "error");
+    expect(err && err.kind === "error" && err.message).toContain("截断");
+    // 提示里说清"已经加倍重试过一次"，而不是叫用户自己去调常数
+    expect(err && err.kind === "error" && err.hint).toContain("已经加倍重试过一次");
+  });
+
+  it("★ 反例：预算已经到顶（131072）→ 不重试（加倍等于没加）", async () => {
+    const h = await run({
+      maxOutputTokens: 131072,
+      attempts: [{ truncated: true, costCny: 0.07 }],
+    });
+
+    expect(h.requests).toHaveLength(1);
+    const err = h.events.find((e) => e.kind === "error");
+    expect(err && err.kind === "error" && err.message).toContain("截断");
   });
 });

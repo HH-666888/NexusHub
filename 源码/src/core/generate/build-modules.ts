@@ -69,6 +69,7 @@ import type { ArchModule, ArchSpec } from "../domain/arch";
 import type { AppSpec } from "../domain/spec";
 import type { ModelPort, TokenUsage } from "../ports/model";
 import { GENERATE_DEFAULT_EFFORT } from "./prompt";
+import { completeWithTruncationRetry } from "./truncation-retry";
 
 export interface BuildModulesDeps {
   model: ModelPort;
@@ -144,8 +145,19 @@ export async function buildModules(
       totalUsage: ZERO_USAGE,
       wallClockMs: 0,
       peakInFlight: 0,
+      retriedModules: [],
     };
   }
+
+  /**
+   * 这一批里**因为截断而重试过**的模块 id。
+   *
+   * 为什么要记下来：重试是编排层要如实说出口的一件事 ——
+   * "这个模块第一次顶满了预算，加倍重来才成" 是用户该知道的，
+   * 否则他只会看到一个慢了一倍的模块，不知道发生了什么。
+   * 用一个 Set 收集，最后按 arch 顺序（outcomes 的顺序）输出，与谁先跑完无关。
+   */
+  const retriedModuleIds = new Set<string>();
 
   /**
    * 跑一个模块：一次模型调用 → 解析成片段；任何一步出错都变成一条 failure。
@@ -159,16 +171,16 @@ export async function buildModules(
     const userMessage = buildModulePrompt(brief, input.prompt, modules.length, index + 1);
     const callStartedAt = Date.now();
 
-    let result: Awaited<ReturnType<ModelPort["complete"]>>;
+    let call: Awaited<ReturnType<typeof completeWithTruncationRetry>>;
     try {
-      result = await model.complete({
+      call = await completeWithTruncationRetry(model, {
         tier: "execute", // 写码是执行级任务，不是决策级
         /*
           思考档位用生成阶段那一个默认值（现在是 "high"）。
           这里曾经写着"写页面这类任务实测不思考又快又便宜"——
           那个结论已经被推翻了：并行构建是**创造性写码**（这块功能怎么切、
           接口怎么留、和别的模块怎么接），不是样板代码；
-          而且真实运行里这一道的思考量到过 12706 tokens，
+          而且真实运行里这一道的思考量到过 18305 tokens，
           说明模型自己认为这里有值得想的东西。见 prompt.ts 的实测记录。
         */
         effort: GENERATE_DEFAULT_EFFORT,
@@ -183,6 +195,8 @@ export async function buildModules(
       /*
         调用本身失败：钱通常没花出去（costCny 记 0），
         但"失败"这件事必须留下 —— 它对应清单上一个红色的模块点。
+        （重试那一次失败**不会**走到这里：助手把它收成了 retryError，
+          因为第一次的钱已经花了，不能跟着异常一起丢掉。）
       */
       return {
         ok: false,
@@ -205,19 +219,59 @@ export async function buildModules(
          所以下面无论解析成不成功，这笔 costCny / usage 都会跟着结果走 ——
          解析失败那条分支里也照样带上它。这就是"失败的那次调用也花了钱"
          这句话在代码里的落点。
+
+      ⚠️ 截断重试过的话，是**两次调用**的钱：下面把每一次的用量与花费
+         逐项加起来（addUsage），而不是只算最后那一次。
+         只算最后一次的话，被截断的那次（往往正是想得最多、最贵的一次）
+         会从账本上消失。
     */
+    const result = call.result;
+    /*
+      ⚠️ 账本粒度：**一个模块一行**（重试过就把两次合起来）。
+
+        为什么不像装配那一道那样"每次调用一行"：
+          模块这一层的交付单位本来就是"这个模块花了多少钱" ——
+          cost_records 里那一行的 purpose 写的是「并行构建：<模块 id>」，
+          金额与用量是两次之和，**一笔都没漏**。
+          而"它重试过"这件事由三处说出来，不靠账本：
+            ① 批次里的 retriedModules → 编排层发一条阶段说明
+            ② 失败原因里写明「加倍重试后仍然被截断」
+            ③ 界面那一步的思考里能看到两次的思考
+          装配那一道没有"模块"这个中间单位，所以它按调用记。
+          两处粒度不同是**有意**的，不是漏改。
+    */
+    const spentUsage = call.attempts.reduce(
+      (acc, r) => addUsage(acc, r.usage),
+      ZERO_USAGE,
+    );
+    const spentCny = call.attempts.reduce((n, r) => n + r.costCny, 0);
+    const spentMs = call.attempts.reduce((n, r) => n + r.latencyMs, 0);
+    if (call.calls > 1) retriedModuleIds.add(target.id);
+
     const parsed = parseModuleBuild(target.id, result.text);
     if (!parsed.ok) {
+      /*
+        失败原因要把"截断"和"重试"说出来：
+          · 截断了但没重试（没条件重试）→ 用户该知道调大常数
+          · 重试了自己挂了 → 用户该知道是网络/服务端，不是预算
+        只写"产出无法使用：找不到 JSON 对象"的话，
+        看的人只能猜，而这两种原因的处置方式完全不同。
+      */
+      const why = call.retryError
+        ? `产出无法使用：${parsed.reason}（输出被长度上限截断，加倍预算重试那一次又失败了：${call.retryError}）`
+        : call.stillTruncated
+          ? `产出无法使用：${parsed.reason}（输出顶满 ${call.retriedWithMaxTokens ?? maxOutputTokens} tokens 上限${call.calls > 1 ? "，加倍重试后仍然被截断" : ""}）`
+          : `产出无法使用：${parsed.reason}`;
       return {
         ok: false,
         failure: {
           moduleId: target.id,
-          message: `产出无法使用：${parsed.reason}`,
-          costCny: result.costCny,
-          usage: result.usage,
+          message: why,
+          costCny: spentCny,
+          usage: spentUsage,
           model: result.model,
           priceTier: result.priceTier,
-          latencyMs: result.latencyMs,
+          latencyMs: spentMs,
           // 想过了就是想过了 —— 解析失败不代表它没想，也不代表没必要让人看见
           reasoning: result.reasoning,
         },
@@ -228,12 +282,13 @@ export async function buildModules(
       ok: true,
       build: {
         ...parsed.build,
-        costCny: result.costCny,
-        usage: result.usage,
+        costCny: spentCny,
+        usage: spentUsage,
         model: result.model,
         priceTier: result.priceTier,
-        latencyMs: result.latencyMs,
-        truncated: result.truncated,
+        latencyMs: spentMs,
+        // 重试之后还是截断才算截断 —— 重试成功的那次是完整的
+        truncated: call.stillTruncated,
         // 带上思考：编排层要把它发成 reasoning 事件（见 route.ts），
         // 否则界面上这一步的「思考」tab 永远是空的
         reasoning: result.reasoning,
@@ -342,5 +397,9 @@ export async function buildModules(
     totalUsage,
     wallClockMs: Date.now() - startedAt,
     peakInFlight,
+    // 按 arch 顺序输出（built/failed 就是这个顺序），与谁先跑完无关
+    retriedModules: [...built, ...failed]
+      .map((m) => m.moduleId)
+      .filter((id) => retriedModuleIds.has(id)),
   };
 }

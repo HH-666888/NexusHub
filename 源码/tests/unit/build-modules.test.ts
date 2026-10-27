@@ -770,3 +770,120 @@ describe("模块的思考", () => {
     ]);
   });
 });
+
+/* ============================================================
+   ⑨ 截断即加倍预算重试（这一批工序最贵的一条保险）
+   ------------------------------------------------------------
+   背景：模块的预算被真实运行顶满过三次（6000 / 16384 / 32768），
+   每次都是"思考把预算吃光、正文一个字没吐出来"。
+   抬常数只是把运气往后推，所以改成"截断了就加倍再来一次"。
+   这里钉的是**接线**（重试助手本身有它自己的单测）：
+   两次调用的钱都要进账、重试要能被看见、没截断时一次都不许多调。
+   ============================================================ */
+
+describe("截断重试", () => {
+  it("【关键】第一次顶满预算 → 加倍重试一次，第二次的产出作数", async () => {
+    const { batch, h } = await run({
+      ids: ["m-1"],
+      plan: (_call, nth) => (nth === 1 ? { truncated: true } : {}),
+    });
+
+    expect(batch.modules).toHaveLength(1);
+    // 两次调用，第二次预算是第一次的两倍
+    const mine = h.calls.filter((c) => c.moduleId === "m-1");
+    expect(mine).toHaveLength(2);
+    expect(mine[0].maxOutputTokens).toBe(MODULE_MAX_OUTPUT_TOKENS);
+    expect(mine[1].maxOutputTokens).toBe(MODULE_MAX_OUTPUT_TOKENS * 2);
+    expect(batch.modules[0].truncated).toBe(false);
+  });
+
+  it("重试过的模块要在批次里点出来 —— 用户该知道它第一次顶满了", async () => {
+    const { batch } = await run({
+      ids: ["m-1", "m-2"],
+      plan: (call, nth) => (call.moduleId === "m-2" && nth === 1 ? { truncated: true } : {}),
+    });
+    expect(batch.retriedModules).toEqual(["m-2"]);
+  });
+
+  it("★ 反例：没截断 → 一次都不许多调，retriedModules 是空的", async () => {
+    const { batch, h } = await run({ ids: ["m-1"], plan: () => ({}) });
+    expect(h.calls.filter((c) => c.moduleId === "m-1")).toHaveLength(1);
+    expect(batch.retriedModules).toEqual([]);
+  });
+
+  it("【关键】两次调用的钱都进账 —— 截断那次往往正是最贵的", async () => {
+    const { batch } = await run({
+      ids: ["m-1"],
+      plan: (_call, nth) =>
+        nth === 1
+          ? { truncated: true, costCny: 0.07, usage: { inputTokens: 500, outputTokens: 32768 } }
+          : { costCny: 0.02, usage: { inputTokens: 500, outputTokens: 9000 } },
+    });
+
+    expect(batch.totalCostCny).toBeCloseTo(0.09, 6);
+    expect(batch.totalUsage.outputTokens).toBe(41768);
+    expect(batch.modules[0].costCny).toBeCloseTo(0.09, 6);
+  });
+
+  it("重试之后仍然截断、仍然解析不出来 → 报失败，且原因里说清「截断」与「重试」", async () => {
+    const { batch } = await run({
+      ids: ["m-1"],
+      plan: (_call, nth) =>
+        nth === 1
+          ? { truncated: true, costCny: 0.07 }
+          : { truncated: true, costCny: 0.09, text: "想得太多，还是没写出 JSON" },
+    });
+
+    expect(batch.failed).toHaveLength(1);
+    const msg = batch.failed[0].message;
+    expect(msg).toContain("截断");
+    expect(msg).toContain("重试");
+    expect(batch.failed[0].costCny).toBeCloseTo(0.16, 6);
+    // 失败也照样记着"这一批重试过"
+    expect(batch.retriedModules).toEqual(["m-1"]);
+  });
+
+  it("★ 反例：重试那一次自己挂了（正文仍可解析）→ 算成功但**标明截断**，第一次的钱照记", async () => {
+    /*
+      口径沿用项目既有的那一条：**截断出来的内容往往还能用**
+      （spec-stage 那边就是这么处理的）。所以这里不把一个能解析的模块扔掉，
+      而是：成功 + truncated=true + retriedModules 里点出它重试过。
+      整批也不许被这一个模块的异常带崩。
+    */
+    const { batch } = await run({
+      ids: ["m-1", "m-2"],
+      plan: (call, nth) =>
+        call.moduleId === "m-1"
+          ? nth === 1
+            ? { truncated: true, costCny: 0.07 }
+            : { throws: "网关超时" }
+          : {},
+    });
+
+    expect(batch.modules.map((m) => m.moduleId).sort()).toEqual(["m-1", "m-2"]);
+    expect(batch.failed).toHaveLength(0);
+    const m1 = batch.modules.find((m) => m.moduleId === "m-1")!;
+    expect(m1.truncated).toBe(true); // 没拿到完整输出，必须标出来
+    expect(m1.costCny).toBeCloseTo(0.07, 6); // ★ 第一次那笔钱不能凭空消失
+    expect(batch.retriedModules).toEqual(["m-1"]);
+  });
+
+  it("★ 反例：重试挂了**且**第一次的正文没法用 → 报失败，原因里说清是重试失败", async () => {
+    const { batch } = await run({
+      ids: ["m-1", "m-2"],
+      plan: (call, nth) =>
+        call.moduleId === "m-1"
+          ? nth === 1
+            ? { truncated: true, costCny: 0.07, text: "这不是 JSON" }
+            : { throws: "网关超时" }
+          : {},
+    });
+
+    expect(batch.modules.map((m) => m.moduleId)).toEqual(["m-2"]);
+    expect(batch.failed).toHaveLength(1);
+    const f = batch.failed[0];
+    expect(f.message).toContain("网关超时"); // 说清是"重试那次失败了"
+    expect(f.message).toContain("截断"); // 也说清根因是截断
+    expect(f.costCny).toBeCloseTo(0.07, 6);
+  });
+});

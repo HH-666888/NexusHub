@@ -623,6 +623,24 @@ export async function GET(
             }
 
             /*
+              ---------- 有模块因为截断重试过，要说出来 ----------
+              重试是内部动作，但**不能悄悄做**：
+              不说的话，用户只看到一个慢了一倍的模块（两次的思考都发出来了），
+              不知道它第一次顶满了预算。而"顶满预算"正是该让他看见的信号 ——
+              它意味着这个模块比预想的大，下次该从架构上拆。
+              结果本身在下面的模块状态里：成功 / 失败 / 截断，各是各的。
+            */
+            if (batch.retriedModules.length > 0) {
+              yield {
+                kind: "phase",
+                phase: "building",
+                label:
+                  `${batch.retriedModules.length} 个模块的输出顶满了长度上限，` +
+                  `已各自把预算加倍重试一次（${batch.retriedModules.join("、")}）`,
+              };
+            }
+
+            /*
               ---------- 把各模块的思考发出来 ----------
               并行构建也是"会思考的写码"（GENERATE_DEFAULT_EFFORT = "high"）。
               真实运行里单个模块的思考量到过 12706 tokens，而它原先躺在
