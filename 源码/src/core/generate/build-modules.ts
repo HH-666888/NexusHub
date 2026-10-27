@@ -73,6 +73,24 @@ import { completeWithTruncationRetry } from "./truncation-retry";
 
 export interface BuildModulesDeps {
   model: ModelPort;
+  /**
+   * 每构建好一个模块就回调一次（编排层用它"边构建边落盘"）。
+   *
+   * ── 为什么要有这个钩子（真实场景）──
+   *   原来是把整批跑完、由编排层统一写 `modules/<id>.json`。
+   *   问题是：整批最贵也最慢（四个模块并行也要一两分钟），
+   *   而这期间用户可能关掉浏览器、dev server 可能重启 ——
+   *   一旦被打断，**已经构建好的那两三个模块也一起没了**，
+   *   下次只能从头再花一遍钱。
+   *   有了这个钩子，落盘发生在"这个模块刚构建好"那一刻，
+   *   于是断点续跑真的接得上（见 resume.ts）。
+   *
+   * ⚠️ 内核不认识文件系统：这里只是一个**被注入的函数**，
+   *    写哪里、写不写由编排层决定；单测里传一个假函数就能验它被调用了几次。
+   * ⚠️ 回调抛错**不许**影响这一批：它只是"顺手存一份"，
+   *    存不上最坏的后果是下次续跑少沿用几个模块，不能让整批崩掉。
+   */
+  onModuleBuilt?: (build: ModuleBuild) => void | Promise<void>;
 }
 
 export interface BuildModulesInput {
@@ -93,6 +111,16 @@ export interface BuildModulesInput {
    * 已经领到活的那几个仍然会跑完再抛，不会留下悬空的调用。
    */
   continueOnError?: boolean;
+  /**
+   * 只构建这几个模块（断点续跑：上次已经构建好、且校验通过的那些不用重跑）。
+   *
+   * ── 两个细节 ──
+   *   · 未给 = 构建全部（行为与从前一致，一个字节都不变）；
+   *   · 提示词里的"第 N 个 / 共 M 个"仍然按**架构里的全部模块数**算 ——
+   *     模型需要知道整件事有几个模块（接口怎么留、和谁接），
+   *     不能因为这次只补 1 个就把上下文说成"只有 1 个模块"。
+   */
+  onlyModuleIds?: readonly string[];
 }
 
 /**
@@ -132,11 +160,27 @@ export async function buildModules(
   const maxOutputTokens = input.maxOutputTokensPerModule ?? MODULE_MAX_OUTPUT_TOKENS;
 
   /*
-    模块数为 0：不发起任何调用，直接返回空批次（口径②，见文件头）。
+    ---------- 这一轮到底要跑哪几个模块 ----------
+    未指定 onlyModuleIds = 全部（行为与从前一致）。
+    指定了 = 只跑那几个（断点续跑：上次已经构建好、且校验通过的那些不重跑）。
+
+    ⚠️ 提示词里「第 N 个 / 共 M 个」仍然按**架构里的全部模块数**算：
+       模型要知道整件事有几个模块（接口怎么留、和谁接），
+       不能因为这次只补 1 个就把上下文说成"只有 1 个模块"。
+       所以 N 用的是它在 arch 里的位置，不是在这一小批里的位置。
+  */
+  const targets: ArchModule[] =
+    input.onlyModuleIds === undefined
+      ? modules
+      : modules.filter((m) => input.onlyModuleIds!.includes(m.id));
+
+  /*
+    要跑的模块数为 0：不发起任何调用，直接返回空批次（口径②，见文件头）。
     这里**刻意不抛错、也不补一个假模块** ——
     补一个假模块会让"并行构建"从一个事实变成一句台词。
+    （"全部模块都已沿用"这种情况走的就是这一支：这一次一个模型调用都没有。）
   */
-  if (modules.length === 0) {
+  if (targets.length === 0) {
     return {
       modules: [],
       failed: [],
@@ -168,7 +212,18 @@ export async function buildModules(
    */
   async function runOne(target: ArchModule, index: number): Promise<Outcome> {
     const brief = moduleBrief(input.arch, input.spec, target);
-    const userMessage = buildModulePrompt(brief, input.prompt, modules.length, index + 1);
+    /*
+      "第几个"取它在**架构全部模块**里的位置（不是这一小批里的位置）：
+      只补 1 个模块时，那个模块可能是架构里的第 4 个 ——
+      对它说"你是第 1 个，共 4 个"是自相矛盾的。
+    */
+    const archIndex = modules.findIndex((m) => m.id === target.id);
+    const userMessage = buildModulePrompt(
+      brief,
+      input.prompt,
+      modules.length,
+      (archIndex >= 0 ? archIndex : index) + 1,
+    );
     const callStartedAt = Date.now();
 
     let call: Awaited<ReturnType<typeof completeWithTruncationRetry>>;
@@ -298,7 +353,7 @@ export async function buildModules(
 
   /* ---------- 工作池 ---------- */
   /** 结果按下标回填：模块顺序必须与 arch.modules 一致，与谁先跑完无关 */
-  const outcomes: Outcome[] = new Array(modules.length);
+  const outcomes: Outcome[] = new Array(targets.length);
   let cursor = 0;
   let inFlight = 0;
   let peakInFlight = 0;
@@ -310,15 +365,31 @@ export async function buildModules(
       // 有人在跑就不领新活了（已经把活领走的那几个会自己跑完）
       if (abortError) return;
       const index = cursor++;
-      if (index >= modules.length) return;
+      if (index >= targets.length) return;
 
-      const target = modules[index];
+      const target = targets[index];
       inFlight++;
       if (inFlight > peakInFlight) peakInFlight = inFlight;
 
       try {
         const outcome = await runOne(target, index);
         outcomes[index] = outcome;
+
+        /*
+          构建好一个就回调一次（"边构建边落盘"）。
+          放在这里而不是汇总之后：这一批可能要跑一两分钟，
+          中途被打断时，已经好了的那几个必须已经在盘上。
+
+          ⚠️ 回调抛错吞掉：它只是顺手存一份，不能因为存不上就把整批带崩。
+             存不上的后果是"下次少沿用几个模块"，不是"这次白跑"。
+        */
+        if (outcome.ok && deps.onModuleBuilt) {
+          try {
+            await deps.onModuleBuilt(outcome.build);
+          } catch {
+            // 见上：这一份没存上，不影响这一批的结果
+          }
+        }
 
         if (!outcome.ok && !continueOnError && !abortError) {
           abortError = new Error(
@@ -360,7 +431,7 @@ export async function buildModules(
     同时开 min(并发上限, 模块数) 个 worker。
     取 min 是为了不白开一堆立刻返回的空 worker（模块 2 个、上限 8 时）。
   */
-  const workerCount = Math.min(concurrency, modules.length);
+  const workerCount = Math.min(concurrency, targets.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
   /*

@@ -32,11 +32,25 @@ import {
   DEFAULT_BUILD_CONCURRENCY,
   summarizeBatch,
   summarizeBuildBatch,
+  ZERO_USAGE,
   type BuildBatch,
+  type ModuleBuild,
 } from "@/core/domain/module-build";
+import { hashContent } from "@/core/domain/artifact";
+import {
+  planModuleResume,
+  type ModuleArtifactPayload,
+  type ModuleArtifactState,
+  type ModuleResumePlan,
+} from "@/core/generate/resume";
 import { runSpecStage, SPEC_ARTIFACT_NAME } from "@/core/generate/spec-stage";
-import { runArchStage } from "@/core/generate/arch-stage";
-import { runUiStage } from "@/core/generate/ui-stage";
+import { runArchStage, ARCH_ARTIFACT_NAME } from "@/core/generate/arch-stage";
+import { runUiStage, UI_ARTIFACT_NAME } from "@/core/generate/ui-stage";
+// 本地检查是纯函数、不花钱：沿用盘上产物时现算一遍，而不是信存下来的旧结果
+import { inspectArch } from "@/core/generate/arch-check";
+import { inspectUi } from "@/core/generate/ui-check";
+import { isFallbackArch } from "@/core/domain/arch";
+import { isFallbackUi, type UiSpec } from "@/core/domain/ui-spec";
 import {
   ACK_ARTIFACT_NAME,
   ANSWERS_ARTIFACT_NAME,
@@ -111,6 +125,95 @@ async function readGateDecision(runId: string, specFallback = false) {
     fallback: d.fallback,
     acknowledged,
   };
+}
+
+/**
+ * 读这次运行已有的模块产出，决定哪些能沿用。
+ *
+ * ── 为什么要重算哈希，而不是信产物登记 ──
+ *   登记里存的是"写那一刻"的 sha256。文件之后可能被人改过、
+ *   可能写了一半就被杀、也可能被同名文件覆盖 ——
+ *   登记本身不会知道。所以把内容读回来现算一遍，对得上才算"还是它"。
+ *
+ * ⚠️ 只认 `modules/<id>.json` 这个位置的文件：产物目录里还有
+ *    spec.json / arch.json / answers.json / ack.json / index.html，
+ *    它们都不是模块产出，混进来会让"沿用"变成"沿用了个别的什么东西"。
+ */
+async function planResumeFromArtifacts(
+  runId: string,
+  expectedIds: readonly string[],
+): Promise<ModuleResumePlan> {
+  const all = await fsArtifactStore.listByRun(runId);
+  const states: ModuleArtifactState[] = [];
+
+  for (const id of expectedIds) {
+    const hit = all.find((a) => a.path.endsWith(`/modules/${id}.json`));
+    if (!hit) {
+      states.push({ moduleId: id, present: false, sha256Ok: false });
+      continue;
+    }
+    const raw = await fsArtifactStore.readContent(hit);
+    states.push({
+      moduleId: id,
+      present: raw !== null,
+      // 读不出来（文件被删）时 raw 是 null —— 强调用 false，别让它冒充"校验通过"
+      sha256Ok: raw !== null && hashContent(raw) === hit.sha256,
+    });
+  }
+
+  return planModuleResume(expectedIds, states);
+}
+
+/**
+ * 把"确定沿用"的那几个模块读回来，拼成批次里的 ModuleBuild。
+ *
+ * 记账字段全部按 0 填、并打上 reused 标记：
+ * 这一趟确实没有任何调用，所以"这次花了 0 元"是实话；
+ * 而 reused 让界面能说清"这 0 元是因为用的是上次的产出，不是模型白送的"。
+ */
+async function loadReusedBuilds(
+  runId: string,
+  expectedIds: readonly string[],
+  reuseIds: readonly string[],
+): Promise<ModuleBuild[]> {
+  if (reuseIds.length === 0) return [];
+  const all = await fsArtifactStore.listByRun(runId);
+  const out: ModuleBuild[] = [];
+
+  for (const id of expectedIds) {
+    if (!reuseIds.includes(id)) continue;
+    const hit = all.find((a) => a.path.endsWith(`/modules/${id}.json`));
+    if (!hit) continue;
+    const raw = await fsArtifactStore.readContent(hit);
+    if (raw === null) continue;
+    let payload: Partial<ModuleArtifactPayload>;
+    try {
+      payload = JSON.parse(raw) as Partial<ModuleArtifactPayload>;
+    } catch {
+      // 内容坏了本该到不了这里（哈希对不上就不会被选进 reuse），
+      // 真到了就跳过它 —— 少一个模块也比装配进半截代码好
+      continue;
+    }
+    out.push({
+      moduleId: id,
+      // 沿用来的那份没有"这一句话说明"可读（它不是这一趟模型写的）——
+      // 从架构里取模块名，而不是编一句总结
+      summary: "",
+      html: typeof payload.html === "string" ? payload.html : "",
+      css: typeof payload.css === "string" ? payload.css : "",
+      js: typeof payload.js === "string" ? payload.js : "",
+      costCny: 0,
+      usage: ZERO_USAGE,
+      model: typeof payload.model === "string" ? payload.model : "",
+      priceTier: "offPeak",
+      latencyMs: 0,
+      truncated: false,
+      reasoning: "",
+      reused: true,
+    });
+  }
+
+  return out;
 }
 
 /** 必须显式声明 Node 运行时：会话校验要用 better-sqlite3，Edge 跑不了 */
@@ -307,6 +410,15 @@ export async function GET(
           */
           let specFallbackFromStage = false;
 
+          /**
+           * 这一趟是不是"续跑"（规格沿用了盘上已确认的那份，没有重跑规格化）。
+           *
+           * 它不只是说明文字的分支条件 —— 架构与界面设计也据此**沿用上次的**：
+           * 需求没变，模块划分就该稳定；否则上次构建好的模块全成了孤儿
+           * （实测续跑时只对上了 1/4 个模块）。
+           */
+          let resumedSpec = false;
+
           /*
             ---------- 续跑：答完疑问再点生成时，不重跑规格化 ----------
             门禁那一段的文档写着「再点生成 → 检查到答案存在，跳过门禁，
@@ -352,6 +464,8 @@ export async function GET(
             specFromStage = storedSpec;
             // 规格是自己从盘上读的，兜底与否要现判 —— 它同样是界面必须看见的
             specFallbackFromStage = isFallbackSpec(storedSpec);
+            // 后面架构 / 界面设计据此一起沿用（需求没变，模块划分就该稳定）
+            resumedSpec = true;
 
             const answered = (storedAnswers?.answers ?? []).filter(
               (a) => a.answer.trim().length > 0,
@@ -510,24 +624,64 @@ export async function GET(
           */
           let archFromStage: ArchSpec | null = null;
           if (specFromStage) {
-            for await (const e of runArchStage(ports, {
-              runId,
-              prompt: runPrompt,
-              // 用户原话一字不改地传下去；规格作为"上一阶段的产物"一起带上
-              spec: specFromStage,
-              costLimitCny: env.run.costLimitCny,
-              spentCny: spentBeforeArch,
-            })) {
-              /*
-                ⚠️ 这一段顺手把架构**接下来**（archFromStage）。
-                第三道「界面设计」的第三条验收标准（页面用到的数据
-                都能对应到架构里的模块）没有架构根本判不了 ——
-                理由同上面"规格为什么不回头读盘"：多三个不可达的失败分支
-                只会让人以为它们会真的发生。
-              */
-              if (e.kind === "arch") archFromStage = e.arch;
-              // 和上面同一个做法：ArchStageEvent 与 GenerateEvent 结构一致，直接透传
-              yield e as GenerateEvent;
+            /*
+              ---------- 续跑时：规格没变 → 架构也沿用上次的 ----------
+              ── 为什么必须一起沿用（真实运行暴露的）──
+                只沿用规格、却重跑架构的话，**模块划分会变**：
+                实测同一句需求，两次架构出来的是
+                「clock-ui / page-shell / persistence / timer-core」对
+                「另一批 id」—— 于是上次已经构建好的 4 个模块里只有 1 个对得上号，
+                另外 3 个白构建的产出全成了孤儿（续跑只沿用了 1 个）。
+                也就是说：模块级的断点续跑**依赖架构稳定**。
+
+              ── 为什么这条规则是安全的 ──
+                只有"用户刚答完疑问、继续往下走"这一趟才会走到这里
+                （resumedSpec 为真）。他并没有改需求，规格就是我们
+                刚刚沿用的那一份 —— 架构当然还是上次那份。
+                想换一套设计的话，走「重新生成」（DELETE 会清掉产物），
+                那条路上 resumedSpec 是假，架构照旧重跑。
+            */
+            const storedArch = resumedSpec
+              ? await readJsonArtifact<ArchSpec>(runId, ARCH_ARTIFACT_NAME)
+              : null;
+            if (storedArch) {
+              archFromStage = storedArch;
+              yield {
+                kind: "phase",
+                phase: "arch",
+                label:
+                  "架构沿用上次的（你没有改需求）—— 不重跑定型，模块划分保持一致，" +
+                  "上次已经构建好的模块才能接着用",
+              };
+              // arch 事件要重新发一次：每趟开始时事件日志被清空，
+              // 不复发的话清单上那一批模块任务点这一趟就看不到了
+              yield {
+                kind: "arch",
+                arch: storedArch,
+                // 本地检查是纯函数、不花钱，现算一遍：存下来的结果可能来自旧版本规则
+                check: inspectArch(storedArch, specFromStage),
+                fallback: isFallbackArch(storedArch),
+              };
+            } else {
+              for await (const e of runArchStage(ports, {
+                runId,
+                prompt: runPrompt,
+                // 用户原话一字不改地传下去；规格作为"上一阶段的产物"一起带上
+                spec: specFromStage,
+                costLimitCny: env.run.costLimitCny,
+                spentCny: spentBeforeArch,
+              })) {
+                /*
+                  ⚠️ 这一段顺手把架构**接下来**（archFromStage）。
+                  第三道「界面设计」的第三条验收标准（页面用到的数据
+                  都能对应到架构里的模块）没有架构根本判不了 ——
+                  理由同上面"规格为什么不回头读盘"：多三个不可达的失败分支
+                  只会让人以为它们会真的发生。
+                */
+                if (e.kind === "arch") archFromStage = e.arch;
+                // 和上面同一个做法：ArchStageEvent 与 GenerateEvent 结构一致，直接透传
+                yield e as GenerateEvent;
+              }
             }
           }
 
@@ -555,17 +709,40 @@ export async function GET(
           const spentBeforeUi = await sqliteCostStore.totalByRun(runId);
 
           if (specFromStage && archFromStage) {
-            for await (const e of runUiStage(ports, {
-              runId,
-              prompt: runPrompt,
-              // 两份上游产物一起带上：第一条检查要 spec，第三条检查要 arch
-              spec: specFromStage,
-              arch: archFromStage,
-              costLimitCny: env.run.costLimitCny,
-              spentCny: spentBeforeUi,
-            })) {
-              // UiStageEvent 的几种事件与 GenerateEvent 结构一致，直接透传
-              yield e as GenerateEvent;
+            /*
+              续跑时界面设计也沿用上次的 —— 与架构同一条理由：
+              界面设计里的 dataNeeds / 设计变量都建立在模块划分上，
+              换了架构却留着一份旧界面，两边会对不上；
+              反过来，架构沿用了而界面没沿用，则等于白花一次钱重画同一套东西。
+            */
+            const storedUi = resumedSpec
+              ? await readJsonArtifact<UiSpec>(runId, UI_ARTIFACT_NAME)
+              : null;
+            if (storedUi) {
+              yield {
+                kind: "phase",
+                phase: "ui",
+                label: "界面设计沿用上次的（架构与需求都没变）—— 不重跑，视觉与变量表保持一致",
+              };
+              yield {
+                kind: "ui",
+                ui: storedUi,
+                check: inspectUi(storedUi, specFromStage, archFromStage),
+                fallback: isFallbackUi(storedUi),
+              };
+            } else {
+              for await (const e of runUiStage(ports, {
+                runId,
+                prompt: runPrompt,
+                // 两份上游产物一起带上：第一条检查要 spec，第三条检查要 arch
+                spec: specFromStage,
+                arch: archFromStage,
+                costLimitCny: env.run.costLimitCny,
+                spentCny: spentBeforeUi,
+              })) {
+                // UiStageEvent 的几种事件与 GenerateEvent 结构一致，直接透传
+                yield e as GenerateEvent;
+              }
             }
           }
 
@@ -605,24 +782,132 @@ export async function GET(
           */
           let batch: BuildBatch | null = null;
           if (specFromStage && archFromStage && spentBeforeBuild < env.run.costLimitCny) {
+            /*
+              ---------- 断点续跑：已经构建好、且校验通过的模块不再重跑 ----------
+              并行构建是最贵的一道（实测一次 ¥0.25 上下，占大头），
+              也最容易被外力打断（关浏览器、dev server 重启、网络断一下）。
+              已经落盘的那几个模块没有理由再花一次钱重写。
+
+              ⚠️ 判据是**内容哈希**，不是"文件在不在"：文件可能被手改过、
+                 可能写了一半就被杀、也可能被同名文件覆盖。
+                 对不上就重构建 —— 钱可以再花一次，把半截代码装配进产物不行。
+            */
+            const resume = await planResumeFromArtifacts(
+              runId,
+              archFromStage.modules.map((m) => m.id),
+            );
+
+            /*
+              只有"真的沿用了东西"才需要跟用户说一句。
+              一个都没有时不说 —— 那是第一次跑的正常情况，
+              说一句"没有可沿用的产出"只会让人以为出了问题。
+            */
+            if (resume.reason) {
+              yield {
+                kind: "phase",
+                phase: "building",
+                label: `接着上次跑：${resume.reason}`,
+              };
+            }
+            for (const r of resume.rejected) {
+              yield {
+                kind: "phase",
+                phase: "building",
+                label:
+                  `模块 ${r.moduleId} 的旧产出不能用（${r.reason}），这次重新构建它 —— ` +
+                  `这一笔钱是因为校验没过才花的`,
+              };
+            }
+
             yield {
               kind: "phase",
               phase: "building",
               label:
-                `正在并行构建 ${archFromStage.modules.length} 个模块` +
-                `（并发上限 ${concurrency}）`,
+                `正在并行构建 ${resume.build.length} 个模块` +
+                `（并发上限 ${concurrency}）` +
+                (resume.reuse.length > 0 ? ` · 另有 ${resume.reuse.length} 个沿用上次的产出` : ""),
             };
 
             batch = await buildModules(
-              { model: ports.model },
+              {
+                model: ports.model,
+                /*
+                  ---------- 边构建边落盘 ----------
+                  `modules/<模块id>.json` 是第四道在 stages.ts 里声明的产物契约
+                  （以前从来没写过 —— 契约与实际不符）。
+
+                  落盘时机是"这个模块刚构建好"，不是"整批跑完"：
+                  并行构建最贵也最慢，中途被打断（关浏览器、dev server 重启）
+                  时，已经好了的那几个必须已经在盘上 —— 否则下次只能从头再花钱。
+                  接着上次跑的逻辑见 resolveResume（它读的就是这些文件）。
+                */
+                onModuleBuilt: async (built) => {
+                  const mod = archFromStage?.modules.find((x) => x.id === built.moduleId);
+                  await fsArtifactStore.save({
+                    runId,
+                    kind: "json",
+                    path: `${runId}/modules/${built.moduleId}.json`,
+                    content: JSON.stringify(
+                      {
+                        moduleId: built.moduleId,
+                        name: mod?.name ?? built.moduleId,
+                        dependsOn: mod?.dependsOn ?? [],
+                        html: built.html,
+                        css: built.css,
+                        js: built.js,
+                        model: built.model,
+                        builtAt: Date.now(),
+                      },
+                      null,
+                      2,
+                    ),
+                  });
+                },
+              },
               {
                 prompt: runPrompt,
                 spec: specFromStage,
                 arch: archFromStage,
                 concurrency,
+                // 只补缺的那几个（全都要建时它是 undefined，行为与从前一致）
+                onlyModuleIds: resume.build.length === archFromStage.modules.length
+                  ? undefined
+                  : resume.build,
               },
             );
 
+            /*
+              ---------- 把沿用的那几份并回批次 ----------
+              并回去的理由：装配（第五道）与 modules 事件都只认 batch.modules ——
+              不并的话，沿用的那几个模块在产物里、在清单上都会"消失"。
+
+              ⚠️ batch 的 totalCostCny / totalUsage **不并入**沿用那几份：
+                 那些钱上一次已经记过流水了，并进来就是重复计账。
+                 沿用那几份自身的 costCny=0、usage=0、reused=true，
+                 界面上因此能分开说"这次没花钱，用的是上次的产出"。
+            */
+            const reusedBuilds = await loadReusedBuilds(
+              runId,
+              archFromStage.modules.map((m) => m.id),
+              resume.reuse,
+            );
+            if (reusedBuilds.length > 0) {
+              const byId = new Map<string, ModuleBuild>();
+              for (const b of [...reusedBuilds, ...batch.modules]) byId.set(b.moduleId, b);
+              // 顺序跟架构走，不跟"谁先跑完"、也不跟"谁是沿用的"走
+              batch = {
+                ...batch,
+                modules: archFromStage.modules
+                  .map((m) => byId.get(m.id))
+                  .filter((b): b is ModuleBuild => b !== undefined),
+              };
+            }
+
+            /*
+              落盘已经在 buildModules 的 onModuleBuilt 回调里做过了（每个模块一好就写）——
+              这里不再补写一遍：那会是同一份内容写两次，多占一份产物登记，
+              而且会掩盖"回调没被调用"这种真问题。
+            */
             /*
               ---------- 记账：每一次模块调用各一行流水 ----------
               含**失败的那几次**。理由有两条，都很实际：
@@ -638,6 +923,8 @@ export async function GET(
             */
             try {
               for (const m of batch.modules) {
+                // 沿用来的模块**不写新的流水行**：那一笔钱上次已经记过，再记就是重复计账
+                if (m.reused) continue;
                 await sqliteCostStore.record({
                   runId,
                   stage: "build",

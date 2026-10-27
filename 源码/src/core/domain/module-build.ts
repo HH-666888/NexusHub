@@ -130,6 +130,19 @@ export interface ModuleBuild {
    *   逐条发出去的（每条前面标出模块 id）—— 那是**归属**，不是时序。
    */
   reasoning: string;
+  /**
+   * 这一份是**上次的产出沿用来的**，本次没有任何调用。
+   *
+   * ── 为什么要在类型上标出来，而不是"用 0 元 0 token 表示" ──
+   *   0 元 0 token 与"这次调用花了 0 元"长得一模一样，而这两件事不同：
+   *   前者是"没有再花钱"，后者是"花了但便宜 / 失败"。
+   *   账单和界面上都要能分开说 —— 否则用户看到"这个模块 0 元"，
+   *   会以为模型白送的。
+   *
+   * 于是记账那边（route.ts）对 reused 的模块**不写新的流水行**：
+   * 那一笔钱上一次已经记过了，再记一行就是重复计账。
+   */
+  reused?: boolean;
 }
 
 /**
@@ -342,6 +355,14 @@ export function moduleBrief(arch: ArchSpec, spec: AppSpec, target: ArchModule): 
 }
 
 /** 把派工单拼成用户消息（用户原话 + 职责 + 功能条目 + 依赖） */
+/**
+ * 一个模块的提示词。
+ *
+ * ⚠️ `total` 是**整个应用的模块数**，不是"这一次要建几个"：
+ *    断点续跑时可能只补 1 个模块，但如果对它说"你在这一批 1 个模块里负责第 1 个"，
+ *    它就不知道自己在一个多模块应用里排第几、也不知道还要留什么接口。
+ *    （这一句原来写的是"你在这一批 N 个模块里负责第 M 个" —— 续跑一出现就成了假话。）
+ */
 export function buildModulePrompt(
   brief: ModuleBrief,
   userInput: string,
@@ -367,7 +388,7 @@ export function buildModulePrompt(
     "",
     userInput.trim(),
     "",
-    `你在这一批 ${total} 个模块里负责第 ${index} 个：`,
+    `整个应用一共 ${total} 个模块，你负责第 ${index} 个：`,
     `  · 模块 id：${m.id}`,
     `  · 模块名：${m.name}`,
     `  · 它负责什么：${m.responsibility || "（架构里没写职责 —— 按模块名理解，只做这一块）"}`,

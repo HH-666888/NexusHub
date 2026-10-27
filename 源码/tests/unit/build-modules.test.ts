@@ -10,6 +10,7 @@ import {
   summarizeBatch,
   summarizeBuildBatch,
   type BuildBatch,
+  type ModuleBuild,
 } from "@/core/domain/module-build";
 import type { ArchSpec } from "@/core/domain/arch";
 import type { AppSpec } from "@/core/domain/spec";
@@ -132,6 +133,8 @@ interface Harness {
   peak: number;
   /** 每个模块被调用了几次 */
   callsByModule: Map<string, number>;
+  /** 最近一次调用的用户消息（验"第 N 个 / 共 M 个"这类提示词细节） */
+  lastPrompt: string;
 }
 
 function makeHarness(opts: {
@@ -141,6 +144,7 @@ function makeHarness(opts: {
   const delayMs = opts.delayMs ?? 3;
   const calls: Call[] = [];
   const callsByModule = new Map<string, number>();
+  let lastPrompt = "";
   let inFlight = 0;
   let peak = 0;
 
@@ -153,6 +157,7 @@ function makeHarness(opts: {
            并发跑的时候"第几次调用"根本不代表"哪个模块" ——
            拿顺序当身份的话，这条测试本身就会因为并发而变得不确定。
       */
+      lastPrompt = user;
       const moduleId = /模块 id：([a-z0-9-]+)/.exec(user)?.[1] ?? "?";
       const nth = (callsByModule.get(moduleId) ?? 0) + 1;
       callsByModule.set(moduleId, nth);
@@ -210,6 +215,9 @@ function makeHarness(opts: {
       return peak;
     },
     callsByModule,
+    get lastPrompt() {
+      return lastPrompt;
+    },
   };
 }
 
@@ -221,13 +229,17 @@ async function run(opts: {
   delayMs?: number;
   maxOutputTokensPerModule?: number;
   continueOnError?: boolean;
+  /** 断点续跑：只构建这几个 */
+  onlyModuleIds?: string[];
+  /** 边构建边落盘的回调（验它被调用了几次、顺序对不对） */
+  onModuleBuilt?: (b: ModuleBuild) => void | Promise<void>;
 }): Promise<{ batch: BuildBatch; h: Harness }> {
   const h = makeHarness({
     plan: opts.plan ?? (() => ({})),
     delayMs: opts.delayMs,
   });
   const batch = await buildModules(
-    { model: h.model },
+    { model: h.model, onModuleBuilt: opts.onModuleBuilt },
     {
       prompt: SPEC.prompt,
       spec: SPEC,
@@ -235,6 +247,7 @@ async function run(opts: {
       concurrency: opts.concurrency,
       maxOutputTokensPerModule: opts.maxOutputTokensPerModule,
       continueOnError: opts.continueOnError,
+      onlyModuleIds: opts.onlyModuleIds,
     },
   );
   return { batch, h };
@@ -885,5 +898,112 @@ describe("截断重试", () => {
     expect(f.message).toContain("网关超时"); // 说清是"重试那次失败了"
     expect(f.message).toContain("截断"); // 也说清根因是截断
     expect(f.costCny).toBeCloseTo(0.07, 6);
+  });
+});
+/* ============================================================
+   ⑩ 断点续跑的两块地基（onlyModuleIds / onModuleBuilt）
+   ============================================================ */
+
+describe("断点续跑 · 只构建缺的那几个", () => {
+  it("【关键】点名 2 个 → 只有 2 次模型调用，另外两个模块一次都没跑", async () => {
+    const { batch, h } = await run({
+      ids: ["m1", "m2", "m3", "m4"],
+      onlyModuleIds: ["m2", "m4"],
+    });
+    expect(h.calls.length).toBe(2);
+    expect(batch.modules.map((m) => m.moduleId).sort()).toEqual(["m2", "m4"]);
+    // 认领次数也要对得上：别出现"调用了但没认领"这种糊涂账
+    expect(h.callsByModule.get("m1") ?? 0).toBe(0);
+    expect(h.callsByModule.get("m3") ?? 0).toBe(0);
+  });
+
+  it("【关键】提示词里的「第 N 个 / 共 M 个」按**架构全部模块**算，不按这一小批算", async () => {
+    /*
+      只补 1 个模块时，它可能是架构里的第 4 个。
+      对它说"你是第 1 个，共 4 个"是自相矛盾的 ——
+      模型会以为别的模块都排在它后面、还没写。
+    */
+    const { h } = await run({ ids: ["m1", "m2", "m3", "m4"], onlyModuleIds: ["m3"] });
+    expect(h.calls.length).toBe(1);
+    // 提示词本身在 h.lastPrompt 里留了一份（见 harness）
+    expect(h.lastPrompt).toContain("第 3 个");
+    expect(h.lastPrompt).toContain("整个应用一共 4 个模块");
+  });
+
+  it("★ 反例：不点名 = 全部构建（老行为一个字节都不变）", async () => {
+    const { batch, h } = await run({ ids: ["m1", "m2", "m3"] });
+    expect(h.calls.length).toBe(3);
+    expect(batch.modules).toHaveLength(3);
+  });
+
+  it("★ 反例：点名了但架构里没有这个 id → 一个都不构建（不许凭空造一个）", async () => {
+    const { batch, h } = await run({ ids: ["m1", "m2"], onlyModuleIds: ["不存在"] });
+    expect(h.calls.length).toBe(0);
+    expect(batch.modules).toEqual([]);
+    expect(batch.failed).toEqual([]);
+  });
+});
+
+describe("断点续跑 · 边构建边落盘（onModuleBuilt）", () => {
+  it("【关键】每构建好一个就回调一次，且**不等整批跑完**", async () => {
+    /*
+      "不等整批跑完"是这条的全部意义：实测四个模块要跑一两分钟，
+      中途关掉浏览器 / dev server 重启，已经好了的那几个必须已经在盘上。
+
+      怎么验：回调里记下"此刻已经发起了几次模型调用"。
+      串行跑 3 个模块时，如果回调只在整批结束后才触发，
+      那么第一次回调时调用数必然已经等于 3；真正边建边存则必然小于 3。
+
+      ⚠️ 这里**不能**用 run() 的解构变量 h：回调是在 buildModules 内部触发的，
+         那时 `const { h } = await run(...)` 还没赋值，闭包里读到的是 TDZ ——
+         会抛 ReferenceError，而 buildModules 会把它吞掉（回调抛错不许带崩整批），
+         表现就是"回调一次都没调"，看起来像产品 bug。
+         所以直接把 harness 先建出来。
+    */
+    const h = makeHarness({ plan: () => ({}) });
+    const seen: Array<{ id: string; callsSoFar: number }> = [];
+    const batch = await buildModules(
+      {
+        model: h.model,
+        onModuleBuilt: (b) => {
+          seen.push({ id: b.moduleId, callsSoFar: h.calls.length });
+        },
+      },
+      {
+        prompt: SPEC.prompt,
+        spec: SPEC,
+        arch: archOf(["m1", "m2", "m3"]),
+        concurrency: 1, // 串行，好判断先后
+      },
+    );
+
+    expect(batch.modules).toHaveLength(3);
+    expect(seen).toHaveLength(3);
+    // 第一个回调发生时，后面还有模块没跑完
+    expect(seen[0].callsSoFar).toBeLessThan(3);
+    expect(seen.map((s) => s.id)).toEqual(["m1", "m2", "m3"]);
+  });
+
+  it("★ 反例：失败的模块**不**回调（没有产出可落盘）", async () => {
+    const seen: string[] = [];
+    await run({
+      ids: ["m1", "m2"],
+      plan: (call) => (call.moduleId === "m2" ? { text: "这不是 JSON" } : {}),
+      onModuleBuilt: (b) => {
+        seen.push(b.moduleId);
+      },
+    });
+    expect(seen).toEqual(["m1"]);
+  });
+
+  it("★ 反例：回调抛错不许把整批带崩（存不上只是下次少沿用几个）", async () => {
+    const { batch } = await run({
+      ids: ["m1", "m2"],
+      onModuleBuilt: () => {
+        throw new Error("磁盘满了");
+      },
+    });
+    expect(batch.modules).toHaveLength(2);
+    expect(batch.failed).toEqual([]);
   });
 });
