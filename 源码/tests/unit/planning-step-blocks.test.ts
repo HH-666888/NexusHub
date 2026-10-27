@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { summarizeChecks, type CheckResult } from "@/core/domain/check";
 import type { GenerateEvent, GeneratePhase } from "@/core/generate/service";
-import { START_BLOCK_TITLE, toStepBlocks } from "@/core/planning/step-blocks";
+import {
+  START_BLOCK_TITLE,
+  blockHasContent,
+  pickCurrentBlockId,
+  toStepBlocks,
+} from "@/core/planning/step-blocks";
 
 /**
  * 步骤块的切分
@@ -13,6 +18,10 @@ import { START_BLOCK_TITLE, toStepBlocks } from "@/core/planning/step-blocks";
  * 其中有一条是**不变量**（下面「块数 === phase 数」那条）：
  * 它不是"顺手多写一条"，而是这个模块存在的意义 ——
  * 一旦有人往切分里塞进"按计划补一个步骤"之类的逻辑，它会立刻红。
+ *
+ * 第 6 节钉的是另一个口径：**右侧面板默认打开在哪一块**
+ * （pickCurrentBlockId）。它和切分一样是纯函数，所以也在这里钉死 ——
+ * 尤其是"往前找"必须仍然是真实的那一块，而不是挑一个好看的。
  */
 
 /* ============================================================
@@ -360,5 +369,182 @@ describe("步骤块 · 坏数据不炸也不编", () => {
     expect(blocks[0].checks).toEqual([
       { name: "（未命名检查项）", pass: false, detail: "" },
     ]);
+  });
+});
+
+/* ============================================================
+   6 · 面板默认停在哪一块（pickCurrentBlockId）
+   ============================================================ */
+
+/**
+ * 这一节钉的是"打开面板第一眼看到什么"。
+ *
+ * 改动前是**最后一块**；一次跑完的运行里，最后一块常常是收尾的
+ * phase:"done"（没有任何输出），于是面板一打开就写
+ * 「这一步没有返回思考内容 / 没有返回正文」——
+ * 是实话，但把整条运行读起来像"什么都没做"。
+ *
+ * ⚠️ 这里一条断言都没有说"要挑好看的"：
+ *    判据只有 **有没有内容** 这一个，选出来的永远是事件流里真实的那一块。
+ */
+describe("步骤块 · 面板默认停在哪一块", () => {
+  it("空数组 → null（没有过程就没有块，面板照旧走空态）", () => {
+    expect(pickCurrentBlockId([])).toBeNull();
+  });
+
+  it("只有一块且有内容 → 就是它自己", () => {
+    const blocks = toStepBlocks([phase(0, "正在生成"), text(1, "正文")]);
+    expect(blocks).toHaveLength(1);
+    expect(pickCurrentBlockId(blocks)).toBe(blocks[0].id);
+  });
+
+  it("★ 最后一块是空的（收尾 phase:\"done\"）→ 停在倒数第二块", () => {
+    /*
+      这是**一次跑完的运行最常见的样子**：
+      正文那一步之后，再来一条"完成 · 7/7 项检查通过"的收尾 phase。
+      它是一次真实发生过的步骤，但一个字都没输出。
+    */
+    const blocks = toStepBlocks([
+      phase(0, "正在生成"),
+      text(1, "模型写出来的正文"),
+      phase(2, "完成 · 7/7 项检查通过", "done"),
+    ]);
+    expect(blocks).toHaveLength(2);
+    // 先把"收尾那块确实是空的"钉死 —— 否则下面那条可能只是碰巧成立
+    expect(blocks[1].text).toBe("");
+    expect(blocks[1].reasoning).toBe("");
+    expect(blocks[1].checks).toBeNull();
+    expect(blockHasContent(blocks[0])).toBe(true);
+
+    expect(pickCurrentBlockId(blocks)).toBe(blocks[0].id);
+    // 而且它真的**不是**最后一块：面板正是靠这个差来说"后面还有 N 步没有输出"
+    expect(blocks[0].id).not.toBe(blocks[blocks.length - 1].id);
+  });
+
+  it("最后两块都空 → 继续往前找，直到有内容的那一块", () => {
+    const blocks = toStepBlocks([
+      phase(0, "正在生成"),
+      text(1, "有内容的那一步"),
+      phase(2, "正在落盘"), // 空
+      phase(3, "完成", "done"), // 空
+    ]);
+    expect(blocks).toHaveLength(3);
+    // 末尾两个空块被一路跳过，落回第一块（正文那一块）
+    expect(blocks.slice(1).every((b) => !blockHasContent(b))).toBe(true);
+    expect(pickCurrentBlockId(blocks)).toBe(blocks[0].id);
+  });
+
+  it("★ 全都空 → 退回**最后一块**（不是 null）", () => {
+    /*
+      为什么不能返回 null：
+      null 在面板那里是另一句话 —— 「这次运行还没有产生任何过程事件」。
+      而这里的事实是"步骤都真的发生了，只是都没留下输出"。
+      返回 null 等于把后者说成前者，那是假话；
+      退回最后一块，面板就会照实说"这一步没有返回思考内容 / 正文"。
+    */
+    const blocks = toStepBlocks([
+      phase(0, "正在把你的需求整理成规格"),
+      phase(1, "正在生成"),
+      phase(2, "完成 · 7/7 项检查通过", "done"),
+    ]);
+    expect(blocks).toHaveLength(3);
+    expect(blocks.every((b) => !blockHasContent(b))).toBe(true);
+
+    const picked = pickCurrentBlockId(blocks);
+    expect(picked).not.toBeNull();
+    expect(picked).toBe(blocks[blocks.length - 1].id);
+  });
+
+  it("有 checks 也算有内容（检查清单本身就是这一步的输出）", () => {
+    const blocks = toStepBlocks([
+      phase(0, "正在生成"),
+      text(1, "正文"),
+      phase(2, "正在检查产物"),
+      check(3, RESULTS),
+      phase(4, "完成", "done"),
+    ]);
+    expect(blocks).toHaveLength(3);
+    // 检查项归**检查那一步**（block[1]），收尾的 block[2] 依旧是空的
+    expect(blocks[1].checks).toEqual(RESULTS);
+    expect(blockHasContent(blocks[2])).toBe(false);
+    expect(pickCurrentBlockId(blocks)).toBe(blocks[1].id);
+  });
+
+  it("reasoning / text 只要有一个非空就算有内容", () => {
+    // 只有思考：正文那一栏会说"没有返回正文"，但这一块确实是有内容的
+    const onlyThink = toStepBlocks([
+      phase(0, "正在生成"),
+      think(1, "只有思考"),
+      phase(2, "完成", "done"),
+    ]);
+    expect(pickCurrentBlockId(onlyThink)).toBe(onlyThink[0].id);
+
+    // 只有正文：最常见的真实情况（很多步骤就是不返回思考）
+    const onlyText = toStepBlocks([
+      phase(0, "正在生成"),
+      text(1, "只有正文"),
+      phase(2, "完成", "done"),
+    ]);
+    expect(pickCurrentBlockId(onlyText)).toBe(onlyText[0].id);
+  });
+
+  it("纯空白不算内容 —— 判空和面板一样走 trim()", () => {
+    /*
+      面板渲染前就是这么判的（step-content.tsx：trim() 之后为空才说"没有返回"）。
+      两处口径必须同源：这里算"有"、面板却渲染成"没有返回"，
+      面板就会停在一个实质空白的步骤上，而这在界面上看不出来。
+    */
+    const blocks = toStepBlocks([
+      phase(0, "正在生成"),
+      text(1, "   \n  "),
+      phase(2, "完成", "done"),
+    ]);
+    expect(blocks[0].text.trim()).toBe("");
+    expect(pickCurrentBlockId(blocks)).toBe(blocks[1].id);
+  });
+
+  it("checks 是空数组（检查跑了但一项结果都没有）不算有内容", () => {
+    /*
+      `checks === null` 是"没收到过 check 事件"，
+      而 `[]` 是"检查跑了、一项结果都没有"。
+      后者面板**一个字都渲染不出来**（检查清单只在有项时才画）——
+      把它算成有内容，面板就会停在另一个看上去同样空白的步骤上，
+      等于没修这次要修的问题。
+    */
+    const blocks = toStepBlocks([
+      phase(0, "正在生成"),
+      check(1, []),
+      phase(2, "完成", "done"),
+    ]);
+    expect(blocks[0].checks).toEqual([]);
+    expect(blockHasContent(blocks[0])).toBe(false);
+    expect(pickCurrentBlockId(blocks)).toBe(blocks[1].id);
+  });
+
+  it("★ 出过错的块只要写了东西，照样被选中（判据与 tone 无关）", () => {
+    /*
+      "往前找"只认有没有内容，不认好不好看：
+      失败那一步写了半截正文，它就是这次运行里最后一个有内容的块。
+      挑一个"看起来成功"的块，才是这一版最不能做的事。
+    */
+    const blocks = toStepBlocks([
+      phase(0, "正在生成"),
+      text(1, "写了一半的正文"),
+      ev(2, { kind: "error", message: "传输中断" }),
+      phase(3, "完成", "done"),
+    ]);
+    expect(blocks[0].tone).toBe("error");
+    expect(pickCurrentBlockId(blocks)).toBe(blocks[0].id);
+  });
+
+  it("⚠️ 只选一个 id：块本身一个字段都不改（不合并、不搬运内容）", () => {
+    const blocks = toStepBlocks([
+      phase(0, "正在生成"),
+      text(1, "第一块的字"),
+      phase(2, "完成", "done"),
+    ]);
+    const before = JSON.parse(JSON.stringify(blocks)) as unknown;
+    pickCurrentBlockId(blocks);
+    expect(blocks).toEqual(before);
   });
 });

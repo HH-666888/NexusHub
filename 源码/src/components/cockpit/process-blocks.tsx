@@ -115,8 +115,12 @@ export function ProcessBlocks({
             data-process-block={block.id}
             data-process-tone={block.tone}
             /*
-              「当前块」是给界面和端到端用的把手：它就是右侧面板正在显示的那一步,
-              也是列表的**最后一块**（口径见 /canvas 上那段注释）。
+              「当前块」是给界面和端到端用的把手：它就是右侧面板正在显示的那一步。
+              ⚠️ 它**不一定是最后一块**：默认停在最后一个**有内容**的块
+                 （pickCurrentBlockId，口径见 /canvas 上那段注释）——
+                 收尾的 phase:"done" 常常是最后一块却没有输出。
+                 所以下面那句"全文在右侧「这一步的内容」"标的正是这一块，
+                 和右侧面板永远指同一块，不会各指一处。
             */
             data-process-block-current={block.id === currentBlockId ? "1" : undefined}
             /*

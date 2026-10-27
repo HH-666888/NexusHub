@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { StepBlock } from "@/core/planning/step-blocks";
+import { blockHasContent, type StepBlock } from "@/core/planning/step-blocks";
 
 /** 语气色：error 红 / ok 绿 / normal 中性（和下面「生成过程」的块头同一套值） */
 const TONE_COLOR: Record<StepBlock["tone"], string> = {
@@ -42,6 +42,19 @@ const FAIL_COLOR = "rgb(248, 113, 113)";
  *   可序列化的纯数据（StepBlock 数组），所以服务端算好的块可以直接传进来，
  *   切换页签不会重新向服务端要一遍数据。
  *
+ * ── ★ 默认停在哪一块，以及为什么那不是"挑好看的说" ★ ──
+ *   服务端默认选的**不是最后一块**，而是最后一个**有内容**的块
+ *   （pickCurrentBlockId，core/planning/step-blocks.ts）。理由：
+ *   一次跑完的运行，最后一块常常是收尾的 phase:"done"（label 类似"完成"），
+ *   它没有任何输出 —— 面板一打开就写"这一步没有返回思考内容 / 没有返回正文"，
+ *   诚实，但把整条运行读起来像"什么都没做"。
+ *
+ *   这样仍然诚实，靠的是两条，缺一不可：
+ *     · 显示的是**真实某一步的真实内容** —— 不编、不合并、不挑好看的；
+ *     · 面板标题写明"第 N 步 / 共 M 步"，而且选中块不是最后一块时**明说**
+ *       "后面还有 N 步没有输出"（`data-step-not-last`）。
+ *   少了第二条，往前选就是**用排版掩盖事实**。
+ *
  * ── 空态说的是实话 ──
  *   `blocks` 为空 = 这次运行**还没有产生任何过程事件**（还没开跑，
  *   或者压根没选中运行）。不写"加载中"，也不留白。
@@ -70,6 +83,27 @@ export function StepContent({
   */
   const position = index >= 0 ? index : blocks.length > 0 ? blocks.length - 1 : -1;
   const block = position >= 0 ? blocks[position] : null;
+
+  /*
+    ---------- ★ 当前显示的不是最后一步时，必须**明说** ★ ----------
+    服务端默认选的已经不再是"最后一块"，而是"最后一个**有内容**的块"
+    （pickCurrentBlockId，理由写在 core/planning/step-blocks.ts 里）。
+    那个选择本身是诚实的 —— 显示的就是真实某一步的真实内容；
+    但它有一个副作用：用户会以为"面板上这块就是最后一步"。
+    （收尾的 phase:"done" 没有任何输出，一次跑完的运行里它往往是最后一块。）
+
+    所以这里补一句小字：后面还剩几块、它们没有输出。
+    少了它，往前选就等于**用排版掩盖事实** —— 那不是这次要的东西。
+
+    ⚠️ "没有输出"这句话必须真的成立才算数：
+       正常情况下（服务端选了最后一个有内容的块）后面那些块**必然**都没有内容，
+       于是走上面那一支。理论上够不到的第二支留着，是为了让这句话
+       在任何调用方手里都不会变成假话 —— 判据是 blockHasContent()，
+       和选块用的是**同一个**函数，不另写一套"看起来差不多"的判断。
+  */
+  const laterBlocks = position >= 0 ? blocks.slice(position + 1) : [];
+  const laterSilent = laterBlocks.filter((b) => !blockHasContent(b)).length;
+  const notLast = laterBlocks.length > 0;
 
   return (
     <aside
@@ -102,6 +136,22 @@ export function StepContent({
         ) : (
           <p className="mt-1 text-[10.5px] leading-relaxed text-[var(--ink-5)]">
             这次运行还没有产生任何过程事件
+          </p>
+        )}
+        {/*
+          小字、贴着标题：见上面那段说明。
+          `data-step-not-last` 是给界面之外的读者（端到端）用的把手 ——
+          "这一栏不是最后一步"必须能被**明确读到**，而不是只能靠人去比对标题。
+        */}
+        {block && notLast && (
+          <p
+            data-step-not-last
+            data-step-not-last-count={laterBlocks.length}
+            className="mt-1 text-[10.5px] leading-relaxed text-[var(--ink-4)]"
+          >
+            {laterSilent === laterBlocks.length
+              ? `后面还有 ${laterBlocks.length} 步没有输出 —— 这里停在最后一个有内容的步骤`
+              : `后面还有 ${laterBlocks.length} 步 —— 这一步不是最后一步`}
           </p>
         )}
       </header>

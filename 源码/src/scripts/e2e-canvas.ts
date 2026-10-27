@@ -403,6 +403,21 @@ function appendStepEvents(runId: string, startSeq: number, rows: Array<[string, 
 /** 只有正文、**一条 reasoning 都没有**的那种运行（第五类检查要的正是它） */
 const TEXT_ONLY_BODY = "这是模型写出来的正文，事件流里没有任何思考片段。";
 
+/*
+  ---------- 「面板默认停在哪一块」那两条夹具（第二十二步之六）----------
+  一次**跑完**的运行，最后一块就是收尾那条 phase:"done"（service.ts:291-296
+  真的会发 `完成 · N/M 项检查通过`）。它是一次真实发生过的步骤，但没有任何输出 ——
+  改动之前面板一打开就停在它身上，写「这一步没有返回思考内容」。
+*/
+/** 收尾那条 done 的 label —— 照 service.ts:294-296 的真实格式写 */
+const DONE_LABEL = "完成 · 7/7 项检查通过";
+/** 有内容那一步的思考：面板**打开时一个交互都没有**，第一屏就该是它 */
+const PICK_THINKING = "先把结构想清楚：这一段是那一步真实的思考，不是拼出来的。";
+/** 有内容那一步的正文（切到「结果」必须看得到） */
+const PICK_BODY = "这一段正文来自倒数第二步；收尾的「完成」本身没有任何输出。";
+/** 反例夹具里**最后一步自己**写的正文 */
+const LAST_STEP_BODY = "最后一步自己写了正文，面板停在它身上，不需要再往前找。";
+
 const BASE = process.env.NEXUS_BASE ?? "http://localhost:3000";
 const EDGE = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const PORT = 9337;
@@ -4399,6 +4414,246 @@ async function main() {
     cleanupVerifyRun(liveRun);
     info("夹具已清理");
 
+    /* ---------- 22.6 ★ 面板默认停在「最后一个有内容的块」，并明说它不是最后一步 ---------- */
+    /*
+      这一步补的是一个**第一印象**上的口径问题。
+
+      ── 问题是什么 ──
+        改动之前，右侧面板默认取**最后一块**。而一次**跑完**的运行，
+        最后一块往往就是收尾那条 `phase:"done"`（label 形如
+        「完成 · 6/7 项检查通过」，见 service.ts:291-296）——
+        它是一次真实发生过的步骤，但一条 reasoning / text / checks 都没有。
+        于是面板一打开就如实写着「这一步没有返回思考内容」「这一步没有返回正文」：
+        句句是实话，读起来却像整条运行什么都没做。
+
+      ── 改成什么 ──
+        默认停在**最后一个有内容的块**（pickCurrentBlockId，
+        core/planning/step-blocks.ts，带单测）。这样仍然诚实，靠的就是下面几条断言，
+        缺一条，这个改动就变成"挑好看的说"：
+          · 显示的是**真实某一步的真实内容**（下面读到的思考与正文，
+            都是夹具里那两条真实 delta，一字不改）；
+          · 标题里写着"第 N 步 / 共 M 步"，而且这里必须**真的 N < M**；
+          · 不是最后一块时**明说**「后面还有 N 步没有输出」（[data-step-not-last]）；
+          · ★ **反例**：最后一块自己有内容时，那句话**不许出现**。
+        最后一条是这一节里最要紧的：只验"该出现时出现"的话，
+        一个恒为真的属性也能让上面几条一起绿 —— 那就等于什么都没验。
+
+      ── 夹具仍然是"真的可能出现"的形状 ──
+        两条运行都用 seedStepRun 插库（不调模型、不花钱），事件逐字段照真实事件写：
+        生成中的 reasoning / text delta，收尾的 phase:"done"。
+        为了只留下要验的形状，检查与落盘那两步被压掉了（和本文件其它夹具一样）；
+        收尾那条 done 的 label 用的仍是 service.ts:294-296 真正会发出来的那一句。
+    */
+    heading("第二十二步之六 · 面板默认停在最后一个有内容的块（并明说它不是最后一步）");
+
+    /** 一次读全：过程流的块 + 面板当前那一块 + 「不是最后一步」那句小字 */
+    const READ_TAIL_PICK = `(() => {
+      const q = (s) => [...document.querySelectorAll(s)];
+      const text = (el) => (el ? el.textContent.trim() : '');
+      const blocks = q('[data-process-block]');
+      const last = blocks.length > 0 ? blocks[blocks.length - 1] : null;
+      const body = document.querySelector('[data-step-body]');
+      const note = document.querySelector('[data-step-not-last]');
+      return JSON.stringify({
+        blockIds: blocks.map((b) => b.getAttribute('data-process-block')),
+        blockTitles: blocks.map((b) => text(b.querySelector('[data-process-block-title]'))),
+        // 最后一块是不是"只有阶段事件、什么都没输出"
+        lastBlockEmpty: !!(last && last.querySelector('[data-process-block-empty]')),
+        // 过程流里标的"当前块"（它和右侧面板必须指同一块）
+        currentIds: q('[data-process-block-current]').map((b) =>
+          b.getAttribute('data-process-block'),
+        ),
+        panelTitle: text(document.querySelector('[data-step-title]')),
+        position: text(document.querySelector('[data-step-position]')),
+        bodyText: body ? body.textContent : null,
+        textShown: !!document.querySelector('[data-step-text]'),
+        notLastPresent: !!note,
+        notLastText: text(note),
+        notLastCount: note ? note.getAttribute('data-step-not-last-count') : null,
+      });
+    })()`;
+
+    interface TailPickSnap {
+      blockIds: (string | null)[];
+      blockTitles: string[];
+      lastBlockEmpty: boolean;
+      currentIds: (string | null)[];
+      panelTitle: string;
+      position: string;
+      bodyText: string | null;
+      textShown: boolean;
+      notLastPresent: boolean;
+      notLastText: string;
+      notLastCount: string | null;
+    }
+
+    const readTailPick = async (): Promise<TailPickSnap> => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: READ_TAIL_PICK,
+        returnByValue: true,
+      });
+      return JSON.parse(r.result!.value!) as TailPickSnap;
+    };
+
+    /**
+     * 从「第 N 步 / 共 M 步」里把两个数抠出来。
+     * 抠不出来返回 null —— 让下面那条断言去红，**不在这里造一个默认值**：
+     * 默认值会让"位置读数坏了"这件事变成绿。
+     */
+    const parsePosition = (s: string): { n: number; m: number } | null => {
+      const hit = /^第 (\d+) 步 \/ 共 (\d+) 步$/.exec(s.trim());
+      return hit ? { n: Number(hit[1]), m: Number(hit[2]) } : null;
+    };
+
+    /* ---- 22.6.1 最后一块是空的（收尾 done）→ 面板停在前一个有内容的那一步 ---- */
+    const pickRun = seedStepRun(username, "pick", "done", [
+      ["phase", stepPhase("generating", "正在生成")],
+      ["reasoning", stepReasoning(PICK_THINKING)],
+      ["text", stepText(PICK_BODY)],
+      ["phase", stepPhase("done", DONE_LABEL)],
+    ]);
+    info(
+      `造了一条运行 ${pickRun.slice(0, 8)}：有内容的那一步之后，` +
+        `再来一条没有任何输出的 phase:"done"（「${DONE_LABEL}」）`,
+    );
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${pickRun}` });
+    await sleep(4200);
+
+    /* ★ 这一次读数在**任何交互之前**：验的就是"打开面板第一眼看到什么" */
+    const picked = await readTailPick();
+    const pickedPos = parsePosition(picked.position);
+    info(
+      `过程流 ${picked.blockIds.length} 块：${picked.blockTitles.join(" · ")} · ` +
+        `最后一块没有输出=${picked.lastBlockEmpty} · 当前块标记=${JSON.stringify(picked.currentIds)}`,
+    );
+    info(
+      `面板（还没点过任何东西）：标题「${picked.panelTitle}」· ${picked.position} · ` +
+        `"不是最后一步"的提示=${picked.notLastPresent}` +
+        `${picked.notLastPresent ? `「${picked.notLastText}」` : ""}`,
+    );
+
+    expect_(
+      picked.blockIds.length === 2 &&
+        picked.lastBlockEmpty &&
+        picked.blockTitles[1] === DONE_LABEL,
+      `夹具确实是"最后一块没有输出"：第 2 块「${picked.blockTitles[1]}」只有阶段事件、没有内容`,
+      `夹具形状不对：${picked.blockIds.length} 块 ${JSON.stringify(picked.blockTitles)}，` +
+        `最后一块没有输出=${picked.lastBlockEmpty} —— 期望 2 块且最后一块是空的「${DONE_LABEL}」`,
+    );
+    /*
+      ★ 断言 1：面板显示的是**有内容的那一步**，而且内容是真的 ★
+      一个交互都没有的情况下，"思考"页签里读到的必须是那一段真实 reasoning。
+      停在收尾那块的话，这里读到的会是"这一步没有返回思考内容"。
+    */
+    expect_(
+      picked.panelTitle === "正在生成" &&
+        (picked.bodyText ?? "").includes(PICK_THINKING) &&
+        !(picked.bodyText ?? "").includes("没有返回"),
+      `★ 面板打开时停在有内容的那一步「${picked.panelTitle}」：` +
+        `第一屏就是那一步真实的思考（不是"这一步没有返回思考内容"）`,
+      `面板停错地方了：标题「${picked.panelTitle}」，正文读到的是` +
+        `「${(picked.bodyText ?? "").trim().slice(0, 50)}」`,
+    );
+    /* ★ 断言 3：标题写明"这是哪一步"，而且 N < M —— 用户不会误以为它是最后一步 ★ */
+    expect_(
+      pickedPos !== null && pickedPos.m === 2 && pickedPos.n < pickedPos.m,
+      `标题里写明这是哪一步，而且确实是"不是最后一步"：「${picked.position}」（N < M）`,
+      `位置读数不对：「${picked.position}」—— 期望「第 N 步 / 共 M 步」且 N < M（M=2）`,
+    );
+    /* ★ 断言 2：不是最后一步这件事被**明说**了 ★ */
+    expect_(
+      picked.notLastPresent &&
+        picked.notLastCount === "1" &&
+        picked.notLastText.includes("后面还有 1 步没有输出"),
+      `★ 面板明说它不是最后一步：「${picked.notLastText}」（[data-step-not-last]）`,
+      `没有明说"后面还有 N 步没有输出"：present=${picked.notLastPresent} ` +
+        `count=${picked.notLastCount} 文字「${picked.notLastText}」`,
+    );
+    /*
+      顺带钉住"面板和过程流指同一块"：过程流里标的当前块必须是**有内容那一块**，
+      不是最后一块。两处要是各指一处，界面上就是"标着的那一块和右边读的不是同一步"。
+    */
+    expect_(
+      picked.currentIds.length === 1 && picked.currentIds[0] === picked.blockIds[0],
+      `过程流标的当前块也是那一块（${picked.currentIds.join(",")}）—— 和右侧面板指同一块，不是最后一块`,
+      `当前块标记不对：${JSON.stringify(picked.currentIds)}，有内容的是 ${picked.blockIds[0]}、` +
+        `最后一块是 ${picked.blockIds[picked.blockIds.length - 1]}`,
+    );
+
+    /* 切到「结果」：那一步的正文也必须是真实的、看得到的 */
+    const pickResultHit = await clickTab("result");
+    const pickResult = await readTailPick();
+    expect_(
+      pickResultHit.ok &&
+        pickResult.textShown &&
+        (pickResult.bodyText ?? "").includes(PICK_BODY) &&
+        !(pickResult.bodyText ?? "").includes("没有返回"),
+      `★ 切到「结果」看得到那一步真正的正文（「${PICK_BODY}」）—— 来自事件流，不是拼出来的`,
+      `「结果」页签里没有那段正文：命中=${pickResultHit.ok} ` +
+        `读到「${(pickResult.bodyText ?? "").slice(0, 60)}」`,
+    );
+
+    /* ---- 22.6.2 ★ 反例：最后一块自己有内容 → 那句"后面还有 N 步"不许出现 ---- */
+    /*
+      ★ 这一条防的是"那句话恒为真" ★
+      只验"该出现时出现"是不够的：把 data-step-not-last 写成恒挂的属性，
+      上面那几条照样全绿，而它在真实运行里就成了一句永远在响的假提示。
+      所以这里换一条**最后一块自己有内容**的运行：
+      面板应当停在最后一步（第 2 步 / 共 2 步），而且**一个提示都不该有**。
+    */
+    const lastContentRun = seedStepRun(username, "last-content", "running", [
+      ["phase", stepPhase("spec", "正在把你的需求整理成规格")],
+      ["reasoning", stepReasoning("先把这句话读成需求")],
+      ["phase", stepPhase("generating", "正在生成")],
+      ["text", stepText(LAST_STEP_BODY)],
+    ]);
+    info(`造了一条反例运行 ${lastContentRun.slice(0, 8)}（最后一块自己有正文）`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${lastContentRun}` });
+    await sleep(4200);
+
+    const lastContent = await readTailPick();
+    const lastPos = parsePosition(lastContent.position);
+    info(
+      `反例：${lastContent.blockIds.length} 块 ${lastContent.blockTitles.join(" · ")} · ` +
+        `最后一块没有输出=${lastContent.lastBlockEmpty} · 面板「${lastContent.panelTitle}」· ` +
+        `${lastContent.position} · 提示=${lastContent.notLastPresent}`,
+    );
+
+    expect_(
+      lastContent.blockIds.length === 2 &&
+        !lastContent.lastBlockEmpty &&
+        lastPos !== null &&
+        lastPos.n === 2 &&
+        lastPos.m === 2,
+      `反例夹具成立：最后一块自己有内容（没有输出=${lastContent.lastBlockEmpty}），` +
+        `面板就停在最后一步「${lastContent.position}」`,
+      `反例夹具形状不对：${lastContent.blockIds.length} 块、最后一块没有输出=` +
+        `${lastContent.lastBlockEmpty}、位置「${lastContent.position}」`,
+    );
+    expect_(
+      !lastContent.notLastPresent && lastContent.notLastText === "",
+      `★ 反例：最后一块自己有内容时，[data-step-not-last] **不出现** —— 那句话不是恒真的`,
+      `最后一块自己有内容，面板却还写着「${lastContent.notLastText}」—— ` +
+        `那句提示成了恒真的装饰，防不住"以为它就是最后一步"`,
+    );
+
+    const lastResultHit = await clickTab("result");
+    const lastResult = await readTailPick();
+    expect_(
+      lastResultHit.ok &&
+        lastResult.panelTitle === "正在生成" &&
+        (lastResult.bodyText ?? "").includes(LAST_STEP_BODY),
+      `反例：面板停在最后一步「${lastResult.panelTitle}」，显示的正是它自己的正文`,
+      `反例里显示的不是最后一步的内容：「${lastResult.panelTitle}」/` +
+        `「${(lastResult.bodyText ?? "").slice(0, 60)}」`,
+    );
+
+    cleanupVerifyRun(pickRun);
+    cleanupVerifyRun(lastContentRun);
+    info("夹具已清理");
+
     cdp.close();
     ok("画布交互、详情、面板、顶栏一致性、缩放让位、退役页面、子树与双击聚焦全部通过");
     ok("窄屏降级（<1280）：两侧收起为 0 宽、覆盖层 272/352 可开可关、画布全宽且滚轮仍能缩放 —— 全部通过");
@@ -4417,6 +4672,12 @@ async function main() {
     ok(
       "实时流没被弄坏：点一次「开始生成」（幂等回放分支，不花钱），块真的在流里**追加**长出来、" +
         "旧块仍是同一个 DOM 节点、流结束后实时块退场由落库块接手 —— 全部通过",
+    );
+    ok(
+      "面板默认停在最后一个**有内容**的块（收尾的 phase:\"done\" 没有输出，不再挡住第一屏）：" +
+        "第一屏就是那一步真实的思考与正文、标题写明第 N 步 / 共 M 步且 N < M、" +
+        "不是最后一步时明说「后面还有 N 步没有输出」——" +
+        "而最后一块自己有内容时那句提示**不出现**（反例验过，不是恒真的）—— 全部通过",
     );
   } finally {
     browser.kill();

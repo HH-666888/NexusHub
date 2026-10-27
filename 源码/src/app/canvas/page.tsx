@@ -18,7 +18,11 @@ import { groupCostByStage, type CostByStage } from "@/core/domain/stage-cost";
 import { PLANNING_ROOT_ID, planningFromRun } from "@/core/planning/from-run";
 import { toOutline, type OutlineRow } from "@/core/planning/outline";
 import { maxSeq, projectAt } from "@/core/planning/planning-log";
-import { toStepBlocks, type StepBlock } from "@/core/planning/step-blocks";
+import {
+  pickCurrentBlockId,
+  toStepBlocks,
+  type StepBlock,
+} from "@/core/planning/step-blocks";
 import { checksToChildren, type ChildrenByStage } from "@/core/pipeline/forest";
 import { STAGES, isStageId } from "@/core/pipeline/stages";
 import { getOwnedRun, listRuns } from "@/core/run/service";
@@ -146,20 +150,29 @@ export default async function CanvasPage({
   const blocks: StepBlock[] = toStepBlocks(events);
 
   /*
-    ---------- 当前块：**最后一个块的 id** ----------
-    口径写在这里，免得两个视图各猜一套：
+    ---------- 当前块：**最后一个有内容的块** ----------
+    口径只有一份，就是 pickCurrentBlockId（core/planning/step-blocks.ts，带单测），
+    这里不再各猜一套 —— 右侧面板和下面「生成过程」标的是**同一块**：
 
-      · 不按 running 工序取：事件流是按发生顺序落库的，最后一条 phase 就是
-        这次运行真实走到的那一步（phase 是编排层亲手发的，见 generate/service.ts）。
-        而"六道工序"（pipeline/stages.ts）是**计划**，和事件里的 phase 不在
-        同一个坐标系 —— 硬做一张对照表，表一旦漂开，右侧面板就会显示
-        "另一块"的内容，而界面看起来一切正常。
+      · 为什么不直接取最后一块：
+        一次**跑完**的运行，最后一块常常是收尾那条 phase:"done"（label 类似
+        "完成 · 7/7 项检查通过"）。它是一次真实发生过的步骤，但不产出任何内容 ——
+        面板一打开就如实显示「这一步没有返回思考内容 / 没有返回正文」。
+        那句话是实话，却把整条运行读起来像"什么都没做"。
+      · 为什么往前找仍然诚实：
+        选出来的仍然是**事件流里真实存在的那一块**，一个字都不改（不编、不合并、
+        不挑好看的）；而且面板标题写着"第 N 步 / 共 M 步"，不是最后一块时
+        还会明说"后面还有 N 步没有输出"（step-content.tsx 的 data-step-not-last）——
+        用户不会被误导成"这就是最后一步"。少了这句明说，往前找就成了用排版掩盖事实。
+      · 全都空时退回**最后一块**（不是 null）：
+        null 会让面板走"这次运行还没有产生任何过程事件"那句空态，而事实是
+        "步骤都发生了、只是都没输出"—— 那是两句不同的话，后者才是实话。
       · 列表为空时是 null（面板于是走空态），不编一个"第 1 步"出来。
       · 运行中的推进由客户端补：generation-console.tsx 把 SSE 收到的新事件
         切块追加在下面，并把当前块指到最后一个实时块 —— 于是"生成到哪了"
         在服务端刷新回来之前也是对的。
   */
-  const currentBlockId = blocks.length > 0 ? blocks[blocks.length - 1].id : null;
+  const currentBlockId = pickCurrentBlockId(blocks);
 
   /*
     子树：取最后一次 kind:"check" 的结果。
