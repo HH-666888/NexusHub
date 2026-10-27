@@ -145,6 +145,13 @@ export interface StageDef {
 
   /** 当前实现到什么程度。见上面 StageImplementation 的说明 */
   implementation: StageImplementation;
+
+  /**
+   * 为什么还没接入。
+   * ⚠️ 只对 implementation === "planned" 的工序有意义 —— 已接入的工序不该有它。
+   * 有它，界面才能说清"卡在哪"，而不是干巴巴一个「待规划」。
+   */
+  blockedBy?: string;
 }
 
 export const STAGES: readonly StageDef[] = [
@@ -307,6 +314,20 @@ export const STAGES: readonly StageDef[] = [
     scope: "internal",
     watches: [{ label: "启动" }, { label: "端口" }, { label: "冒烟" }],
     implementation: "planned",
+    /*
+      ---------- 为什么它还没接：把卡点写在数据里，而不是让界面干说「待规划」 ----------
+      上面三条验收标准（能启动 / 端口可访问 / 冒烟脚本能走通主流程）要求
+      **真的把这个应用跑起来**：起一个进程、占一个端口、拿脚本去点它。
+      而当前形态下这三件事都无从谈起 ——
+        · 产物是**单文件 HTML**，不是多文件工程，没有可启动的服务；
+        · 项目**没有沙箱**，我们没有地方安全地把别人的应用跑起来；
+        · 于是"端口可访问"这条连一个端口号都填不出来。
+      硬做只能编造检查结果，那是这个项目最不能接受的一种谎。
+      所以这一道如实标成 planned，并把原因一并写在这里 ——
+      界面据此说清"卡在哪"，而不是干巴巴一个「待规划」。
+    */
+    blockedBy: `需要沙箱与多文件产物：当前的产物是单文件 HTML，没有服务器也没有端口，
+所以「能启动 / 端口可访问 / 冒烟脚本能走通主流程」这三条无法如实检查`,
   },
   {
     id: "verify",

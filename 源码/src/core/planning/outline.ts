@@ -58,6 +58,9 @@ export interface OutlineRow {
    * 取值规则：level 1 / level 2 的实体行 → 自己的 id；占位行 → null。
    */
   canvasNodeId: string | null;
+
+  /** 这一行所属的一级工序为什么还没接（只有待规划行会有） */
+  blockedBy?: string | null;
 }
 
 /**
@@ -104,7 +107,11 @@ const PENDING_TITLE = "待规划";
  *   不如让它消失，然后由 hasOrphans 在测试里把这件事喊出来。
  *   正常的日志投影不会产出孤儿（父节点总是先出生）。
  */
-export function toOutline(points: readonly TaskPoint[]): OutlineRow[] {
+export function toOutline(
+  points: readonly TaskPoint[],
+  /** 各工序"为什么还没接"，按工序 id 索引。不传就没有这个信息 */
+  blockedByOf?: Readonly<Record<string, string>>,
+): OutlineRow[] {
   const rows: OutlineRow[] = [];
 
   for (const root of points) {
@@ -173,6 +180,21 @@ export function toOutline(points: readonly TaskPoint[]): OutlineRow[] {
     }
 
     if (children.length === 0) {
+      /*
+        ---------- 这一行的一级工序"为什么还没接" ----------
+        占位行说的是「这儿将来会有东西，只是还没到点」。
+        可还有一种"还没到点"是**根本接不上**：那道工序的实现状态是
+        planned（见 pipeline/stages.ts 的 blockedBy），三条验收标准
+        在当前形态下无法如实检查。这一行如果只写「待规划」，
+        用户看不出"等着就行"和"卡住了、别等"的区别 ——
+        而这两件事该做的事完全不同。
+
+        ⚠️ 只有真有时才把字段写进这一行（条件展开，而不是 blockedBy: undefined）：
+           不传 blockedByOf 时，这一行必须与从前**逐字段相同**。
+           这是有单测钉着的（planning-outline.test.ts 里那条 toEqual 的用例）——
+           顺手写一个 null 进去，它就会红，而红的原因看起来像"清单变了"。
+      */
+      const blockedBy = blockedByOf?.[root.id];
       rows.push({
         id: `${root.id}${PENDING_SUFFIX}`,
         level: 2,
@@ -197,6 +219,8 @@ export function toOutline(points: readonly TaskPoint[]): OutlineRow[] {
           而界面上的差别是：一行虚线被做得可点了。
         */
         canvasNodeId: null,
+        // 一级工序还没接时，把"卡在哪"一并交给界面（没有这一项就不写这个字段）
+        ...(blockedBy ? { blockedBy } : {}),
       });
     }
   }

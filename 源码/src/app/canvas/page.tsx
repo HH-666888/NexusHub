@@ -211,6 +211,24 @@ export default async function CanvasPage({
     连运行都没有的时候，清单不该凭空造出六个"待规划"来。
   */
   let outlineRows: OutlineRow[] = [];
+
+  /*
+    ---------- 待规划行"卡在哪"：从 STAGES 里筛出真的写了原因的工序 ----------
+    toOutline 只吃 TaskPoint[]（它不认识 STAGES，也不该认识 —— 见 outline.ts 文件头），
+    所以"各工序为什么还没接"由这里查出来、按工序 id 递进去。
+
+    ⚠️ 只筛有 blockedBy 的那些，**不给每道工序都塞一个空串**：
+       空串会让占位行带上一个"有原因、但原因是空的"属性，
+       于是界面上"卡住了"和"还没轮到"又被说成同一件事。
+       这也让「不传时行为与从前完全一致」这条性质在类型上看得见。
+
+    ⚠️ 这份表跟运行无关（它是工序自己的属性），所以只算一次、放在这里，
+       不放进下面那个 if 里 —— 避免"有运行时才算"这种说不清的口径。
+  */
+  const blockedByOf: Record<string, string> = {};
+  for (const s of STAGES) {
+    if (s.blockedBy) blockedByOf[s.id] = s.blockedBy;
+  }
   /*
     ---------- 当前正在执行的那道工序 ----------
     画布要靠它做「推进到下一步时视口跟过去」。
@@ -292,7 +310,13 @@ export default async function CanvasPage({
         整棵三层树的根，最显眼的那一张。
     */
     const planPoints = projectAt(planLog, maxSeq(planLog));
-    outlineRows = toOutline(planPoints);
+    /*
+      ⚠️ 第二个参数是可选的：不传时 toOutline 的输出与从前**逐字段相同**
+         （现有单测里有一条 toEqual 钉着这件事）。
+         这里传的 blockedByOf 只包含真的写了 blockedBy 的工序 ——
+         也就是目前唯一那道「集成装配」，于是它的「待规划」行会说明卡在哪。
+    */
+    outlineRows = toOutline(planPoints, blockedByOf);
 
     /*
       当前正在执行的工序 —— 和清单、画布取自**同一份投影**（同一个 planPoints）。

@@ -360,6 +360,25 @@ function OutlineItem({ row, runId }: { row: OutlineRow; runId: string | null }) 
           出生之前，界面上说"待规划"是唯一诚实的说法。
       */}
       <span className="min-w-0 flex-1 truncate">{row.title}</span>
+      {/*
+        ---------- 待规划行上的「卡在哪」标记 ----------
+        这一行不只是一个"还没到点"的占位：它的一级工序可能**根本还没接**
+        （blockedBy，见 pipeline/stages.ts）。这种时候光写「待规划」，
+        用户会一直等一件不会发生的事。
+
+        ⚠️ 标记由 CSS 生成（.outline-blocked-mark::after），**不是文本节点**。
+           理由是有一条现有断言钉着「占位行的文字就是『待规划』」
+           （e2e-canvas 第十七步）—— 把 ⓘ 写成真文本会让那条断言变红，
+           而它验的是另一件事（占位行说的是不是那句话）。
+           机器要读的那份事实仍然在：data-outline-blocked-by 与 title。
+      */}
+      {row.blockedBy ? (
+        <span
+          aria-hidden
+          data-outline-blocked-mark
+          className="outline-blocked-mark shrink-0 text-[10px] leading-[1.4] text-[var(--ink-6)]"
+        />
+      ) : null}
       {row.status === "running" && !row.placeholder && (
         <span
           aria-hidden
@@ -399,7 +418,25 @@ function OutlineItem({ row, runId }: { row: OutlineRow; runId: string | null }) 
       data-outline-placeholder={row.placeholder ? "1" : undefined}
       /* 只有真的有对应节点时才带这个属性 —— 它同时是"这行可点"的标记 */
       data-outline-focus={row.canvasNodeId ?? undefined}
-      title={row.placeholder ? "这一步还没有到点，到点后这里会出现它的执行点" : row.title}
+      /*
+        ---------- 待规划行：把"为什么还没接"交给界面 ----------
+        一级工序的 implementation 是 planned 时，它带着一条 blockedBy
+        （见 pipeline/stages.ts）。这一行据此带上三样东西：
+          · data-outline-blocked-by —— 机器可读的那份事实（e2e 认它）
+          · title                    —— 鼠标停一下就能看到为什么
+          · 行尾那个 ⓘ               —— 让人知道"这里有话要说，值得停一下"
+        ⚠️ 只有真有时才带这个属性。没有它的行必须与从前**一字不差** ——
+           一条恒挂在所有占位行上的属性，等于把"卡住了"和"还没轮到"
+           说成同一件事，那比不说更糟。
+      */
+      data-outline-blocked-by={row.blockedBy ?? undefined}
+      title={
+        row.placeholder
+          ? // 有待规划的原因时说原因（那才是这一行此刻最该回答的问题）；
+            // 没有就还是原来那句话：这里将来会有东西，只是还没到点
+            (row.blockedBy ?? "这一步还没有到点，到点后这里会出现它的执行点")
+          : row.title
+      }
     >
       {clickable ? (
         <Link

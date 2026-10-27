@@ -5619,6 +5619,144 @@ async function main() {
         "而没有 modules 事件的运行那一道仍是「待规划」占位行（对照组验过，不是恒真的）—— 全部通过",
     );
 
+    /* ---------- 26. ★ 待规划行说清"卡在哪" ---------- */
+    /*
+      ★ 这一期交付的「诚实降级标注」，在界面上唯一的可见落点就在这里 ★
+
+      ── 要验的是什么 ──
+        「集成装配」那一道的实现状态是 planned（pipeline/stages.ts），
+        验收标准要求"能启动 / 端口可访问 / 冒烟脚本能走通主流程"，
+        而当前产物是单文件 HTML、项目也没有沙箱 —— 这三条无法如实检查。
+        所以它的「待规划」占位行必须**说清卡在哪**，而不只是三个字：
+          · data-outline-blocked-by 上有那句原因（机器可读）；
+          · title（hover）里也有（人可读）；
+          · 行尾一个 ⓘ（CSS 生成的，不改「待规划」三个字本身）。
+
+      ── 为什么还要一条**对照** ──
+        只验"该有的地方有"的话，一个把属性挂到**所有**占位行上的实现
+        也能让它全绿 —— 而那恰恰是这一期最不该出现的做法：
+        它会把"根本接不上"和"还没轮到"说成同一件事，
+        用户会对着六道工序一起等一件不会发生的事。
+        所以下面同时读一条**已接入**工序（架构定型，且这次运行没有
+        arch 事件）的占位行：它必须**没有**这个属性。
+        这一对放在一起，才说明"标注是跟着卡点走的"。
+
+      ── 夹具与现实的关系 ──
+        seedRunningRun 插的是 runs 一行 + 一条真实的 phase:spec 事件
+        （形状照 spec-stage.ts 真正发出的那条写），六道工序下面都还是占位行。
+        真跑一次要调模型、花钱、几十秒 —— e2e 不该为了验一行标注去生成应用。
+    */
+    heading("第二十六步 · 待规划行说清卡在哪（集成装配：需要沙箱）");
+
+    const blockedRun = seedRunningRun(username);
+    info(`造了一条运行 ${blockedRun.slice(0, 8)}（只有一条 phase:spec，六道工序下面都是占位行）`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${blockedRun}` });
+    await sleep(4200);
+
+    /** 读某一组的占位行：文字、blockedBy 属性、title、行尾标记（::after 生成的内容） */
+    const READ_BLOCKED = `(() => {
+      const rowOf = (stageId) => {
+        const group = document.querySelector('[data-outline-group="' + stageId + '"]');
+        if (!group) return null;
+        const el = group.querySelector('[data-outline-row][data-outline-placeholder]');
+        if (!el) return null;
+        const mark = el.querySelector('[data-outline-blocked-mark]');
+        return {
+          stageId,
+          text: el.textContent.trim(),
+          hasAttr: el.hasAttribute('data-outline-blocked-by'),
+          blockedBy: el.getAttribute('data-outline-blocked-by'),
+          title: el.getAttribute('title'),
+          markAfter: mark ? getComputedStyle(mark, '::after').content : null,
+        };
+      };
+      return JSON.stringify({
+        assemble: rowOf('assemble'),
+        arch: rowOf('arch'),
+        placeholders: document.querySelectorAll('[data-outline-placeholder]').length,
+      });
+    })()`;
+
+    interface BlockedSnap {
+      stageId: string;
+      text: string;
+      hasAttr: boolean;
+      blockedBy: string | null;
+      title: string | null;
+      markAfter: string | null;
+    }
+
+    const blockedRaw = await cdp.send("Runtime.evaluate", {
+      expression: READ_BLOCKED,
+      returnByValue: true,
+    });
+    const blocked = JSON.parse(blockedRaw.result!.value!) as {
+      assemble: BlockedSnap | null;
+      arch: BlockedSnap | null;
+      placeholders: number;
+    };
+
+    info(
+      `占位行 ${blocked.placeholders} 行 · 「集成装配」那行：` +
+        `属性=${blocked.assemble?.hasAttr} 文字「${blocked.assemble?.text}」· ` +
+        `行尾标记 ::after=${JSON.stringify(blocked.assemble?.markAfter)}`,
+    );
+    info(`那行的 title：「${blocked.assemble?.title}」`);
+    info(
+      `对照「架构定型」那行（已接入、这次没有 arch 事件）：` +
+        `属性=${blocked.arch?.hasAttr} 文字「${blocked.arch?.text}」`,
+    );
+
+    /* ★ 1. 前提先钉住：这一组确实是占位行，而不是"什么都没有" ★ */
+    expect_(
+      blocked.placeholders === 6 && blocked.assemble !== null && blocked.arch !== null,
+      "夹具成立：六道工序下面各有一行占位行（含「集成装配」与对照用的「架构定型」）",
+      `夹具形状不对：占位行 ${blocked.placeholders} 行，assemble=${blocked.assemble !== null}、` +
+        `arch=${blocked.arch !== null} —— 期望 6 行且两组都在`,
+    );
+    /* ★ 2. 「集成装配」的占位行带着那句原因，而且值里真的有「沙箱」★ */
+    expect_(
+      blocked.assemble?.hasAttr === true && (blocked.assemble?.blockedBy ?? "").includes("沙箱"),
+      `「集成装配」的占位行带 data-outline-blocked-by，值里说到了「沙箱」`,
+      `那行没有带出原因：hasAttr=${blocked.assemble?.hasAttr}、` +
+        `值=「${blocked.assemble?.blockedBy ?? "(空)"}」`,
+    );
+    /* ★ 3. hover 也能看到为什么（title 里同样有那句话）★ */
+    expect_(
+      (blocked.assemble?.title ?? "").includes("沙箱"),
+      `它的 title 里也有这句话 —— 鼠标停一下就能看到卡在哪`,
+      `title 里没有原因：「${blocked.assemble?.title ?? "(空)"}」`,
+    );
+    /* ★ 4. 行尾那个 ⓘ 真的渲染出来了（CSS 生成，不改「待规划」三个字）★ */
+    expect_(
+      (blocked.assemble?.markAfter ?? "").includes("ⓘ") &&
+        blocked.assemble?.text === "待规划",
+      `行尾的 ⓘ 真的渲染出来了（::after=${JSON.stringify(blocked.assemble?.markAfter)}），` +
+        `而文字仍然是「${blocked.assemble?.text}」—— 那三个字一个字都没改`,
+      `标记没渲染或文字被改了：::after=${JSON.stringify(blocked.assemble?.markAfter)}、` +
+        `文字「${blocked.assemble?.text}」`,
+    );
+    /* ★ 5. 对照：已接入的工序**没有**这个属性（否则标注就是恒挂的）★ */
+    expect_(
+      blocked.arch?.hasAttr === false &&
+        blocked.arch?.blockedBy === null &&
+        blocked.arch?.text === "待规划",
+      "★ 对照：已接入的「架构定型」（这次没有 arch 事件）那行**没有**这个属性 —— " +
+        "「卡住了」和「还没轮到」没有被说成同一件事",
+      `对照组也带上了属性：hasAttr=${blocked.arch?.hasAttr}、` +
+        `值=「${blocked.arch?.blockedBy ?? "(空)"}」—— 那说明标注不是跟着卡点走的`,
+    );
+
+    cleanupVerifyRun(blockedRun);
+    info("夹具已清理");
+
+    ok(
+      "待规划行说清卡在哪：「集成装配」（planned）的占位行带 data-outline-blocked-by 与 title、" +
+        "值里说到「沙箱」、行尾渲染出 ⓘ 而文字仍是「待规划」；" +
+        "而已接入的「架构定型」占位行没有这个属性（对照组验过，不是恒真的）—— 全部通过",
+    );
+
     cdp.close();
     ok("画布交互、详情、面板、顶栏一致性、缩放让位、退役页面、子树与双击聚焦全部通过");
     ok("窄屏降级（<1280）：两侧收起为 0 宽、覆盖层 272/352 可开可关、画布全宽且滚轮仍能缩放 —— 全部通过");

@@ -354,3 +354,54 @@ describe("isStageId", () => {
     }
   });
 });
+
+/* ============================================================
+   ★ blockedBy：待规划的那道工序，界面得说清"卡在哪"
+   ------------------------------------------------------------
+   背景是 assemble（集成装配）那三条验收标准：能启动 / 端口可访问 /
+   冒烟脚本能走通主流程。它们要求**真的把应用跑起来**，而当前产物是
+   单文件 HTML、项目也没有沙箱 —— 硬做只能编造检查结果。
+
+   所以这一道如实标成 planned，并把原因写在 blockedBy 上。
+   下面三条守的不是"某个字符串写对了"，而是这个字段的**语义边界**：
+     · 标着未接入的，必须说得出卡在哪（否则界面又回到干巴巴的「待规划」）；
+     · 已经接入的，**不该**还挂着一条过期的原因 ——
+       那会让界面指着一个早就接好的功能说"它还没接"，是另一种谎；
+     · 而唯一那道 planned 的工序，原因里必须真的点到"沙箱"这件事。
+   ============================================================ */
+describe("★ blockedBy：未接入的工序必须说清卡在哪", () => {
+  it("所有 implementation === \"planned\" 的工序，blockedBy 必须存在且非空", () => {
+    const planned = STAGES.filter((s) => s.implementation === "planned");
+    // 前提：当前确实还有没接入的工序。都为 wired 时这组用例就成了空转
+    expect(planned.length).toBeGreaterThan(0);
+
+    for (const s of planned) {
+      expect(
+        s.blockedBy,
+        `工序 ${s.id} 标着未接入，却没说卡在哪 —— 界面上只会剩一句「待规划」`,
+      ).toBeTruthy();
+      expect(
+        (s.blockedBy ?? "").trim().length,
+        `工序 ${s.id} 的 blockedBy 是空的（或只有空白）`,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it("所有已接入（wired / direct）的工序，不该有 blockedBy", () => {
+    const wired = STAGES.filter((s) => s.implementation !== "planned");
+    // 前提：确实有已接入的工序，否则这条也是空转
+    expect(wired.length).toBeGreaterThan(0);
+
+    for (const s of wired) {
+      expect(
+        s.blockedBy,
+        `工序 ${s.id} 已经接入了，却还挂着 blockedBy —— 那是界面在指着一个能用的功能说"它还没接"`,
+      ).toBeUndefined();
+    }
+  });
+
+  it("assemble 的 blockedBy 里必须出现「沙箱」—— 卡点是它，就得说到它", () => {
+    // toContain 而不是全等：那句话的措辞可以改，但"卡在哪"这件事不许被改掉
+    expect(STAGE_MAP.assemble.blockedBy).toContain("沙箱");
+  });
+});
