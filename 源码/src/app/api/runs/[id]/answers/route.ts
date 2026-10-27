@@ -14,10 +14,13 @@
 
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
 import { sqliteRunStore } from "@/adapters/store/run-repo";
+import { SPEC_ARTIFACT_NAME } from "@/core/generate/spec-stage";
 import { ANSWERS_ARTIFACT_NAME, validateAnswers } from "@/core/generate/gate";
 import type { SpecAnswers } from "@/core/generate/gate";
 import { getOwnedRun } from "@/core/run/service";
 import { getCurrentUser } from "@/server/auth-context";
+// 按文件名读 json 产物（不能用"取最新那个 json"，见那个文件的说明）
+import { loadJsonArtifact } from "@/server/json-artifact";
 import type { AppSpec } from "@/core/domain/spec";
 
 export const runtime = "nodejs";
@@ -51,28 +54,34 @@ export async function POST(
     return Response.json({ ok: false, error: "请求体不是合法 JSON" }, { status: 400 });
   }
 
-  // ---------- 读回规格 ----------
-  const specArtifact = await fsArtifactStore.findLatest(run.id, "json");
-  if (!specArtifact) {
+  /*
+    ---------- 读回规格 ----------
+    ⚠️ 按**文件名**读，不能用 findLatest(run.id, "json")。
+       规格与答案都是 json，而 answers.json 是后写的 ——
+       "取最新的那个 json" 会在用户答过一轮之后把**答案**当成规格，
+       然后按它算疑问：算不出来、也不报错，只是行为诡异。
+       这条路由原来就是这么写的；在"续跑会重跑规格化"的年代碰巧看不出来
+       （重跑会把 spec.json 重新写成最新的），直到续跑改成"沿用已确认的规格"
+       之后才暴露：用户分两次答题时，第二次直接 400「没有提交任何有效的回答」，
+       而他明明答了。
+  */
+  const loaded = await loadJsonArtifact<AppSpec>(run.id, SPEC_ARTIFACT_NAME);
+  if (!loaded.ok) {
+    // 没生成过 / 文件读不出来 → 409 并说明原因（e2e:run 第十二步钉着这个状态码）
     return Response.json(
-      { ok: false, error: "这条记录还没有规格，先跑一次生成" },
-      { status: 409 },
+      {
+        ok: false,
+        error:
+          loaded.reason === "missing"
+            ? "这条记录还没有规格，先跑一次生成"
+            : loaded.reason === "unreadable"
+              ? "规格文件读不出来（登记还在，磁盘上已经没有它了）"
+              : "规格文件不是合法 JSON，读不出可回答的疑问",
+      },
+      { status: loaded.reason === "missing" ? 409 : 500 },
     );
   }
-  const specRaw = await fsArtifactStore.readContent(specArtifact);
-  if (!specRaw) {
-    return Response.json(
-      { ok: false, error: "规格文件读不出来" },
-      { status: 500 },
-    );
-  }
-
-  let spec: AppSpec;
-  try {
-    spec = JSON.parse(specRaw) as AppSpec;
-  } catch {
-    return Response.json({ ok: false, error: "规格文件不是合法 JSON" }, { status: 500 });
-  }
+  const spec: AppSpec = loaded.value;
 
   // ---------- 校验提交 ----------
   const submitted = (body.answers ?? [])

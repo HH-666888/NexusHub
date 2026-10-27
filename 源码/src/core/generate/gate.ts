@@ -41,6 +41,28 @@ export interface SpecAnswers {
 
 export const ANSWERS_ARTIFACT_NAME = "answers.json";
 
+/**
+ * 「知悉并继续」落盘的形状（ack.json，与 answers.json、spec.json 平级）。
+ *
+ * ── 为什么单开一份产物，而不是往 answers.json 里加个字段 ──
+ *   它回答的是**另一个问题**：
+ *     answers.json 说"这几个疑问我答了什么"；
+ *     ack.json     说"那几个疑问我没答，但我知道，继续吧"。
+ *   混在一份里的话，"答了"与"知悉但没答"就分不开了 ——
+ *   而这两件事对下游的含义完全相反（前者是有信息量的输入，后者是让模型猜）。
+ *
+ *   与 answers.json 同一个取舍：存成产物而不是加一列，不动表结构，
+ *   而且"重新生成"走 DELETE 会把它一起清掉（不会留下过期的知悉）。
+ */
+export interface SpecAck {
+  runId: string;
+  /** 用户知悉时**还没回答**的那几条疑问，原样存下来 */
+  pending: string[];
+  acknowledgedAt: number;
+}
+
+export const ACK_ARTIFACT_NAME = "ack.json";
+
 /* ============================================================
    门禁判断（纯函数）
    ============================================================ */
@@ -54,6 +76,23 @@ export interface GateDecision {
   reason: string;
   /** 这次规格是不是兜底来的。门禁本身不拦（没有可回答的问题），但调用方必须能看见 */
   fallback: boolean;
+}
+
+/**
+ * 还没回答的那几条疑问。
+ *
+ * 抽出来是因为它现在有两个用处：
+ *   · decideGate 自己要用（决定停不停）
+ *   · 判断"知悉"还算不算数也要用（他知悉的必须**正是**现在这几条）
+ * 两处各写一遍的话，迟早会分叉，而分叉那天没人会发现。
+ */
+export function pendingQuestions(spec: AppSpec, answers: SpecAnswers | null): string[] {
+  const answered = new Set(
+    (answers?.answers ?? [])
+      .filter((a) => a.answer.trim().length > 0)
+      .map((a) => a.question),
+  );
+  return spec.questions.filter((q) => !answered.has(q));
 }
 
 /**
@@ -77,6 +116,16 @@ export function decideGate(
   answers: SpecAnswers | null,
   /** 规格是不是兜底来的。不传 = false（保持向后兼容） */
   fallback = false,
+  /**
+   * 用户是不是已经按过「知悉并继续」。不传 = false。
+   *
+   * 只在"真有疑问没答"时起作用（见下面那个分支的说明）：
+   * 它把"系统替用户猜"变成"用户让我替他猜"，这两件事必须分得清。
+   *
+   * ⚠️ 调用方必须用 `isAcknowledged(ack, pending)` 算它，而不是
+   *    "有没有那份记录" —— 他知悉的必须**正是**现在这几条。
+   */
+  acknowledged = false,
 ): GateDecision {
   if (spec.questions.length === 0) {
     return {
@@ -89,13 +138,7 @@ export function decideGate(
     };
   }
 
-  const answered = new Set(
-    (answers?.answers ?? [])
-      .filter((a) => a.answer.trim().length > 0)
-      .map((a) => a.question),
-  );
-
-  const pending = spec.questions.filter((q) => !answered.has(q));
+  const pending = pendingQuestions(spec, answers);
 
   if (pending.length === 0) {
     return {
@@ -109,16 +152,30 @@ export function decideGate(
   }
 
   return {
-    pause: true,
+    /*
+      ── 为什么这里可以被"知悉"放行，而兜底那条不行 ──
+        兜底规格没有 questions，所以它根本走不到这个分支（它在上面就返回了）。
+        这里的 pending 是**真实存在的疑问** —— 用户看得到它们、也答得了它们。
+        "知悉并继续"的意思很明确：我看过这些问题了，这次你替我决定。
+        它与"我们没问"是两回事，所以：
+          · pause 变 false —— 用户自己按的按钮，不是系统替他做主
+          · 但 reason **必须**把"还有几条没答、后果是什么"说全，
+            而且这条 reason 会被发成事件（route.ts 那个分支），
+            于是清单和回放里都留着"这一次是知悉后放行的"。
+    */
+    pause: !acknowledged,
     pending,
-    reason: fallback
-      ? "规格是兜底生成的。" +
-        (pending.length === spec.questions.length
+    reason: acknowledged
+      ? `你已表示知悉并继续：还有 ${pending.length} 个疑问没答，这一次模型会替你决定 —— ` +
+        `决定得不对，要到验收那一步才看得出来，那时钱已经花完了`
+      : fallback
+        ? "规格是兜底生成的。" +
+          (pending.length === spec.questions.length
+            ? `规格里有 ${pending.length} 个疑问需要你确认后才能继续`
+            : `还有 ${pending.length} 个疑问没回答`)
+        : pending.length === spec.questions.length
           ? `规格里有 ${pending.length} 个疑问需要你确认后才能继续`
-          : `还有 ${pending.length} 个疑问没回答`)
-      : pending.length === spec.questions.length
-        ? `规格里有 ${pending.length} 个疑问需要你确认后才能继续`
-        : `还有 ${pending.length} 个疑问没回答`,
+          : `还有 ${pending.length} 个疑问没回答`,
     fallback,
   };
 }
@@ -156,9 +213,82 @@ export function decideGate(
  * 只答了一部分也算续跑：门禁会再拦下**没答的那几条**，
  * 用户答完再来一次就通过 —— 这个循环是有界的（问题只会变少，不会变多）。
  */
-export function isGateResume(spec: AppSpec | null, answers: SpecAnswers | null): boolean {
+export function isGateResume(
+  spec: AppSpec | null,
+  answers: SpecAnswers | null,
+  /**
+   * 知悉记录。传了的话，"知悉过"同样构成续跑。
+   *
+   * ⚠️ 这一条是验收脚本抓出来的：知悉之后续跑时，规格化**又被跑了一遍**
+   *    （账上两条 spec 流水），于是疑问换了一批新的 —— 而用户知悉的是
+   *    原来那几条。他按的是"我知道这些问题了"，不是"随便什么问题都行"。
+   */
+  ack: SpecAck | null = null,
+): boolean {
   if (!spec) return false;
+  if (isAcknowledged(ack, pendingQuestions(spec, answers))) return true;
   return (answers?.answers ?? []).some((a) => a.answer.trim().length > 0);
+}
+
+/**
+ * 用户是不是"知悉并继续"过 —— 而且他知悉的**正是**现在待确认的那几条。
+ *
+ * ── 为什么不能只看"有没有那份记录" ──
+ *   ① 一份**空的** ack（当时压根没疑问）说明不了任何事；
+ *   ② 更要紧的：ack 里记的是"他当时看到的那几条疑问"。如果规格后来变了
+ *      （例如续跑重跑了规格化、或者换了说法），新的疑问**他没看过** ——
+ *      拿旧记录放行，等于把"他同意替他猜 A、B"当成"他同意替他猜 A、B、C"。
+ *      所以传了 pendingNow 时，要求每一条现在待确认的都在他知悉的清单里。
+ */
+export function isAcknowledged(ack: SpecAck | null, pendingNow?: string[]): boolean {
+  if (!ack) return false;
+  if (ack.pending.length === 0) return false;
+  if (pendingNow === undefined || pendingNow.length === 0) return true;
+  const acknowledged = new Set(ack.pending);
+  return pendingNow.every((q) => acknowledged.has(q));
+}
+
+/**
+ * 界面要看的"门禁现状"。
+ *
+ * ── 为什么要有它（真实陷阱，不是设想出来的）──
+ *   控制台原来只在**实时收到 spec 事件**时才把疑问渲染成表单。
+ *   于是用户一刷新页面（或从列表点进那条运行），表单就没了 ——
+ *   屏幕上写着"规格里有 3 个疑问需要你确认后才能继续"，
+ *   却没有任何地方可以回答。这正是那段代码自己的注释说的
+ *   「把人拦在门口又不给开门」。
+ *
+ *   所以给出一个"现在到底还差哪几条"的形状：界面拿它渲染表单，
+ *   而且只渲染**还没答**的那几条（答过的不该再问一遍）。
+ *
+ * 判据仍然只有 decideGate 一份 —— 这里只是把它收成界面能直接用的形状。
+ */
+export interface GateView {
+  pause: boolean;
+  /** 还没答的那几条（界面据此渲染输入框；答过的不再出现） */
+  pending: string[];
+  reason: string;
+  fallback: boolean;
+  acknowledged: boolean;
+}
+
+export function buildGateView(
+  spec: AppSpec,
+  answers: SpecAnswers | null,
+  ack: SpecAck | null,
+  fallback = false,
+): GateView {
+  // 先算出"现在待确认的是哪几条"，再问"他知悉的正是这几条吗"
+  const pendingNow = pendingQuestions(spec, answers);
+  const acknowledged = isAcknowledged(ack, pendingNow);
+  const d = decideGate(spec, answers, fallback, acknowledged);
+  return {
+    pause: d.pause,
+    pending: d.pending,
+    reason: d.reason,
+    fallback: d.fallback,
+    acknowledged,
+  };
 }
 
 /* ============================================================

@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   answersToContext,
   applyAnswers,
+  buildGateView,
   decideGate,
+  isAcknowledged,
   isGateResume,
   summarizeAnswers,
   validateAnswers,
+  type SpecAck,
   type SpecAnswers,
 } from "@/core/generate/gate";
 import { fallbackSpec, type AppSpec } from "@/core/domain/spec";
@@ -310,5 +313,185 @@ describe("人工门禁 · 续跑判断", () => {
     expect(isGateResume(spec, answers)).toBe(true);
     const d = decideGate(spec, answers, false);
     expect(d.pause).toBe(false);
+  });
+});
+
+/* ============================================================
+   知悉并继续（门禁的第三条路）
+   ============================================================ */
+
+describe("人工门禁 · 知悉并继续", () => {
+  /*
+    这一组钉的是「系统替用户猜」与「用户让系统替他猜」的区别。
+    前者正是修法 4 一直在防的那件事（兜底不被发现地一路跑到成品）；
+    后者是用户自己按的按钮 —— 但它同样必须把代价说出来。
+    所以每条正例都配一条"不许悄悄放行"的反例。
+  */
+  const NO_QUESTIONS = fallbackSpec(meta);
+  const ASKED = { ...NO_QUESTIONS, questions: ["要不要提示音？", "要不要休息阶段？"] };
+
+  it("【关键】知悉 + 有疑问没答 → 放行（这是用户按的按钮，不是系统替他做主）", () => {
+    const d = decideGate(ASKED, null, false, true);
+    expect(d.pause).toBe(false);
+    // 但没答的那几条仍然如实列着 —— 放行不等于"问题消失了"
+    expect(d.pending).toEqual(["要不要提示音？", "要不要休息阶段？"]);
+  });
+
+  it("【关键】放行那句话必须写清代价，而不只是说「继续」", () => {
+    const d = decideGate(ASKED, null, false, true);
+    expect(d.reason).toContain("知悉");
+    expect(d.reason).toContain("2 个疑问没答");
+    expect(d.reason).toContain("模型会替你决定");
+    // 代价：错了要到验收那一步才看得出来
+    expect(d.reason).toContain("验收");
+  });
+
+  it("★ 反例：没知悉 → 照样停（不许因为「反正能知悉」就默认放行）", () => {
+    const d = decideGate(ASKED, null, false, false);
+    expect(d.pause).toBe(true);
+    expect(d.reason).not.toContain("知悉");
+  });
+
+  it("★ 反例：没疑问时，知悉标记不产生任何影响（不该凭空多出一句知悉）", () => {
+    const d = decideGate(NO_QUESTIONS, null, false, true);
+    expect(d.pause).toBe(false);
+    expect(d.reason).not.toContain("知悉");
+    expect(d.reason).toContain("可以直接继续");
+  });
+
+  it("★ 反例：疑问都答完了 → 走「都已回答」，而不是走知悉那条", () => {
+    const answers = answersFor([
+      ["要不要提示音？", "要"],
+      ["要不要休息阶段？", "不要"],
+    ]);
+    const d = decideGate(ASKED, answers, false, true);
+    expect(d.pause).toBe(false);
+    expect(d.reason).toContain("都已回答");
+    expect(d.reason).not.toContain("知悉");
+  });
+
+  it("只答了一部分 + 知悉 → 放行，且 reason 说的是「没答的那几条」", () => {
+    const d = decideGate(ASKED, answersFor([["要不要提示音？", "要"]]), false, true);
+    expect(d.pause).toBe(false);
+    expect(d.pending).toEqual(["要不要休息阶段？"]);
+    expect(d.reason).toContain("1 个疑问没答");
+  });
+
+  it("知悉与兜底标记可以同时成立 —— 两件事都要说", () => {
+    const d = decideGate(ASKED, null, true, true);
+    expect(d.pause).toBe(false);
+    expect(d.fallback).toBe(true); // 兜底这件事仍然要被调用方看见
+    expect(d.reason).toContain("知悉");
+  });
+});
+
+describe("人工门禁 · ack 记录本身算不算数", () => {
+  const ack = (pending: string[]): SpecAck => ({
+    runId: "run-1",
+    pending,
+    acknowledgedAt: 1,
+  });
+
+  it("记着「有没答的疑问」→ 算数", () => {
+    expect(isAcknowledged(ack(["要不要提示音？"]))).toBe(true);
+  });
+
+  it("★ 反例：没有 ack 记录 → 不算数", () => {
+    expect(isAcknowledged(null)).toBe(false);
+  });
+
+  it("★ 反例：**空的** ack（当时压根没疑问）→ 不算数", () => {
+    // 一份"我知悉了 0 条疑问"的记录，不能当成"他同意我们替他猜"
+    expect(isAcknowledged(ack([]))).toBe(false);
+  });
+
+  it("★ 反例：他知悉的是**别的问题** → 不算数（不许替他没看过的疑问放行）", () => {
+    /*
+      这是验收脚本抓出来的那一类问题的判据面：
+      知悉记录里是"当时那几条"，如果待确认的变成了别的（规格变了、
+      或者续跑重跑了一次规格化），新的那几条**他没看过**。
+      拿旧记录放行，等于把"他同意替他猜 A、B"当成"他同意替他猜 C"。
+    */
+    expect(isAcknowledged(ack(["旧的疑问一", "旧的疑问二"]), ["新的疑问"])).toBe(false);
+  });
+
+  it("★ 反例：待确认的是他那几条的**超集** → 也不算数（多出来的那条他没看过）", () => {
+    expect(isAcknowledged(ack(["q1", "q2"]), ["q1", "q2", "q3"])).toBe(false);
+  });
+
+  it("待确认的正好都在他知悉过的清单里 → 算数", () => {
+    expect(isAcknowledged(ack(["q1", "q2"]), ["q1", "q2"])).toBe(true);
+  });
+});
+
+describe("人工门禁 · 知悉也算续跑（★ 账上只许有一条 spec）", () => {
+  const SPEC = fallbackSpec(meta);
+  const ASKED = { ...SPEC, questions: ["q1", "q2"] };
+  const ack: SpecAck = { runId: "r", pending: ["q1", "q2"], acknowledgedAt: 1 };
+
+  it("【关键】有规格 + 知悉过 → 是续跑（不然规格化会被重跑，疑问换一批新的）", () => {
+    // 实测：知悉之后续跑时规格化又跑了一遍，账上两条 spec 流水
+    expect(isGateResume(ASKED, null, ack)).toBe(true);
+  });
+
+  it("★ 反例：没有回答、也没有知悉 → 不是续跑（第一次停在门禁就是这种）", () => {
+    expect(isGateResume(ASKED, null, null)).toBe(false);
+  });
+
+  it("★ 反例：知悉的是别的问题 → 不算续跑（规格该重跑就跑）", () => {
+    const stale: SpecAck = { runId: "r", pending: ["很久以前的疑问"], acknowledgedAt: 1 };
+    expect(isGateResume(ASKED, null, stale)).toBe(false);
+  });
+
+  it("答过疑问（没知悉）仍然是续跑 —— 老行为一个字不变", () => {
+    expect(isGateResume(ASKED, answersFor([["q1", "要"]]), null)).toBe(true);
+  });
+});
+
+/* ============================================================
+   界面要看的"门禁现状"（刷新之后靠它把表单补回来）
+   ============================================================ */
+
+describe("人工门禁 · 界面用的现状视图", () => {
+  const SPEC = fallbackSpec(meta);
+  const ASKED = { ...SPEC, questions: ["q1", "q2"] };
+  const ack = (pending: string[]): SpecAck => ({ runId: "r", pending, acknowledgedAt: 1 });
+
+  it("只给**还没答**的那几条 —— 答过的再问一遍，用户会以为自己没提交成功", () => {
+    const view = buildGateView(ASKED, answersFor([["q1", "要"]]), null);
+    expect(view.pending).toEqual(["q2"]);
+    expect(view.pause).toBe(true);
+  });
+
+  it("都答完了 → pending 为空、不放行也不拦（可以继续）", () => {
+    const view = buildGateView(
+      ASKED,
+      answersFor([
+        ["q1", "要"],
+        ["q2", "不要"],
+      ]),
+      null,
+    );
+    expect(view.pending).toEqual([]);
+    expect(view.pause).toBe(false);
+  });
+
+  it("知悉过了 → 不再拦，但 pending 照旧列着（放行不等于问题消失）", () => {
+    const view = buildGateView(ASKED, null, ack(["q1", "q2"]));
+    expect(view.pause).toBe(false);
+    expect(view.acknowledged).toBe(true);
+    expect(view.pending).toEqual(["q1", "q2"]);
+  });
+
+  it("★ 反例：没有 ack 时不许显示成「已知悉」", () => {
+    const view = buildGateView(ASKED, null, null);
+    expect(view.acknowledged).toBe(false);
+    expect(view.pause).toBe(true);
+  });
+
+  it("兜底标记原样带出来（界面要把兜底与真规格分开显示）", () => {
+    const view = buildGateView(ASKED, null, null, true);
+    expect(view.fallback).toBe(true);
+    expect(view.reason).toContain("兜底");
   });
 });

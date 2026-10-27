@@ -38,9 +38,13 @@ import { runSpecStage, SPEC_ARTIFACT_NAME } from "@/core/generate/spec-stage";
 import { runArchStage } from "@/core/generate/arch-stage";
 import { runUiStage } from "@/core/generate/ui-stage";
 import {
+  ACK_ARTIFACT_NAME,
   ANSWERS_ARTIFACT_NAME,
   decideGate,
+  isAcknowledged,
   isGateResume,
+  pendingQuestions,
+  type SpecAck,
   type SpecAnswers,
 } from "@/core/generate/gate";
 import { isFallbackSpec, reviewSpec, type AppSpec } from "@/core/domain/spec";
@@ -55,26 +59,8 @@ import {
 } from "@/core/pipeline/callback";
 import { getOwnedRun } from "@/core/run/service";
 import { getCurrentUser } from "@/server/auth-context";
-
-/**
- * 按**文件名**找产物，而不是「取最新的那个 json」。
- *
- * 这一点必须小心：规格与答案都是 json 类型，而 answers.json
- * 是后写的 —— 用 findLatest(runId, "json") 会拿到答案当成规格，
- * 于是门禁永远算不对，而且不报错，只是行为诡异。
- */
-async function readJsonArtifact<T>(runId: string, fileName: string): Promise<T | null> {
-  const all = await fsArtifactStore.listByRun(runId);
-  const hit = all.find((a) => a.path.endsWith(`/${fileName}`));
-  if (!hit) return null;
-  const raw = await fsArtifactStore.readContent(hit);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
+// 按文件名读 json 产物（不能用"取最新那个 json"，见那个文件的说明）
+import { readJsonArtifact } from "@/server/json-artifact";
 
 /**
  * 读规格与答案，判断该不该停下等人。
@@ -89,6 +75,13 @@ async function readJsonArtifact<T>(runId: string, fileName: string): Promise<T |
 async function readGateDecision(runId: string, specFallback = false) {
   const spec = await readJsonArtifact<AppSpec>(runId, SPEC_ARTIFACT_NAME);
   const answers = await readJsonArtifact<SpecAnswers>(runId, ANSWERS_ARTIFACT_NAME);
+  /*
+    「知悉并继续」的表态。
+    ⚠️ 交给 decideGate 之前，先用 isAcknowledged 确认那份 ack
+       **确实记着有没答的疑问** —— 空 ack（当时压根没疑问）
+       不能被当成"他同意我们替他猜"。
+  */
+  const ack = await readJsonArtifact<SpecAck>(runId, ACK_ARTIFACT_NAME);
 
   // 规格都读不出来就没什么可拦的 —— 让流程继续，
   // 后面自然会在别处报错，而不是在这里拦一个说不清的理由
@@ -99,16 +92,24 @@ async function readGateDecision(runId: string, specFallback = false) {
       reason: "没有读到规格，跳过门禁",
       pending: [],
       fallback: specFallback,
+      acknowledged: false,
     };
   }
 
-  const d = decideGate(spec, answers, specFallback);
+  /*
+    ⚠️ 知悉要**对上具体那几条**：先算出现在待确认的是哪几条，
+       再问"他知悉的正是这几条吗"。只看"有没有那份记录"的话，
+       规格一变（例如疑问换了说法），旧记录就会替他放行他从没看过的疑问。
+  */
+  const acknowledged = isAcknowledged(ack, pendingQuestions(spec, answers));
+  const d = decideGate(spec, answers, specFallback, acknowledged);
   return {
     pause: d.pause,
     answered: !d.pause && spec.questions.length > 0,
     reason: d.reason,
     pending: d.pending,
     fallback: d.fallback,
+    acknowledged,
   };
 }
 
@@ -318,16 +319,22 @@ export async function GET(
             所以"兜底不再被说成就绪"的代价，就是这条路必须真的接上。
 
             判据是纯函数（core/generate/gate.ts 的 isGateResume），
-            那里写了为什么"有规格 + 有非空回答"这两个条件就够、
-            以及为什么"重新生成"不会误判成续跑（它走 DELETE 会清掉两者）。
+            那里写了为什么"有规格 + 有非空回答（或知悉过）"这几条就够、
+            以及为什么"重新生成"不会误判成续跑（它走 DELETE 会清掉它们）。
+
+            ⚠️ "知悉过"也算续跑 —— 这一条是验收脚本抓出来的：
+               知悉之后续跑时规格化**又被跑了一遍**（账上两条 spec 流水），
+               于是疑问换了一批新的，而用户知悉的是原来那几条。
+               他按的是"我知道这些问题了"，不是"随便什么问题都行"。
           */
           const storedSpec = await readJsonArtifact<AppSpec>(runId, SPEC_ARTIFACT_NAME);
+          const storedAck = await readJsonArtifact<SpecAck>(runId, ACK_ARTIFACT_NAME);
           const storedAnswers = await readJsonArtifact<SpecAnswers>(
             runId,
             ANSWERS_ARTIFACT_NAME,
           );
 
-          if (isGateResume(storedSpec, storedAnswers) && storedSpec) {
+          if (isGateResume(storedSpec, storedAnswers, storedAck) && storedSpec) {
             specFromStage = storedSpec;
             // 规格是自己从盘上读的，兜底与否要现判 —— 它同样是界面必须看见的
             specFallbackFromStage = isFallbackSpec(storedSpec);
@@ -335,13 +342,24 @@ export async function GET(
             const answered = (storedAnswers?.answers ?? []).filter(
               (a) => a.answer.trim().length > 0,
             ).length;
+            /*
+              说明要分两种情况 —— 答过疑问的人与"知悉并继续"的人，
+              走的不是同一条路（后者是让模型替他决定，前者是给了他答案）。
+              混成一句"已答 N 个疑问"的话，知悉那条路上会写着"已答 0 个疑问"，
+              读起来像什么都没发生。
+            */
+            const viaAck = answered === 0 && isAcknowledged(storedAck, [
+              ...storedSpec.questions,
+            ]);
 
             yield {
               kind: "phase",
               phase: "spec",
-              label:
-                `沿用你已确认过的那份规格（已答 ${answered} 个疑问），不重跑规格化 —— ` +
-                `重跑会换一批新疑问，你刚答过的就对不上了`,
+              label: viaAck
+                ? "沿用你已确认过的那份规格（你已表示知悉并继续），不重跑规格化 —— " +
+                  "重跑会换一批新疑问，你知悉的就不是现在这几条了"
+                : `沿用你已确认过的那份规格（已答 ${answered} 个疑问），不重跑规格化 —— ` +
+                  `重跑会换一批新疑问，你刚答过的就对不上了`,
             };
 
             /*

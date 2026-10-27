@@ -129,7 +129,67 @@ export function GenerationConsole({
   /* ---------- 人工门禁的交互状态 ---------- */
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  /** 「知悉并继续」提交中 */
+  const [acknowledging, setAcknowledging] = useState(false);
   const [gateMsg, setGateMsg] = useState<string | null>(null);
+
+  /**
+   * 刷新之后把门禁补回来。
+   *
+   * ── 为什么必须有这一步（真实陷阱）──
+   *   spec 状态原来只由**实时 SSE** 填。用户一刷新页面、或者从列表里
+   *   点进那条停在门禁上的运行，表单就没了 ——
+   *   屏幕上写着"规格里有 3 个疑问需要你确认后才能继续"，
+   *   却没有任何地方可以回答。人被拦在门口，门却不见了。
+   *
+   *   /gate 接口给的是"现在到底还差哪几条"（判据在服务端，
+   *   与门禁自己用的那个 decideGate 同源），所以这里渲染的
+   *   只有**还没答**的疑问 —— 答过的不再问第二遍。
+   *
+   * ⚠️ 只在还没拿到规格时补（`setSpec((s) => s ?? …)`）：
+   *    正在实时跑的时候不许被这一次请求覆盖掉。
+   * ⚠️ 它必须放在 setSpec / setGateMsg 之后 —— React Compiler 的规则
+   *    不允许"先用后声明"，lint 会直接报错（这次就报了一次）。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/runs/${runId}/gate`);
+        if (!res.ok) return;
+        const json = (await res.json()) as {
+          hasSpec?: boolean;
+          spec?: {
+            goal: string;
+            audience: string;
+            acceptance: Array<{ id: string; statement: string; verifyBy: string; level: string }>;
+            outOfScope: string[];
+            questions: string[];
+          } | null;
+          gate?: { pending: string[]; fallback: boolean; reason: string } | null;
+        };
+        if (cancelled || !json.hasSpec || !json.spec) return;
+        const pending = json.gate?.pending ?? [];
+        setSpec((s) =>
+          s ?? {
+            goal: json.spec!.goal,
+            audience: json.spec!.audience,
+            acceptance: json.spec!.acceptance,
+            outOfScope: json.spec!.outOfScope,
+            // 只放"还没答的"：答过的再问一遍，用户会以为自己没提交成功
+            questions: pending,
+            fallback: json.gate?.fallback ?? false,
+          },
+        );
+        if (pending.length > 0 && json.gate?.reason) setGateMsg(json.gate.reason);
+      } catch {
+        // 补不回来也不该让界面崩：只是没有表单而已，正文与日志照常
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [runId]);
 
   /** 提交回答。成功后把问题从本地列表里去掉 —— 界面据此收起表单 */
   const submitAnswers = useCallback(async () => {
@@ -167,6 +227,39 @@ export function GenerationConsole({
       setSubmitting(false);
     }
   }, [spec, submitting, runId, draft]);
+
+  /**
+   * 「知悉并继续」：我看了这些问题，但不回答 —— 这次你替我决定。
+   *
+   * ── 为什么要有它（和"留空提交"的区别）──
+   *   留空提交也表达"你替我决定"，但它要求用户**逐条**看完再点提交；
+   *   问题多的时候（实测有 4 条的）那更像是在收集噪声：
+   *   用户对"要不要提示音"确实没有偏好，逼他编一个答案没有意义。
+   *
+   * ⚠️ 代价必须写在按钮旁边，不能只写"继续"：
+   *   模型会替他猜，猜错了要到验收那一步才暴露 —— 那时钱已经花完了。
+   */
+  const acknowledge = useCallback(async () => {
+    if (!spec || submitting || acknowledging) return;
+    setAcknowledging(true);
+    setGateMsg(null);
+    try {
+      const res = await fetch(`/api/runs/${runId}/acknowledge`, { method: "POST" });
+      const json = (await res.json()) as { ok?: boolean; error?: string; acknowledged?: number };
+      if (!res.ok || !json.ok) {
+        setGateMsg(json.error ?? `提交失败（HTTP ${res.status}）`);
+        return;
+      }
+      setSpec((s) => (s ? { ...s, questions: [] } : s));
+      setGateMsg(
+        `已知悉 ${json.acknowledged ?? 0} 条没答的疑问 —— 现在点「开始生成」继续，模型会替你决定`,
+      );
+    } catch (e) {
+      setGateMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAcknowledging(false);
+    }
+  }, [spec, submitting, acknowledging, runId]);
   const [phase, setPhase] = useState<GeneratePhase | null>(null);
   const [phaseLabel, setPhaseLabel] = useState("");
   /**
@@ -649,18 +742,36 @@ export function GenerationConsole({
                   </li>
                 ))}
               </ul>
-              <div className="mt-2 flex items-center gap-3">
+              <div className="mt-2 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
                   onClick={submitAnswers}
-                  disabled={submitting}
+                  disabled={submitting || acknowledging}
                   className="rounded border border-amber-700 bg-amber-900/40 px-2.5 py-1 text-[10.5px] text-amber-200 transition-colors duration-150 hover:bg-amber-900/60 disabled:opacity-50"
                 >
                   {submitting ? "提交中…" : "提交回答"}
                 </button>
+                {/*
+                  「知悉并继续」：第三条路。
+                  与「提交回答」并列放在这里，是因为它俩是同一个决定的两个方向：
+                  要么我把疑问答清楚，要么我认了让你替我猜。
+                */}
+                <button
+                  type="button"
+                  onClick={acknowledge}
+                  disabled={submitting || acknowledging}
+                  title="我看过这些问题了，但不回答 —— 这次由模型替我决定"
+                  className="rounded border border-slate-600 bg-slate-800/40 px-2.5 py-1 text-[10.5px] text-slate-300 transition-colors duration-150 hover:bg-slate-700/50 disabled:opacity-50"
+                >
+                  {acknowledging ? "提交中…" : "知悉并继续（由模型替我决定）"}
+                </button>
                 <span className="text-[10px] text-amber-200/60">
                   留空也算提交 —— 那是「你替我决定」，不是没看到
                 </span>
+              </div>
+              <div className="mt-1 text-[10px] text-slate-400/80">
+                「知悉并继续」的代价：模型会替你猜这些没答的地方，猜错了要到
+                <span className="text-slate-300">验收那一步</span>才看得出来 —— 那时钱已经花完了。
               </div>
               {gateMsg && (
                 <div className="mt-1.5 text-[10.5px] text-emerald-400">{gateMsg}</div>

@@ -47,11 +47,24 @@ describe("生成接口 · 兜底标记的接线", () => {
   });
 
   it("readGateDecision 把标记转交给 decideGate —— 判据仍然只有 decideGate 一份", () => {
-    expect(src).toContain("decideGate(spec, answers, specFallback)");
+    expect(src).toContain("decideGate(spec, answers, specFallback, acknowledged)");
   });
 
   it("标记有初值，且初值是 false —— 没发过 spec 事件时不许凭空说兜底", () => {
     expect(src).toContain("let specFallbackFromStage = false");
+  });
+
+  /*
+    「知悉并继续」那一跳。
+    判据本身是纯函数、有单测（gate.test.ts 的 isAcknowledged / decideGate）；
+    这里钉的是"接口真的读了 ack、并且先过 isAcknowledged 再交给门禁"。
+    少了 isAcknowledged 这一道，一份**空的** ack（当时压根没疑问）
+    就会被当成"他同意我们替他猜" —— 那是把用户的沉默当成授权。
+  */
+  it("接口读 ack.json，并且先过 isAcknowledged 再交给门禁", () => {
+    expect(src).toContain("readJsonArtifact<SpecAck>(runId, ACK_ARTIFACT_NAME)");
+    // 而且要**对上具体那几条**：只判断"有没有那份记录"会替他从没看过的疑问放行
+    expect(src).toContain("isAcknowledged(ack, pendingQuestions(spec, answers))");
   });
 });
 
@@ -67,7 +80,7 @@ describe("生成接口 · 续跑的接线", () => {
   it("重跑规格化之前，先问了「这一趟是不是续跑」", () => {
     // 钉的是"分支由这个判据决定"，不只是"调用了它" ——
     // 只调不用（或把条件改成恒假）在老形态下看不出区别，但用户会"答了又问"
-    expect(src).toContain("if (isGateResume(storedSpec, storedAnswers) && storedSpec) {");
+    expect(src).toContain("if (isGateResume(storedSpec, storedAnswers, storedAck) && storedSpec) {");
     expect(src).toContain("readJsonArtifact<AppSpec>(runId, SPEC_ARTIFACT_NAME)");
     expect(src).toContain("readJsonArtifact<SpecAnswers>(");
   });
