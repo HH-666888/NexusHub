@@ -609,6 +609,20 @@ export async function GET(
             }
 
             /*
+              ---------- 模块调用的 token 也要并进这条运行的累计用量 ----------
+              runs 那一行是界面右侧"实时成本"的数据来源（输入 / 输出 / 思考 /
+              缓存命中）。上面那个循环只把模块的花费记进了流水，用量却没进这一行 ——
+              不并的话，3~4 次模块调用的 token 会凭空消失。
+              实测一条真实运行：并之前这里显示的思考是 0，而流水里合计 16446。
+              （累加由适配器负责，见 adapters/store/run-repo.ts 的 update。）
+            */
+            try {
+              await sqliteRunStore.update(runId, { usage: batch.totalUsage });
+            } catch {
+              // 与上面同一个取舍：账目是附加能力，不能因此中断生成
+            }
+
+            /*
               ---------- 把各模块的思考发出来 ----------
               并行构建也是"会思考的写码"（GENERATE_DEFAULT_EFFORT = "high"）。
               真实运行里单个模块的思考量到过 12706 tokens，而它原先躺在

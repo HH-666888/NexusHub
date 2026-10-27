@@ -22,6 +22,8 @@ import {
 } from "@/core/domain/run";
 import type { StageId } from "@/core/pipeline/stages";
 import type { TokenUsage } from "@/core/ports/model";
+// 加法只有一份定义（token 五列逐项相加）—— 不要在这里再抄一遍
+import { addUsage } from "@/core/domain/module-build";
 
 type RunRow = typeof runs.$inferSelect;
 
@@ -107,7 +109,30 @@ export const sqliteRunStore: RunStore = {
     if (patch.workflowVersion !== undefined)
       values.workflowVersion = patch.workflowVersion;
     if (patch.totalCostCny !== undefined) values.totalCostCny = patch.totalCostCny;
-    if (patch.usage !== undefined) Object.assign(values, usageColumns(patch.usage));
+    /*
+      ⚠️ usage 是**累加**，不是覆盖。
+
+      ── 为什么（真实运行查出来的，不是设想的）──
+        每个调用方报的都是**自己那一次调用**的用量：规格化、架构、界面、
+        每个模块、装配各报一次。覆盖的话，这一行的 token 就只剩
+        "最后一次调用"的数字。实测一条真实运行（run a468a508）：
+          库里 runs 行  → 输入 4638 · 输出 6578 · 思考 0
+          cost_records 七条合计 → 输入 9172 · 输出 34881 · 思考 16446
+        而界面右侧"实时成本"读的就是这一行 —— 于是一条实打实花了
+        16446 思考 token 的运行，被显示成"思考 token 0"。
+        这和「思考 tab 永远是空的」是同一类错误，只是换了个地方说出口。
+
+      ── 为什么 totalCostCny 反而是覆盖 ──
+        因为调用方给它的就是**累计值**（spent + 这一次），口径本来就不同。
+        两者相邻，所以必须各自写清楚，免得下一个人"顺手统一"成一个口径。
+    */
+    if (patch.usage !== undefined) {
+      // 读改写：驱动是同步的，中间没有 await，不存在交错
+      const row = db.select().from(runs).where(eq(runs.id, id)).get();
+      if (row) {
+        Object.assign(values, usageColumns(addUsage(toDomain(row).usage, patch.usage)));
+      }
+    }
 
     db.update(runs).set(values).where(eq(runs.id, id)).run();
   },
