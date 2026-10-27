@@ -180,3 +180,82 @@ describe("人工门禁 · 上下文与摘要", () => {
     expect(summarizeAnswers(answersFor([["q1", "a"], ["q2", ""]]))).toContain("1 / 2");
   });
 });
+
+/* ============================================================
+   兜底规格必须被门禁看见（修法 4）
+   ============================================================ */
+
+describe("人工门禁 · 兜底规格", () => {
+  /*
+    兜底规格（模型输出解析不出来时的替代品）的 questions 是空的，
+    于是门禁会放行，reason 还写着"规格没有疑问，可以直接继续"。
+    那是实话，但**不完整** —— 那份规格根本不是模型给出来的。
+    真实运行里就发生过这一幕：降级了却没人拦，一路跑到成品。
+    这一组断言钉的就是"兜底这件事必须说出来"。
+
+    ── 为什么每条正例都配一条反例 ──
+      只断言"reason 里含兜底"是不够的：如果实现无脑往每句话里
+      都塞"兜底"，正例照样绿，而那种实现是错的（真规格也被说成兜底）。
+      所以下面成对地钉：传了标记 → 有"兜底"；没传 → **没有**"兜底"。
+  */
+  const FALLBACK = fallbackSpec(meta);
+
+  it("不传第三参 → fallback 是 false（向后兼容，老调用方读到的东西不变）", () => {
+    const d = decideGate(specWith([]), null);
+    expect(d.fallback).toBe(false);
+  });
+
+  it("传 true → fallback 原样带回来，调用方能看见", () => {
+    const d = decideGate(FALLBACK, null, true);
+    expect(d.fallback).toBe(true);
+  });
+
+  it("【关键】兜底 + 没疑问：**照旧不拦**，但 reason 里必须出现「兜底」", () => {
+    const d = decideGate(FALLBACK, null, true);
+    // 不拦是有意的：没有可回答的问题，停下来用户也无从回答
+    expect(d.pause).toBe(false);
+    expect(d.pending).toEqual([]);
+    expect(d.reason).toContain("兜底");
+  });
+
+  it("★ 反例：同一份规格、不传标记时 reason 里**没有**「兜底」—— 证明上面那条不是恒真", () => {
+    const d = decideGate(FALLBACK, null);
+    expect(d.reason).not.toContain("兜底");
+    expect(d.reason).toContain("可以直接继续");
+  });
+
+  it("【关键】兜底 + 有疑问：该停照样停，reason 里也要含「兜底」", () => {
+    const d = decideGate({ ...FALLBACK, questions: ["要不要多人协作？"] }, null, true);
+    expect(d.pause).toBe(true);
+    expect(d.pending).toEqual(["要不要多人协作？"]);
+    expect(d.reason).toContain("兜底");
+  });
+
+  it("★ 反例：有疑问但没传标记 → reason 里同样没有「兜底」", () => {
+    const d = decideGate({ ...FALLBACK, questions: ["要不要多人协作？"] }, null);
+    expect(d.reason).not.toContain("兜底");
+  });
+
+  it("兜底 + 疑问答全了：放行，但 reason 里仍要说清这是兜底", () => {
+    const spec = { ...FALLBACK, questions: ["q1"] };
+    const d = decideGate(spec, answersFor([["q1", "要"]]), true);
+    expect(d.pause).toBe(false);
+    expect(d.reason).toContain("兜底");
+  });
+
+  it("兜底 + 只答了一部分：停，reason 里仍要说清这是兜底", () => {
+    const spec = { ...FALLBACK, questions: ["q1", "q2"] };
+    const d = decideGate(spec, answersFor([["q1", "要"]]), true);
+    expect(d.pause).toBe(true);
+    expect(d.pending).toEqual(["q2"]);
+    expect(d.reason).toContain("兜底");
+  });
+
+  it("兜底标记不影响 pending 的计算 —— 加的是说明，不是新的拦人理由", () => {
+    const spec = { ...FALLBACK, questions: ["q1", "q2"] };
+    const withFlag = decideGate(spec, answersFor([["q1", "要"]]), true);
+    const without = decideGate(spec, answersFor([["q1", "要"]]));
+    expect(withFlag.pending).toEqual(without.pending);
+    expect(withFlag.pause).toBe(without.pause);
+  });
+});

@@ -377,3 +377,94 @@ describe("规格化阶段 · 事件顺序", () => {
     expect(last.label).toContain("确认");
   });
 });
+
+/* ============================================================
+   思考事件（修法 2）
+   ============================================================ */
+
+describe("规格化阶段 · 思考事件", () => {
+  /*
+    这一道走的是 complete()（一次性返回），而 decide 档默认开思考。
+    真实运行实测：spec 想 1175 tokens、arch 想 470、ui 想 600 ——
+    但三道工序**一条 reasoning 事件都没发**，于是界面上"这一步没有返回
+    思考内容"，而模型其实想了。这一组断言钉的就是"想了就得发出来"。
+  */
+  const THOUGHT = "先把这句话读成需求：谁用、用来干什么、怎么算做完";
+
+  const thoughts = (h: Harness) =>
+    h.events.filter(
+      (e): e is Extract<SpecStageEvent, { kind: "reasoning" }> => e.kind === "reasoning",
+    );
+
+  it("【关键】complete() 返回的思考要发成 reasoning 事件，内容一字不改", async () => {
+    const h = await run({ modelResult: makeResult({ reasoning: THOUGHT }) });
+    const t = thoughts(h);
+    expect(t).toHaveLength(1);
+    expect(t[0].delta).toBe(THOUGHT);
+  });
+
+  it("★ 反例：没有思考时**不发** reasoning 事件 —— 不许拿正文冒充思考", async () => {
+    const h = await run({ modelResult: makeResult({ reasoning: "" }) });
+    expect(thoughts(h)).toHaveLength(0);
+  });
+
+  it("★ 反例：只有空白字符也不发 —— 空白思考等于没思考", async () => {
+    const h = await run({ modelResult: makeResult({ reasoning: "  \n\t " }) });
+    expect(thoughts(h)).toHaveLength(0);
+  });
+
+  it("顺序：思考排在 spec 事件之前 —— 读起来就是「先想，再给答案」", async () => {
+    const h = await run({ modelResult: makeResult({ reasoning: THOUGHT }) });
+    const thinkAt = h.events.findIndex((e) => e.kind === "reasoning");
+    const specAt = h.events.findIndex((e) => e.kind === "spec");
+    expect(thinkAt).toBeGreaterThanOrEqual(0);
+    expect(thinkAt).toBeLessThan(specAt);
+  });
+
+  it("★ 反例：调用模型就失败时**不可能**有思考事件（压根没有 result）", async () => {
+    const h = await run({ modelThrows: "网络超时" });
+    expect(thoughts(h)).toHaveLength(0);
+    // 顺带再钉一次降级的底线：没有思考，但兜底规格照样出
+    expect(specEvent(h)!.fallback).toBe(true);
+  });
+
+  it("降级路径上的思考照样发 —— 想过了就是想过了，不会因为它没解析成功而丢掉", async () => {
+    const h = await run({
+      modelResult: makeResult({ text: "我觉得这个需求挺清楚的", reasoning: THOUGHT }),
+    });
+    expect(specEvent(h)!.fallback).toBe(true);
+    expect(thoughts(h)).toHaveLength(1);
+    expect(thoughts(h)[0].delta).toBe(THOUGHT);
+  });
+});
+
+/* ============================================================
+   兜底标签（修法 1）
+   ============================================================ */
+
+describe("规格化阶段 · 兜底标签", () => {
+  /*
+    旧代码的标签只看 gate.pass。兜底规格没有 questions → gate.pass = true
+    → 标签写"规格已就绪"，**把兜底说成了就绪**。
+    这一组断言钉住：兜底必须自报家门。
+  */
+  const phaseLabels = (h: Harness) =>
+    h.events
+      .filter((e): e is Extract<SpecStageEvent, { kind: "phase" }> => e.kind === "phase")
+      .map((e) => e.label);
+
+  it("【关键】降级时收尾标签必须自报家门 —— 否则「兜底」会被说成「已就绪」", async () => {
+    const h = await run({ modelResult: makeResult({ text: "我觉得这个需求挺清楚的" }) });
+    expect(specEvent(h)!.fallback).toBe(true);
+    const labels = phaseLabels(h);
+    expect(labels[labels.length - 1]).toContain("（兜底）");
+    expect(labels[labels.length - 1]).toContain("规格已就绪");
+  });
+
+  it("★ 反例：正常规格的标签里**不许**出现「（兜底）」—— 防恒真", async () => {
+    const h = await run({});
+    expect(specEvent(h)!.fallback).toBe(false);
+    expect(phaseLabels(h).some((l) => l.includes("（兜底）"))).toBe(false);
+    expect(phaseLabels(h)[phaseLabels(h).length - 1]).toContain("规格已就绪：");
+  });
+});

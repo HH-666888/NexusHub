@@ -506,3 +506,93 @@ describe("解析与兜底的一致性", () => {
     }
   });
 });
+
+/* ============================================================
+   思考事件（修法 2）
+   ============================================================ */
+
+describe("架构定型阶段 · 思考事件", () => {
+  /*
+    和规格化同一类问题：这一道也是 complete()，decide 档默认开思考
+    （真实运行实测 470 tokens），但思考躺在 ModelResult.reasoning 里
+    没人取 —— 界面上"这一步没有返回思考内容"，而模型其实想了。
+  */
+  const THOUGHT = "先看规格里那几条验收：存储和界面能不能切开，依赖朝哪边走";
+
+  const thoughts = (h: Harness) =>
+    h.events.filter(
+      (e): e is Extract<ArchStageEvent, { kind: "reasoning" }> => e.kind === "reasoning",
+    );
+
+  it("【关键】complete() 返回的思考要发成 reasoning 事件，内容一字不改", async () => {
+    const h = await run({ modelResult: makeResult({ reasoning: THOUGHT }) });
+    const t = thoughts(h);
+    expect(t).toHaveLength(1);
+    expect(t[0].delta).toBe(THOUGHT);
+  });
+
+  it("★ 反例：没有思考时**不发** reasoning 事件 —— 不许拿正文冒充思考", async () => {
+    const h = await run({ modelResult: makeResult({ reasoning: "" }) });
+    expect(thoughts(h)).toHaveLength(0);
+  });
+
+  it("★ 反例：只有空白字符也不发 —— 空白思考等于没思考", async () => {
+    const h = await run({ modelResult: makeResult({ reasoning: " \n " }) });
+    expect(thoughts(h)).toHaveLength(0);
+  });
+
+  it("顺序：思考排在 arch 事件之前 —— 读起来就是「先想，再给答案」", async () => {
+    const h = await run({ modelResult: makeResult({ reasoning: THOUGHT }) });
+    const thinkAt = h.events.findIndex((e) => e.kind === "reasoning");
+    const archAt = h.events.findIndex((e) => e.kind === "arch");
+    expect(thinkAt).toBeGreaterThanOrEqual(0);
+    expect(thinkAt).toBeLessThan(archAt);
+  });
+
+  it("★ 反例：调用模型就失败时**不可能**有思考事件（压根没有 result）", async () => {
+    const h = await run({ modelThrows: "网络超时" });
+    expect(thoughts(h)).toHaveLength(0);
+    expect(archEvent(h)!.fallback).toBe(true);
+  });
+
+  it("降级路径上的思考照样发 —— 想过了就是想过了，不会因为它没解析成功而丢掉", async () => {
+    const h = await run({
+      modelResult: makeResult({ text: "我觉得这样切模块挺好的", reasoning: THOUGHT }),
+    });
+    expect(archEvent(h)!.fallback).toBe(true);
+    expect(thoughts(h)).toHaveLength(1);
+    expect(thoughts(h)[0].delta).toBe(THOUGHT);
+  });
+});
+
+/* ============================================================
+   兜底标签（修法 1）
+   ============================================================ */
+
+describe("架构定型阶段 · 兜底标签", () => {
+  /*
+    兜底架构用一个模块承接全部功能，三条本地检查**照样全绿** ——
+    所以标签只看"检查过没过"的话，会说"架构已定型"。
+    那是实话但不完整：这一版其实**没有切过模块**。
+    这一组断言钉住：兜底必须自报家门。
+  */
+  const phaseLabels = (h: Harness) =>
+    h.events
+      .filter((e): e is Extract<ArchStageEvent, { kind: "phase" }> => e.kind === "phase")
+      .map((e) => e.label);
+
+  it("【关键】降级时收尾标签必须自报家门 —— 否则「没切过模块」会被说成「已定型」", async () => {
+    const h = await run({ modelResult: makeResult({ text: "我觉得这样切模块挺好的" }) });
+    expect(archEvent(h)!.fallback).toBe(true);
+    const labels = phaseLabels(h);
+    expect(labels[labels.length - 1]).toContain("（兜底）");
+    expect(labels[labels.length - 1]).toContain("架构已定型");
+  });
+
+  it("★ 反例：正常架构的标签里**不许**出现「（兜底）」—— 防恒真", async () => {
+    const h = await run({});
+    expect(archEvent(h)!.fallback).toBe(false);
+    expect(phaseLabels(h).some((l) => l.includes("（兜底）"))).toBe(false);
+    expect(phaseLabels(h)[phaseLabels(h).length - 1]).toContain("架构已定型：");
+  });
+});

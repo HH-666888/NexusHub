@@ -583,3 +583,92 @@ describe("解析与兜底的一致性", () => {
     }
   });
 });
+
+/* ============================================================
+   思考事件（修法 2）
+   ============================================================ */
+
+describe("界面设计阶段 · 思考事件", () => {
+  /*
+    同一类问题：这一道也是 complete()，decide 档默认开思考
+    （真实运行实测 600 tokens），但没人把 ModelResult.reasoning 发出来。
+    "看得见的思考"是这个产品的卖点，所以这一条是功能，不是装饰。
+  */
+  const THOUGHT = "先在脑子里过一遍：几个页面、共用哪几个变量、每页要哪块数据";
+
+  const thoughts = (h: Harness) =>
+    h.events.filter(
+      (e): e is Extract<UiStageEvent, { kind: "reasoning" }> => e.kind === "reasoning",
+    );
+
+  it("【关键】complete() 返回的思考要发成 reasoning 事件，内容一字不改", async () => {
+    const h = await run({ modelResult: makeResult({ reasoning: THOUGHT }) });
+    const t = thoughts(h);
+    expect(t).toHaveLength(1);
+    expect(t[0].delta).toBe(THOUGHT);
+  });
+
+  it("★ 反例：没有思考时**不发** reasoning 事件 —— 不许拿正文冒充思考", async () => {
+    const h = await run({ modelResult: makeResult({ reasoning: "" }) });
+    expect(thoughts(h)).toHaveLength(0);
+  });
+
+  it("★ 反例：只有空白字符也不发 —— 空白思考等于没思考", async () => {
+    const h = await run({ modelResult: makeResult({ reasoning: "\t\n " }) });
+    expect(thoughts(h)).toHaveLength(0);
+  });
+
+  it("顺序：思考排在 ui 事件之前 —— 读起来就是「先想，再给答案」", async () => {
+    const h = await run({ modelResult: makeResult({ reasoning: THOUGHT }) });
+    const thinkAt = h.events.findIndex((e) => e.kind === "reasoning");
+    const uiAt = h.events.findIndex((e) => e.kind === "ui");
+    expect(thinkAt).toBeGreaterThanOrEqual(0);
+    expect(thinkAt).toBeLessThan(uiAt);
+  });
+
+  it("★ 反例：调用模型就失败时**不可能**有思考事件（压根没有 result）", async () => {
+    const h = await run({ modelThrows: "网络超时" });
+    expect(thoughts(h)).toHaveLength(0);
+    expect(uiEvent(h)!.fallback).toBe(true);
+  });
+
+  it("降级路径上的思考照样发 —— 想过了就是想过了，不会因为它没解析成功而丢掉", async () => {
+    const h = await run({
+      modelResult: makeResult({ text: "这几个页面够了", reasoning: THOUGHT }),
+    });
+    expect(uiEvent(h)!.fallback).toBe(true);
+    expect(thoughts(h)).toHaveLength(1);
+    expect(thoughts(h)[0].delta).toBe(THOUGHT);
+  });
+});
+
+/* ============================================================
+   兜底标签（修法 1）
+   ============================================================ */
+
+describe("界面设计阶段 · 兜底标签", () => {
+  /*
+    兜底界面一个页面承接全部功能、只引用自己定义的变量、dataNeeds
+    也指得到模块 —— 三条本地检查**照样全绿**，所以标签只看"检查过没过"
+    的话会说"界面已设计"。那是实话但不完整：这一版**没做过设计决策**。
+  */
+  const phaseLabels = (h: Harness) =>
+    h.events
+      .filter((e): e is Extract<UiStageEvent, { kind: "phase" }> => e.kind === "phase")
+      .map((e) => e.label);
+
+  it("【关键】降级时收尾标签必须自报家门 —— 否则「没做过设计决策」会被说成「已设计」", async () => {
+    const h = await run({ modelResult: makeResult({ text: "这几个页面够了" }) });
+    expect(uiEvent(h)!.fallback).toBe(true);
+    const labels = phaseLabels(h);
+    expect(labels[labels.length - 1]).toContain("（兜底）");
+    expect(labels[labels.length - 1]).toContain("界面已设计");
+  });
+
+  it("★ 反例：正常界面的标签里**不许**出现「（兜底）」—— 防恒真", async () => {
+    const h = await run({});
+    expect(uiEvent(h)!.fallback).toBe(false);
+    expect(phaseLabels(h).some((l) => l.includes("（兜底）"))).toBe(false);
+    expect(phaseLabels(h)[phaseLabels(h).length - 1]).toContain("界面已设计：");
+  });
+});
