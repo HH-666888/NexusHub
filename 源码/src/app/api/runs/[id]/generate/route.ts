@@ -75,23 +75,39 @@ async function readJsonArtifact<T>(runId: string, fileName: string): Promise<T |
   }
 }
 
-/** 读规格与答案，判断该不该停下等人 */
-async function readGateDecision(runId: string) {
+/**
+ * 读规格与答案，判断该不该停下等人。
+ *
+ * ── specFallback 为什么是参数，而不是在这里读出来 ──
+ *   规格是从盘上读的（readJsonArtifact），而"这份规格是不是兜底"
+ *   只存在于**刚才那条 spec 事件**里 —— spec.json 本身没有这个字段。
+ *   兜底规格的 questions 是空的，门禁靠 questions 判断就会一路放行，
+ *   于是 reason 会写着"规格没有疑问，可以直接继续"，把兜底说成了没问题。
+ *   所以调用方把事件里的 fallback 传进来，让门禁的结论说实话。
+ */
+async function readGateDecision(runId: string, specFallback = false) {
   const spec = await readJsonArtifact<AppSpec>(runId, SPEC_ARTIFACT_NAME);
   const answers = await readJsonArtifact<SpecAnswers>(runId, ANSWERS_ARTIFACT_NAME);
 
   // 规格都读不出来就没什么可拦的 —— 让流程继续，
   // 后面自然会在别处报错，而不是在这里拦一个说不清的理由
   if (!spec) {
-    return { pause: false, answered: false, reason: "没有读到规格，跳过门禁", pending: [] };
+    return {
+      pause: false,
+      answered: false,
+      reason: "没有读到规格，跳过门禁",
+      pending: [],
+      fallback: specFallback,
+    };
   }
 
-  const d = decideGate(spec, answers);
+  const d = decideGate(spec, answers, specFallback);
   return {
     pause: d.pause,
     answered: !d.pause && spec.questions.length > 0,
     reason: d.reason,
     pending: d.pending,
+    fallback: d.fallback,
   };
 }
 
@@ -278,13 +294,26 @@ export async function GET(
               真的需要落盘那份时（比如换了一条请求），再读盘也不迟。
           */
           let specFromStage: AppSpec | null = null;
+          /*
+            ⚠️ 兜底标记也要接下来（specFallbackFromStage）。
+
+            spec.json 里**没有**"这份规格是不是兜底"这个字段，它只存在于
+            刚才那条 spec 事件里。而门禁随后要拿它去说真话：兜底规格的
+            questions 是空的，门禁靠 questions 判断就会一路放行、reason 还写着
+            "规格没有疑问，可以直接继续" —— 把兜底说成了没问题。
+            所以这里必须把它接下来，交给下面的 readGateDecision。
+          */
+          let specFallbackFromStage = false;
           for await (const e of runSpecStage(ports, {
             runId,
             prompt: runPrompt,
             costLimitCny: env.run.costLimitCny,
             spentCny: spent,
           })) {
-            if (e.kind === "spec") specFromStage = e.spec;
+            if (e.kind === "spec") {
+              specFromStage = e.spec;
+              specFallbackFromStage = e.fallback;
+            }
             // SpecStageEvent 的几种事件与 GenerateEvent 结构一致，直接透传
             yield e as GenerateEvent;
           }
@@ -297,7 +326,7 @@ export async function GET(
             唯独「你到底想要什么」模型没法自己判断，只能猜 ——
             而猜错的代价要到最后一步才暴露，那时钱已经花完了。
           */
-          const decision = await readGateDecision(runId);
+          const decision = await readGateDecision(runId, specFallbackFromStage);
 
           /*
             ---------- 这一步该不该有人点头，由权限模型说了算 ----------

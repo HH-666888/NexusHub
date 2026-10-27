@@ -52,6 +52,8 @@ export interface GateDecision {
   pending: string[];
   /** 停下来的原因，直接显示给用户 */
   reason: string;
+  /** 这次规格是不是兜底来的。门禁本身不拦（没有可回答的问题），但调用方必须能看见 */
+  fallback: boolean;
 }
 
 /**
@@ -61,13 +63,30 @@ export interface GateDecision {
  *   · 有疑问、没答案  → 停
  *   · 有疑问、答案不完整 → 仍然停，但只列没答的那几条
  *   · 完全没疑问      → 不停，直接往下走
+ *
+ * ── 为什么还要一个 fallback ──
+ *   兜底规格（模型输出解析不出来）的 questions 是空的，
+ *   于是上面第三条会放行、reason 还写着"规格没有疑问，可以直接继续"。
+ *   这是实话，但**不完整**：那份规格根本不是模型给出来的。
+ *   真实运行里就发生过这一幕 —— 降级了却没人拦，一路跑到成品。
+ *   这里不把 pause 改成 true（那需要一个"知悉并继续"的新交互），
+ *   只要求"兜底"这件事必须出现在 reason 里、并且能被调用方读到。
  */
 export function decideGate(
   spec: AppSpec,
   answers: SpecAnswers | null,
+  /** 规格是不是兜底来的。不传 = false（保持向后兼容） */
+  fallback = false,
 ): GateDecision {
   if (spec.questions.length === 0) {
-    return { pause: false, pending: [], reason: "规格没有疑问，可以直接继续" };
+    return {
+      pause: false,
+      pending: [],
+      reason: fallback
+        ? "规格是兜底生成的（模型输出没能解析成功）—— 没有可回答的疑问，直接继续，但下游都建立在这份兜底规格上"
+        : "规格没有疑问，可以直接继续",
+      fallback,
+    };
   }
 
   const answered = new Set(
@@ -82,17 +101,25 @@ export function decideGate(
     return {
       pause: false,
       pending: [],
-      reason: `${spec.questions.length} 个疑问都已回答，继续往下走`,
+      reason: fallback
+        ? `规格是兜底生成的。${spec.questions.length} 个疑问都已回答，继续往下走`
+        : `${spec.questions.length} 个疑问都已回答，继续往下走`,
+      fallback,
     };
   }
 
   return {
     pause: true,
     pending,
-    reason:
-      pending.length === spec.questions.length
+    reason: fallback
+      ? "规格是兜底生成的。" +
+        (pending.length === spec.questions.length
+          ? `规格里有 ${pending.length} 个疑问需要你确认后才能继续`
+          : `还有 ${pending.length} 个疑问没回答`)
+      : pending.length === spec.questions.length
         ? `规格里有 ${pending.length} 个疑问需要你确认后才能继续`
         : `还有 ${pending.length} 个疑问没回答`,
+    fallback,
   };
 }
 
