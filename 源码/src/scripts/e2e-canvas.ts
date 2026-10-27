@@ -19,7 +19,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
+import type { GeneratePhase } from "@/core/generate/service";
 import { PLANNING_ROOT_ID } from "@/core/planning/from-run";
+import { fsArtifactStore } from "@/adapters/store/artifact-repo";
 import { fitFloor } from "@/core/canvas/viewport";
 import { expect_, finish, heading, info, ok, signUp } from "./e2e-kit";
 
@@ -279,6 +281,127 @@ function seedRunningRun(username: string): string {
     db.close();
   }
 }
+
+/* ============================================================
+   步骤块（第二十二步）用的夹具
+   ------------------------------------------------------------
+   这一步要验三件事：
+     一、右侧面板的两个页签切的是**两种不同的事件**（思考 / 正文）
+     二、下方「生成过程」按真实 phase 分块，而且**旧的留在上方不销毁**
+     三、没有思考时页面**明说没有**，不许留白、也不许拿正文顶上
+
+   ⚠️ 造出来的必须是"真的可能出现"的形状：
+      下面每一条事件都是 generate/service.ts、spec-stage.ts 真正会 yield
+      的那几种，payload 逐字段一致（usage 的六个字段、check 的
+      results/summary 都照真实结构写）。
+      造一个现实里不可能出现的形状，底下那些断言就失去意义了。
+   ============================================================ */
+
+/** 真实事件里那七项检查（与 seedVerifyRun 同一份，一项故意不过） */
+const STEP_CHECKS = [
+  { name: "完整 HTML 结构", pass: true, detail: "产物含 html/head/body 三段完整结构" },
+  { name: "内联样式", pass: true, detail: "样式全部内联，没有外部样式表引用" },
+  { name: "内联脚本", pass: true, detail: "脚本全部内联，没有外部 js 引用" },
+  { name: "完全自包含（无外部引用）", pass: true, detail: "没有任何指向外部域名的引用" },
+  { name: "有事件处理", pass: false, detail: "没有找到 addEventListener 或 on* 属性" },
+  { name: "数据能持久化", pass: true, detail: "用到了 localStorage 存取" },
+  { name: "中文界面", pass: true, detail: "界面文案是中文" },
+];
+
+const stepPhase = (phase: GeneratePhase, label: string) => ({ kind: "phase", phase, label });
+const stepText = (delta: string) => ({ kind: "text", delta });
+const stepReasoning = (delta: string) => ({ kind: "reasoning", delta });
+const stepUsage = (
+  costCny: number,
+  inputTokens: number,
+  outputTokens: number,
+  reasoningTokens: number,
+) => ({
+  kind: "usage",
+  usage: { inputTokens, outputTokens, reasoningTokens, cacheHitTokens: 0, cacheMissTokens: 0 },
+  costCny,
+  priceTier: "offPeak" as const,
+  model: "e2e-fixture-model",
+  latencyMs: 1234,
+  truncated: false,
+});
+const stepCheck = () => ({
+  kind: "check",
+  results: STEP_CHECKS,
+  summary: {
+    total: STEP_CHECKS.length,
+    passed: STEP_CHECKS.filter((r) => r.pass).length,
+    failed: STEP_CHECKS.filter((r) => !r.pass).length,
+    failures: STEP_CHECKS.filter((r) => !r.pass),
+  },
+});
+
+/**
+ * 造一条按 seq 顺序写死事件的运行。返回运行 id。
+ *
+ * 每一条事件都真的出现过（见上面那段），只是把它们压缩到一条运行里 ——
+ * 真跑一次要调模型、花钱、几十秒，而这一步验的是**展示**，不是生成。
+ */
+function seedStepRun(
+  username: string,
+  tag: string,
+  status: "running" | "done",
+  rows: Array<[string, unknown]>,
+): string {
+  const db = new Database("./data/nexus.db");
+  try {
+    const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
+      | { id: number }
+      | undefined;
+    if (!user) throw new Error(`找不到测试账号 ${username}`);
+
+    const runId = `e2e-step-${tag}-${Date.now().toString(36)}`;
+    const now = Date.now();
+
+    db.prepare(
+      `INSERT INTO runs (id, user_id, prompt, stage, status, workflow_version, created_at, updated_at)
+       VALUES (?, ?, ?, 'build', ?, 'e2e-fixture', ?, ?)`,
+    ).run(runId, user.id, `端到端夹具：按步骤分块（${tag}）`, status, now, now);
+
+    const ins = db.prepare(
+      `INSERT INTO run_events (run_id, seq, at, kind, payload) VALUES (?, ?, ?, ?, ?)`,
+    );
+    rows.forEach(([kind, payload], seq) => {
+      ins.run(runId, seq, now + seq, kind, JSON.stringify(payload));
+    });
+
+    return runId;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * 往同一条运行后面**追加**事件 —— 用来造一次"新块长出来"。
+ *
+ * ── 为什么追加而不是重造一条运行 ──
+ *   这一步要验的是"**旧的块不销毁**、新的追加在下面"。
+ *   换一条运行会把 key={selectedRun.id} 的 RunWorkbench 整个重挂，
+ *   那验到的是另一件事（换运行本来就该重来）。
+ *   同一条运行、同一页、只多两条事件 —— 旧块必须在原地不动。
+ */
+function appendStepEvents(runId: string, startSeq: number, rows: Array<[string, unknown]>): void {
+  const db = new Database("./data/nexus.db");
+  try {
+    const now = Date.now();
+    const ins = db.prepare(
+      `INSERT INTO run_events (run_id, seq, at, kind, payload) VALUES (?, ?, ?, ?, ?)`,
+    );
+    rows.forEach(([kind, payload], i) => {
+      ins.run(runId, startSeq + i, now + i, kind, JSON.stringify(payload));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** 只有正文、**一条 reasoning 都没有**的那种运行（第五类检查要的正是它） */
+const TEXT_ONLY_BODY = "这是模型写出来的正文，事件流里没有任何思考片段。";
 
 const BASE = process.env.NEXUS_BASE ?? "http://localhost:3000";
 const EDGE = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
@@ -1743,13 +1866,23 @@ async function main() {
     );
     expect_(
       quadEmpty.contentPlaceholder,
-      "右侧是明确的占位块（[data-step-content-placeholder]）",
-      "右侧没有占位块 —— 分不清是没数据还是没接",
+      "右侧是明确的空态块（[data-step-content-placeholder]）",
+      "右侧没有空态块 —— 分不清是没数据还是没接",
     );
+    /*
+      ⚠️ 这一条**必须改**（这一期唯一改动的现有断言之一）。
+        原来是「尚未接入」四个字 —— 那时右侧面板确实还没接数据。
+        这一期它接上了真实事件（思考 / 结果两个页签），
+        再写「尚未接入」就是一句**假话**，而这句话恰恰是最容易被当真的那种。
+        空态换成「这次运行还没有产生任何过程事件」：说的仍然是实话
+        （这个账号一条运行都没有），而且它指向的是**数据**，不是"功能没做"。
+        原来"分不清是没数据还是没接"那个担心，现在由下面这一步（第二十二步）
+        的正面断言承担：真接了数据之后，页面上必须真能看到那一步的思考与正文。
+    */
     expect_(
-      quadEmpty.contentText.includes("尚未接入"),
-      "右侧写着「尚未接入」",
-      "右侧没有「尚未接入」四个字 —— 那一栏会看起来像已经接好了",
+      quadEmpty.contentText.includes("这次运行还没有产生任何过程事件"),
+      "右侧说的是实话：「这次运行还没有产生任何过程事件」",
+      `右侧没有这句空态文案 —— 读到的是「${quadEmpty.contentText.slice(0, 40)}」`,
     );
     /*
       1440 屏 ≥ 1280 断点：两侧常驻，那两个窄屏按钮**不该出现**。
@@ -3674,12 +3807,616 @@ async function main() {
     cleanupVerifyRun(outlineRun.runId);
     info("夹具已清理");
 
+    /* ---------- 22. 右侧面板接真实事件 + 生成过程按步骤分块 ---------- */
+    /*
+      这一步验的是这一期新接上的那块面板和下方那一栏的**分块**。
+
+      ── 为什么三件事缺一不可 ──
+        一、两个页签必须切**两种不同的事件**：
+            「思考」是 reasoning 的 delta，「结果」是 text 的 delta + 检查 + 花费。
+            它们来自事件流里两种不同的 kind。切错了（比如两边都显示正文）
+            在画面上看不出来 —— 得两条都读一次、互相对照才知道。
+        二、★ 旧的块不许被销毁 ★：
+            这是"痕迹保留"唯一的验收标准。它的坏法很安静 ——
+            新块一来整列重建，画面"看起来正常"，只是用户正在读的那一段没了、
+            往上滚也回不到过去。所以要断言到 **DOM 节点本身**，
+            而不是"页面上还有两个字"。
+        三、★ 没有思考就必须明说没有 ★：
+            留白会被读成"还没加载"；拿正文顶上则是**编造**——
+            用户正是拿"思考"去判断这个产品靠不靠谱的。
+            所以这里用一条"只有正文、没有思考"的运行，
+            同时验两件事：写了"没有"、而且**没有**把正文搬过来。
+
+      ── 为什么夹具能直接插库 ──
+        真跑一次要调模型、花钱、几十秒 —— 而这一步验的是**展示**，不是生成。
+        插进去的事件逐字段照真实事件写（见 seedStepRun 上面那段），
+        用完就删。
+    */
+    heading("第二十二步 · 右侧面板（思考 / 结果）与按步骤分块的过程流");
+
+    /** 一次读全：过程流的块 + 右侧面板的两个页签与内容 */
+    const READ_STEPS = `(() => {
+      const q = (s) => [...document.querySelectorAll(s)];
+      const text = (el) => (el ? el.textContent.trim() : '');
+      const blocks = q('[data-process-block]');
+      const container = document.querySelector('[data-process-blocks]');
+      const body = document.querySelector('[data-step-body]');
+      const tabs = q('[data-step-tab]');
+      const active = document.querySelector('[data-step-tab-active]');
+      return JSON.stringify({
+        blockIds: blocks.map((b) => b.getAttribute('data-process-block')),
+        blockTitles: blocks.map((b) => text(b.querySelector('[data-process-block-title]'))),
+        blockTones: blocks.map((b) => b.getAttribute('data-process-tone')),
+        // 屏幕纵向位置：用来证明"新的长在旧的下面"，而不是只看数组顺序
+        blockTops: blocks.map((b) => Math.round(b.getBoundingClientRect().top)),
+        borderTops: blocks.map((b) => getComputedStyle(b).borderTopWidth),
+        currentIds: blocks
+          .filter((b) => b.hasAttribute('data-process-block-current'))
+          .map((b) => b.getAttribute('data-process-block')),
+        lastChildIsBlock: container
+          ? !!container.lastElementChild && container.lastElementChild.hasAttribute('data-process-block')
+          : null,
+        emptyLine: text(document.querySelector('[data-process-blocks-empty]')),
+        tabs: tabs.map((t) => ({
+          key: t.getAttribute('data-step-tab'),
+          label: t.textContent.trim(),
+          active: t.hasAttribute('data-step-tab-active'),
+        })),
+        activeTab: active ? active.getAttribute('data-step-tab') : null,
+        panelTitle: text(document.querySelector('[data-step-title]')),
+        position: text(document.querySelector('[data-step-position]')),
+        bodyText: body ? body.textContent : null,
+        reasoningEmpty: !!document.querySelector('[data-step-reasoning-empty]'),
+        textShown: !!document.querySelector('[data-step-text]'),
+        checks: q('[data-step-check]').map((el) => ({
+          name: el.getAttribute('data-step-check'),
+          pass: el.getAttribute('data-step-check-pass'),
+          color: getComputedStyle(el).color,
+        })),
+        usage: (() => {
+          const el = document.querySelector('[data-step-usage]');
+          return el
+            ? {
+                cost: el.getAttribute('data-step-usage-cost'),
+                input: el.getAttribute('data-step-usage-input'),
+                output: el.getAttribute('data-step-usage-output'),
+                reasoning: el.getAttribute('data-step-usage-reasoning'),
+                text: el.textContent,
+              }
+            : null;
+        })(),
+      });
+    })()`;
+
+    interface StepsSnap {
+      blockIds: (string | null)[];
+      blockTitles: string[];
+      blockTones: (string | null)[];
+      blockTops: number[];
+      borderTops: string[];
+      currentIds: (string | null)[];
+      lastChildIsBlock: boolean | null;
+      emptyLine: string;
+      tabs: { key: string | null; label: string; active: boolean }[];
+      activeTab: string | null;
+      panelTitle: string;
+      position: string;
+      bodyText: string | null;
+      reasoningEmpty: boolean;
+      textShown: boolean;
+      checks: { name: string | null; pass: string | null; color: string }[];
+      usage: {
+        cost: string | null;
+        input: string | null;
+        output: string | null;
+        reasoning: string | null;
+        text: string;
+      } | null;
+    }
+
+    const readSteps = async (): Promise<StepsSnap> => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: READ_STEPS,
+        returnByValue: true,
+      });
+      return JSON.parse(r.result!.value!) as StepsSnap;
+    };
+
+    /** 点一个页签。用真鼠标点（走命中测试），不用 el.click() */
+    const clickTab = async (key: "reasoning" | "result") => {
+      const hit = await clickCenter(`[data-step-tab="${key}"]`);
+      await sleep(350);
+      return hit;
+    };
+
+    /* ---- 22.1 一条「正在生成」的运行：两块，当前块是正在生成 ---- */
+    /*
+      事件顺序就是 generate/service.ts 真正会吐出来的那个顺序：
+        规格化的 phase → 它的思考 → 它那笔账 → 生成的 phase →
+        生成中的思考与正文（分成几段 delta）→ 生成那笔账。
+      ⚠️ 正文故意写成**多段 delta**：拼接顺序错了的话，
+         "第一行"会跑到后面去，这条断言就会红。
+    */
+    const stepsRun = seedStepRun(username, "gen", "running", [
+      ["phase", stepPhase("spec", "正在把你的需求整理成规格")],
+      ["reasoning", stepReasoning("先把这句话读成需求")],
+      ["usage", stepUsage(0.0012, 800, 120, 60)],
+      ["phase", stepPhase("generating", "正在生成")],
+      ["reasoning", stepReasoning("先想清楚结构")],
+      ["reasoning", stepReasoning("，再动手写")],
+      ["text", stepText("第一行正文\n")],
+      ["text", stepText("第二行正文\n第三行正文\n第四行正文\n第五行正文")],
+      ["usage", stepUsage(0.0345, 1200, 3000, 0)],
+    ]);
+    info(`造了一条运行 ${stepsRun.slice(0, 8)}（2 条 phase、2 段思考、5 行正文、2 次记账）`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${stepsRun}` });
+    await sleep(4200);
+
+    const steps = await readSteps();
+    info(
+      `过程流 ${steps.blockIds.length} 块：` +
+        steps.blockTitles.map((t, i) => `[${i + 1}]${t}`).join(" · "),
+    );
+    info(
+      `右侧面板：页签 ${steps.tabs.map((t) => `${t.label}${t.active ? "(选中)" : ""}`).join(" / ")} · ` +
+        `标题「${steps.panelTitle}」· ${steps.position}`,
+    );
+
+    expect_(
+      steps.tabs.length === 2 &&
+        steps.tabs.map((t) => t.label).join(",") === "思考,结果" &&
+        steps.tabs.filter((t) => t.active).length === 1 &&
+        steps.activeTab === "reasoning",
+      "右侧面板有两个页签（思考 / 结果），打开时默认选中「思考」，且只有一个选中态",
+      `页签不对：${JSON.stringify(steps.tabs)}（选中 ${steps.activeTab}）`,
+    );
+    expect_(
+      steps.panelTitle === "正在生成" && steps.position === "第 2 步 / 共 2 步",
+      `面板标题是当前块（最后一条 phase）「${steps.panelTitle}」，位置写着「${steps.position}」`,
+      `面板显示的是「${steps.panelTitle}」/「${steps.position}」—— 期望「正在生成」/「第 2 步 / 共 2 步」`,
+    );
+    /*
+      ★ 思考页签里必须是**真思考**，而且不能混进正文 ★
+      两条一起断言：少了后半句，"两边都显示正文"这种错就验不出来。
+    */
+    expect_(
+      (steps.bodyText ?? "").includes("先想清楚结构，再动手写") &&
+        !(steps.bodyText ?? "").includes("第一行正文"),
+      "「思考」页签显示的是真实 reasoning（两段 delta 按序拼起来），且没有混进正文",
+      `思考页签里读到的是：「${(steps.bodyText ?? "").slice(0, 80)}」`,
+    );
+    expect_(
+      steps.blockIds.length === 2,
+      "过程流按两条真实 phase 切成 2 块（没有凭空造步骤）",
+      `切出来 ${steps.blockIds.length} 块：${steps.blockIds.join(",")}`,
+    );
+    expect_(
+      steps.borderTops[0] === "0px" && steps.borderTops.slice(1).every((w) => w !== "0px"),
+      `块之间有分隔线（第 1 块 ${steps.borderTops[0]}、第 2 块 ${steps.borderTops[1]}）`,
+      `分隔线不对：${JSON.stringify(steps.borderTops)} —— 期望第一块 0px、其余非 0`,
+    );
+    expect_(
+      steps.currentIds.length === 1 &&
+        steps.currentIds[0] === steps.blockIds[steps.blockIds.length - 1],
+      "「当前块」就是最后一块 —— 和右侧面板显示的是同一块（同一个口径）",
+      `当前块是 ${JSON.stringify(steps.currentIds)}，最后一块是 ${steps.blockIds[steps.blockIds.length - 1]}`,
+    );
+
+    /* ---- 22.2 点「结果」：内容必须真的换掉 ---- */
+    const thoughtBody = steps.bodyText ?? "";
+    const resultHit = await clickTab("result");
+    info(
+      resultHit.ok
+        ? `点了「结果」页签（页面坐标 ${resultHit.x}, ${resultHit.y}）`
+        : "找不到「结果」页签 —— 下面这一组会红",
+    );
+    const result = await readSteps();
+    const resultBody = result.bodyText ?? "";
+
+    expect_(
+      result.activeTab === "result" && result.tabs.filter((t) => t.active).length === 1,
+      "点「结果」之后选中态真的搬过去了（两个页签仍然只有一个选中）",
+      `选中态不对：activeTab=${result.activeTab}，选中数=${result.tabs.filter((t) => t.active).length}`,
+    );
+    expect_(
+      resultBody !== thoughtBody &&
+        resultBody.includes("第二行正文") &&
+        result.textShown &&
+        !resultBody.includes("先想清楚结构"),
+      "★ 点「结果」内容真的换了：思考那一段不见了，换成了正文（含「第二行正文…」）",
+      `内容没换：思考页签「${thoughtBody.slice(0, 40)}」/ 结果页签「${resultBody.slice(0, 40)}」`,
+    );
+    /*
+      ★ 花费与 token 只能来自真实 usage 事件 ★
+      这里同时验"是不是这一块那一条"：
+        规格化那一块记的是 ¥0.0012 / 输入 800，
+        这一块记的是 ¥0.0345 / 输入 1200。
+        显示成 0.0357（两块相加）或者 0.0012（张冠李戴）都会红 ——
+        而"面板上有个看着合理的金额"这件事本身，是分辨不出这两种错的。
+    */
+    expect_(
+      result.usage !== null &&
+        result.usage.cost === "0.0345" &&
+        result.usage.input === "1200" &&
+        result.usage.output === "3000" &&
+        result.usage.reasoning === "0" &&
+        result.usage.text.includes("¥0.0345"),
+      "花费与 token 原样来自这一块的真实 usage 事件：¥0.0345 · 输入 1200 · 输出 3000 · 其中思考 0",
+      `用量明细不对：${JSON.stringify(result.usage)} —— 期望原样显示 0.0345 / 1200 / 3000 / 0（不估算、不累加别块）`,
+    );
+
+    /* ---- 22.3 ★ 痕迹保留：同一条运行多出一步，旧块必须在原地不动 ---- */
+    /*
+      ★ 这是这一步最要紧的一条 ★
+      "旧的推上去但不销毁"如果只是句口号，坏起来的样子是：
+      新块一来整列重建 —— 画面看着还挺正常，只是用户正在读的那一段没了、
+      滚动位置回到顶部、往上滚也回不到过去。
+      所以这里造一次**真实的追加**：
+        改库（多一条 phase + 一条 check）+ 让页面重新渲染
+        （点这条运行的 chip：一次客户端导航，组件不重新挂载，位置和状态都还在）。
+      然后问三件事：
+        · 旧的块还在不在？—— 而且是不是**同一个 DOM 节点**（没被销毁重建）
+        · 新的块在不在下面？—— 屏幕纵坐标必须比旧的大
+        · 最后一块之下还有没有别的块？
+    */
+    const firstIdBefore = steps.blockIds[0];
+    const firstTitleBefore = steps.blockTitles[0];
+    await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const el = document.querySelector('[data-process-block="${firstIdBefore}"]');
+        window.__firstBlockNode = el;
+        const digest = el ? el.querySelector('[data-process-block-digest]') : null;
+        window.__firstBlockDigest = digest ? digest.textContent : '';
+        return !!el;
+      })()`,
+      returnByValue: true,
+    });
+
+    appendStepEvents(stepsRun, 9, [
+      ["phase", stepPhase("checking", "正在检查产物")],
+      ["check", stepCheck()],
+    ]);
+    info("往同一条运行追加了第 3 步（phase:checking + 一次 check），再点运行 chip 触发服务端重新渲染");
+
+    await cdp.send("Runtime.evaluate", {
+      expression: `document.querySelector('[data-run-chip="${stepsRun}"] a').click()`,
+    });
+    await sleep(3800);
+
+    const kept = await readSteps();
+    const nodeProbe = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const el = document.querySelector('[data-process-block="${firstIdBefore}"]');
+        const digest = el ? el.querySelector('[data-process-block-digest]') : null;
+        return JSON.stringify({
+          stillSameNode: window.__firstBlockNode === el,
+          stillConnected: !!(window.__firstBlockNode && window.__firstBlockNode.isConnected),
+          digestUnchanged: (digest ? digest.textContent : '') === window.__firstBlockDigest,
+        });
+      })()`,
+      returnByValue: true,
+    });
+    const probe = JSON.parse(nodeProbe.result!.value!) as {
+      stillSameNode: boolean;
+      stillConnected: boolean;
+      digestUnchanged: boolean;
+    };
+    info(
+      `追加之后 ${kept.blockIds.length} 块：` +
+        kept.blockTitles.map((t, i) => `[${i + 1}]${t}`).join(" · ") +
+        ` · 屏幕纵坐标 ${kept.blockTops.join(",")}`,
+    );
+    info(
+      `第 1 块（${firstIdBefore}）：同一个 DOM 节点=${probe.stillSameNode} · ` +
+        `仍挂在文档里=${probe.stillConnected} · 内容一字未变=${probe.digestUnchanged}`,
+    );
+
+    expect_(
+      kept.blockIds.length === 3 &&
+        kept.blockIds.slice(0, 2).join(",") === steps.blockIds.join(","),
+      `★ 新块追加在下面，旧的块一个不少、顺序不变（${steps.blockIds.join(",")} → ${kept.blockIds.join(",")}）`,
+      `块列表不对：${kept.blockIds.join(",")} —— 期望前两块仍是 ${steps.blockIds.join(",")}，末尾多一块`,
+    );
+    expect_(
+      kept.blockIds[0] === firstIdBefore &&
+        kept.blockTitles[0] === firstTitleBefore &&
+        probe.digestUnchanged,
+      `★ 第 1 个块仍在 DOM 里，标题和内容一字未变（${firstIdBefore} /「${firstTitleBefore}」）`,
+      `第 1 个块变了或被顶掉了：id=${kept.blockIds[0]} 标题=${kept.blockTitles[0]} 内容未变=${probe.digestUnchanged}`,
+    );
+    expect_(
+      probe.stillSameNode && probe.stillConnected,
+      "★ 第 1 个块是**同一个 DOM 节点**（没被销毁重建）—— 这正是「旧的留在上方」的硬证据",
+      `第 1 个块换了节点（同一个=${probe.stillSameNode} 还在文档里=${probe.stillConnected}）：` +
+        `新块一来整列被重建了，"往上滚还能看到历史"就不成立`,
+    );
+    expect_(
+      kept.blockTops.length === 3 &&
+        kept.blockTops[1] > kept.blockTops[0] &&
+        kept.blockTops[2] > kept.blockTops[1] &&
+        kept.lastChildIsBlock === true &&
+        kept.currentIds.join(",") === kept.blockIds[kept.blockIds.length - 1],
+      `★ 新块长在最下面（纵坐标 ${kept.blockTops.join(" < ")}），最后一块之下没有别的块，且它就是当前块`,
+      `纵向顺序不对：${kept.blockTops.join(",")}；最后一个是块=${kept.lastChildIsBlock}；` +
+        `当前块=${kept.currentIds.join(",")}（最后一块是 ${kept.blockIds[kept.blockIds.length - 1]}）`,
+    );
+
+    /*
+      顺带验：面板**跟着走到了新那一步**，而且把这一块的检查列了出来。
+      检查清单的颜色也一起量 —— 绿/红必须真的是两个不同的值。
+    */
+    const checked = await readSteps();
+    info(
+      `右侧面板现在停在「${checked.panelTitle}」${checked.position} · ` +
+        `检查项 ${checked.checks.length} 条（通过 ${checked.checks.filter((c) => c.pass === "1").length}）`,
+    );
+    expect_(
+      checked.panelTitle === "正在检查产物" && checked.position === "第 3 步 / 共 3 步",
+      `面板跟着走到第 3 步「${checked.panelTitle}」（${checked.position}）`,
+      `面板没跟着走：${checked.panelTitle} / ${checked.position}`,
+    );
+    expect_(
+      checked.checks.length === STEP_CHECKS.length &&
+        checked.checks.filter((c) => c.pass === "1").length === 6,
+      `「结果」页签列出了这一块的 ${STEP_CHECKS.length} 项检查（6 通过 / 1 未过）`,
+      `检查清单不对：${checked.checks.length} 条，通过 ${checked.checks.filter((c) => c.pass === "1").length} 条`,
+    );
+    const passColors = [...new Set(checked.checks.filter((c) => c.pass === "1").map((c) => c.color))];
+    const failColors = [...new Set(checked.checks.filter((c) => c.pass !== "1").map((c) => c.color))];
+    expect_(
+      passColors.length === 1 &&
+        passColors[0] === "rgb(74, 222, 128)" &&
+        failColors.length === 1 &&
+        failColors[0] === "rgb(248, 113, 113)",
+      `通过的是绿 ${passColors[0]}、未过的是红 ${failColors[0]}（两种都真的出现在页面上）`,
+      `检查项颜色不对：通过 ${JSON.stringify(passColors)}、未过 ${JSON.stringify(failColors)}`,
+    );
+
+    /* ---- 22.4 ★ 没有思考就明说没有，而且不拿正文顶上 ---- */
+    /*
+      这条运行**一条 reasoning 都没有**（只有正文）—— 这正是最常见的真实情况：
+      很多步骤就是不返回思考（思考关掉更快也更完整）。
+      两件事一起验：
+        · 明说「这一步没有返回思考内容」（留白会被读成"还没加载"）
+        · 而且**没有**把正文搬进「思考」页签（那是编造）
+      正文本身不能丢：切到「结果」必须看得到它。
+    */
+    const textOnlyRun = seedStepRun(username, "text", "running", [
+      ["phase", stepPhase("spec", "正在把你的需求整理成规格")],
+      ["phase", stepPhase("generating", "正在生成")],
+      ["text", stepText(TEXT_ONLY_BODY)],
+    ]);
+    info(`造了一条运行 ${textOnlyRun.slice(0, 8)}（只有正文、一条 reasoning 都没有）`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${textOnlyRun}` });
+    await sleep(4200);
+
+    const emptyThink = await readSteps();
+    info(
+      `思考页签：明说没有=${emptyThink.reasoningEmpty} · ` +
+        `读到的第一句「${(emptyThink.bodyText ?? "").trim().slice(0, 30)}」`,
+    );
+
+    expect_(
+      emptyThink.reasoningEmpty &&
+        (emptyThink.bodyText ?? "").includes("没有返回思考内容"),
+      "★ 这一步没有 reasoning 片段时，面板**明说**：「这一步没有返回思考内容」（不是留白）",
+      `没有明说：标记=${emptyThink.reasoningEmpty}，读到的是「${(emptyThink.bodyText ?? "").slice(0, 60)}」`,
+    );
+    expect_(
+      !(emptyThink.bodyText ?? "").includes(TEXT_ONLY_BODY),
+      "★ 而且没有拿正文冒充思考（那段正文不在「思考」页签里）",
+      "「思考」页签里出现了正文内容 —— 那是把生成结果说成模型的思考过程",
+    );
+
+    const onlyResultHit = await clickTab("result");
+    const onlyResult = await readSteps();
+    expect_(
+      onlyResultHit.ok &&
+        (onlyResult.bodyText ?? "").includes(TEXT_ONLY_BODY) &&
+        onlyResult.textShown,
+      "切到「结果」就能看到那段真正文（正文没丢，只是不在「思考」那一页）",
+      `结果页签里没有正文：${(onlyResult.bodyText ?? "").slice(0, 60)}`,
+    );
+
+    cleanupVerifyRun(stepsRun);
+    cleanupVerifyRun(textOnlyRun);
+
+    /* ---- 22.5 ★ 实时流没被弄坏：点一次「开始生成」，块真的在流里长出来 ---- */
+    /*
+      ★ 这一条守的是"现有实时流式行为一个字没动" ★
+      上面 22.1–22.4 验的都是**落库之后**切出来的块（服务端算好传下来的）。
+      而这一栏最要紧的能力是**实时**：事件一边来，块一边往下长。
+      改坏它的方式非常安静：SSE 照样连着、正文照样在流，
+      只是块列表不动 —— 看起来"只是慢一点"，实际是这一栏退回了改造前的样子。
+
+      ── 怎么在不花一分钱的前提下造一条真实的 SSE ──
+        这条运行**已经有成品**。generate 接口对这种情况有一条幂等分支：
+        直接回放「已有成品，直接回放（本次未产生费用）」+ artifact 两条事件，
+        **一次模型调用都不发**（见 api/runs/[id]/generate/route.ts 开头那段）。
+        所以这是**真实的流**：真 EventSource、真 SSE 帧、真事件 —— 只是不产生费用。
+        （这条运行只有一条 phase 事件，回放分支不会动它，事件日志保持不变。）
+
+      ── 为什么用 MutationObserver，而不是"点完等一会儿读 DOM" ──
+        这条流很短：两条事件发完就结束，客户端随即刷新服务端数据，
+        实时块在 DOM 里只存在几百毫秒。靠 sleep 之后去读，读到的多半是
+        **刷新之后**的样子 —— 那条断言就变成"永远绿"（什么都没验到）。
+        所以让页面自己盯着 DOM：只要出现过实时块（id 以 step-1000000 开头，
+        那是实时事件专用的号段，见 generation-console.tsx），就记下来；
+        顺带记下那一刻块的总数最大值 —— 它证明新块是**追加**上去的，
+        而不是把旧的换掉。
+    */
+    const liveRun = seedStepRun(username, "live", "running", [
+      ["phase", stepPhase("generating", "正在生成")],
+    ]);
+    await fsArtifactStore.save({
+      runId: liveRun,
+      kind: "html",
+      path: `${liveRun}/index.html`,
+      content:
+        '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>端到端夹具</title></head><body><h1>夹具</h1></body></html>',
+    });
+    info(`造了一条"已有成品"的运行 ${liveRun.slice(0, 8)}（点生成走幂等回放：不调模型、不花钱）`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${liveRun}` });
+    await sleep(4200);
+
+    // 有成品时工作台默认停在「成品」那一页，先切回「生成过程」
+    await cdp.send("Runtime.evaluate", {
+      expression: `[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '生成过程').click()`,
+    });
+    await sleep(700);
+
+    const liveBefore = await readSteps();
+    info(`点之前过程流里 ${liveBefore.blockIds.length} 块：${liveBefore.blockIds.join(",")}`);
+
+    await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        window.__liveSeen = [];
+        window.__liveTitles = [];
+        window.__liveMax = 0;
+        window.__liveFirstNode = document.querySelector('[data-process-block]');
+        const scan = () => {
+          const all = document.querySelectorAll('[data-process-block]');
+          if (all.length > window.__liveMax) window.__liveMax = all.length;
+          all.forEach((el) => {
+            const id = el.getAttribute('data-process-block') || '';
+            // step-1000000 是实时事件专用的号段（服务端那份从 step-0 开始）
+            if (id.indexOf('step-1000000') === 0 && window.__liveSeen.indexOf(id) < 0) {
+              window.__liveSeen.push(id);
+              const t = el.querySelector('[data-process-block-title]');
+              window.__liveTitles.push(t ? t.textContent.trim() : '');
+            }
+          });
+        };
+        window.__liveObserver = new MutationObserver(scan);
+        window.__liveObserver.observe(document.body, { childList: true, subtree: true });
+        scan();
+        return true;
+      })()`,
+      returnByValue: true,
+    });
+
+    /* 真点那个按钮（跑命中测试）。它没有 data-* 把手，所以按文字找、按坐标点 */
+    const genBox = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const b = [...document.querySelectorAll('button')].find((el) => /开始生成|重新生成/.test(el.textContent));
+        if (!b) return JSON.stringify({ missing: true });
+        const r = b.getBoundingClientRect();
+        return JSON.stringify({
+          x: Math.round(r.left + r.width / 2),
+          y: Math.round(r.top + r.height / 2),
+          label: b.textContent.trim(),
+        });
+      })()`,
+      returnByValue: true,
+    });
+    const genAt = JSON.parse(genBox.result!.value!) as {
+      missing?: true;
+      x: number;
+      y: number;
+      label: string;
+    };
+    if (genAt.missing) {
+      info("页面上找不到「开始生成 / 重新生成」按钮 —— 下面这一组会红");
+    } else {
+      info(`点了「${genAt.label}」（页面坐标 ${genAt.x}, ${genAt.y}）—— 走的是幂等回放分支，不会调模型`);
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: genAt.x,
+        y: genAt.y,
+        button: "left",
+        clickCount: 1,
+      });
+      await cdp.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: genAt.x,
+        y: genAt.y,
+        button: "left",
+        clickCount: 1,
+      });
+    }
+    await sleep(4000);
+
+    const liveProbeRaw = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        window.__liveObserver && window.__liveObserver.disconnect();
+        const first = document.querySelector('[data-process-block]');
+        return JSON.stringify({
+          seen: window.__liveSeen,
+          titles: window.__liveTitles,
+          maxBlocks: window.__liveMax,
+          firstNodePreserved:
+            !!window.__liveFirstNode && window.__liveFirstNode === first && first.isConnected,
+        });
+      })()`,
+      returnByValue: true,
+    });
+    const liveProbe = JSON.parse(liveProbeRaw.result!.value!) as {
+      seen: string[];
+      titles: string[];
+      maxBlocks: number;
+      firstNodePreserved: boolean;
+    };
+    const liveAfter = await readSteps();
+    info(
+      `流里出现过 ${liveProbe.seen.length} 个实时块（${liveProbe.seen.join(",") || "无"}）· ` +
+        `那一刻块数最多到 ${liveProbe.maxBlocks}（点之前是 ${liveBefore.blockIds.length}）· ` +
+        `流结束后 ${liveAfter.blockIds.length} 块：${liveAfter.blockIds.join(",")}`,
+    );
+
+    expect_(
+      !genAt.missing && liveProbe.seen.length > 0,
+      `★ 点下去之后块**实时**长出来了（DOM 里出现过 ${liveProbe.seen.length} 个实时块：${liveProbe.seen.join(",")}）`,
+      "整条流跑完了，DOM 里却从没出现过实时块（step-1000000 号段）—— " +
+        "SSE 可能还连着，但块列表没有跟着流走（实时行为被弄坏了）",
+    );
+    expect_(
+      liveProbe.titles.some((t) => t.includes("已有成品，直接回放")),
+      `★ 而且实时块的内容来自真实事件：「${liveProbe.titles[0] ?? ""}」`,
+      `实时块的标题不是流里那条 phase：${JSON.stringify(liveProbe.titles)}`,
+    );
+    expect_(
+      liveProbe.maxBlocks === liveBefore.blockIds.length + 1,
+      `★ 实时块是**追加**上去的（最多时 ${liveProbe.maxBlocks} 块 = 点之前 ${liveBefore.blockIds.length} + 1），旧块那一刻还在`,
+      `实时期间块数最多到 ${liveProbe.maxBlocks}，期望 ${liveBefore.blockIds.length + 1} —— ` +
+        `块可能被整列换掉了（那就不是"追加在下面"）`,
+    );
+    expect_(
+      liveProbe.firstNodePreserved,
+      "★ 实时那一段过去之后，原来那个块还是**同一个 DOM 节点**（实时追加没有重建整列）",
+      "实时流一来，原来的块就被销毁重建了 —— 那「旧的留在上方」在真实运行里不成立",
+    );
+    expect_(
+      liveAfter.blockIds.join(",") === liveBefore.blockIds.join(",") &&
+        liveAfter.blockIds.every((id) => !(id ?? "").startsWith("step-1000000")),
+      "流结束、服务端数据刷新回来之后，实时块退场、落库块接手（同一批事件不会显示两遍）",
+      `落定之后是 ${liveAfter.blockIds.join(",")}（期望 ${liveBefore.blockIds.join(",")}，且不含实时号段）`,
+    );
+
+    await fsArtifactStore.removeByRun(liveRun);
+    cleanupVerifyRun(liveRun);
+    info("夹具已清理");
+
     cdp.close();
     ok("画布交互、详情、面板、顶栏一致性、缩放让位、退役页面、子树与双击聚焦全部通过");
     ok("窄屏降级（<1280）：两侧收起为 0 宽、覆盖层 272/352 可开可关、画布全宽且滚轮仍能缩放 —— 全部通过");
     ok(
       "一级 Agent 根节点：三层树 1 根 + 6 工序 + 7 执行点、根在工序上方且有连线、" +
         "状态与颜色随真实投影变化（done/running 两种运行验过）—— 全部通过",
+    );
+    ok(
+      "右侧面板接真实事件：思考 / 结果两个页签切的是两种不同的事件、默认停在思考、" +
+        "没有思考就明说「没有返回思考内容」且不拿正文冒充、花费与 token 原样来自 usage 事件 —— 全部通过",
+    );
+    ok(
+      "生成过程按步骤分块：块数 = 真实 phase 数、块间有分隔线、追加新步骤时旧的块" +
+        "**仍是同一个 DOM 节点**（不销毁）、新块长在最下面 —— 全部通过",
+    );
+    ok(
+      "实时流没被弄坏：点一次「开始生成」（幂等回放分支，不花钱），块真的在流里**追加**长出来、" +
+        "旧块仍是同一个 DOM 节点、流结束后实时块退场由落库块接手 —— 全部通过",
     );
   } finally {
     browser.kill();

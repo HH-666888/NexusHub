@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
+import type { StepBlock } from "@/core/planning/step-blocks";
 import { GenerationConsole } from "./generation-console";
 
 /**
@@ -41,15 +42,28 @@ import { GenerationConsole } from "./generation-console";
  *   一次生成的 HTML 有二十多 KB。放进服务端渲染的 props 里，
  *   意味着每次进工作台都要把它序列化进页面 ——
  *   而多数时候用户只是来看看记录，不会点源码。
+ *
+ * ── 「生成过程」那一栏现在按步骤分块 ──
+ *   服务端按真实事件切好的块（StepBlock[]）从 props 进来，交给 GenerationConsole。
+ *   ⚠️ 这两个 props 是**可选**的，而且不传时行为与从前**一模一样**：
+ *      退役的 /studio 工作台就是这么用它的（那边没有把事件传下来）。
+ *      把它做成必填，等于让那个页面为了这次改动一起改 ——
+ *      而 tab 契约、`data-run-workbench` 的 open/closed 行为一个字都不许动。
  */
 export function RunWorkbench({
   runId,
   hasArtifact,
   artifactBytes,
+  blocks,
+  currentBlockId,
 }: {
   runId: string;
   hasArtifact: boolean;
   artifactBytes: number | null;
+  /** 已落库事件切出来的步骤块。不传 = 这个上下文没接事件通道 */
+  blocks?: StepBlock[];
+  /** 当前该显示哪一块（口径见 /canvas） */
+  currentBlockId?: string | null;
 }) {
   const router = useRouter();
   /**
@@ -184,7 +198,13 @@ export function RunWorkbench({
       {open && (
         <div className="min-h-0 flex-1">
           {tab === "generate" && (
-            <GenerationConsole runId={runId} hasArtifact={hasArtifact} onSettled={onSettled} />
+            <GenerationConsole
+              runId={runId}
+              hasArtifact={hasArtifact}
+              onSettled={onSettled}
+              blocks={blocks}
+              currentBlockId={currentBlockId ?? null}
+            />
           )}
 
           {tab === "artifact" &&

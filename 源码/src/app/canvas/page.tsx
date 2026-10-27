@@ -18,6 +18,7 @@ import { groupCostByStage, type CostByStage } from "@/core/domain/stage-cost";
 import { PLANNING_ROOT_ID, planningFromRun } from "@/core/planning/from-run";
 import { toOutline, type OutlineRow } from "@/core/planning/outline";
 import { maxSeq, projectAt } from "@/core/planning/planning-log";
+import { toStepBlocks, type StepBlock } from "@/core/planning/step-blocks";
 import { checksToChildren, type ChildrenByStage } from "@/core/pipeline/forest";
 import { STAGES, isStageId } from "@/core/pipeline/stages";
 import { getOwnedRun, listRuns } from "@/core/run/service";
@@ -42,8 +43,10 @@ import type { StageId } from "@/core/pipeline/stages";
  *         它是"看"的地方，可以平移缩放，双击聚焦。
  *
  *   右上：**这一步的内容** —— 本步的模型思考与产出。
- *         ⚠️ 这一期是**占位**，数据通道还没接（见 step-content.tsx）。
- *         位置先定死，是为了不让"接数据"和"调版面"同时发生。
+ *         这一期接上了真实事件：思考 / 结果两个页签，内容来自
+ *         落库的 RunEvent 切出来的步骤块（core/planning/step-blocks.ts）。
+ *         这一栏**只说事件里真有的东西**：没有思考就写"没有返回思考内容"，
+ *         没有 usage 事件就不显示花费（不是显示 0）。
  *
  *   下方：**生成过程 / 成品预览 / 源码** —— 它是"做"的地方。
  *         开始生成、看模型在写什么、看成品点得动点不动。
@@ -126,6 +129,37 @@ export default async function CanvasPage({
     而"清单和画布对不上"正是这一版最不该出现的事。
   */
   const events = selectedRun ? await sqliteEventStore.listByRun(selectedRun.id) : [];
+
+  /*
+    ---------- 步骤块：右侧面板与下方「生成过程」共用的**唯一一份**切分 ----------
+    `toStepBlocks` 是纯函数（core/planning/step-blocks.ts，带单测），零 IO：
+    分块边界只用真实存在的 phase 事件，不凭空造步骤。
+    在服务端算这一次，两个视图共用同一份结果 ——
+    和上面 events 只读一次是同一条理由：
+      分成两处各算一遍的话，右边面板和下面的过程流迟早会在某次刷新里对不上，
+      而"面板说的是第 3 步、过程流里第 3 步是另一段内容"这种不一致，
+      用户一眼就能看见，且没法解释。
+
+    ⚠️ 没有选中运行时是**空数组**，不是 null：
+       右面板据此说"这次运行还没有产生任何过程事件"——那是实话。
+  */
+  const blocks: StepBlock[] = toStepBlocks(events);
+
+  /*
+    ---------- 当前块：**最后一个块的 id** ----------
+    口径写在这里，免得两个视图各猜一套：
+
+      · 不按 running 工序取：事件流是按发生顺序落库的，最后一条 phase 就是
+        这次运行真实走到的那一步（phase 是编排层亲手发的，见 generate/service.ts）。
+        而"六道工序"（pipeline/stages.ts）是**计划**，和事件里的 phase 不在
+        同一个坐标系 —— 硬做一张对照表，表一旦漂开，右侧面板就会显示
+        "另一块"的内容，而界面看起来一切正常。
+      · 列表为空时是 null（面板于是走空态），不编一个"第 1 步"出来。
+      · 运行中的推进由客户端补：generation-console.tsx 把 SSE 收到的新事件
+        切块追加在下面，并把当前块指到最后一个实时块 —— 于是"生成到哪了"
+        在服务端刷新回来之前也是对的。
+  */
+  const currentBlockId = blocks.length > 0 ? blocks[blocks.length - 1].id : null;
 
   /*
     子树：取最后一次 kind:"check" 的结果。
@@ -295,15 +329,17 @@ export default async function CanvasPage({
             而画布上被挡住的那一块，用户是没有办法拖开的。
 
           ── 为什么容器先落位、内容后面再接 ──
-            这一期只做**版面**：谁占多宽、谁挨着谁、窄屏怎么办。
-            右侧那块内容的数据通道还没接（见 step-content.tsx 里那段），
-            但位置和尺寸现在就得定死 —— 等数据接好再调版面，
-            就是"数据和版面同时改"，出了问题分不清是谁的。
+            面板的**位置和尺寸**是上一期定死的（等数据接好再调版面，
+            就是"数据和版面同时改"，出了问题分不清是谁的）。
+            这一期把右侧那块的数据通道接上了：它现在显示的是真实事件
+            （见下面 blocks / currentBlockId）。
 
-          ── ⚠️ 两个现有组件的契约一个字没动 ──
-            CanvasWorkbench 的 props、RunWorkbench 的 tab 契约原样保留。
-            下面那段折叠工作台连 class 都没改。
-            四分布局是**在外面加容器**，不是改里面的东西 ——
+          ── 两个现有组件的契约：只加**可选** props ──
+            CanvasWorkbench 的 props 一个字没动。
+            RunWorkbench 多接了两个**可选**的 blocks / currentBlockId
+            （tab 契约、data-run-workbench 的 open/closed 行为原样保留）：
+            不传时它的行为与从前完全一致，退役的 /studio 工作台就是那样用它的。
+            四分布局仍然是**在外面加容器**，不是改里面的东西 ——
             改了里面，四条 e2e 里关于画布和标签页的断言就会一起变红，
             而它们验的是别的事（缩放、子树、详情），不该被这次改造牵连。
 
@@ -320,8 +356,11 @@ export default async function CanvasPage({
             左右两个 PanelDock 的说明在 components/planning/panel-dock.tsx：
             ≥1280 它们 display:contents（面板常驻成版面的一格），
             <1280 默认收起、点按钮展开成覆盖层。
-            面板本体（PlanningOutline / StepContent）是**服务端组件**，
-            作为 children 传进去，所以它们自己没有变成客户端组件。
+            面板本体（PlanningOutline / StepContent）作为 children 传进去，
+            于是它们的客户端/服务端身份由自己决定：
+            清单还是**服务端组件**（只读，算一次就够），
+            内容面板是**客户端组件**（两个页签要能点）——
+            它的 props 只有可序列化的纯数据，所以照样能在服务端算好传下去。
           */}
           <PanelDock side="left" label="清单">
             {/*
@@ -373,7 +412,13 @@ export default async function CanvasPage({
           </div>
 
           <PanelDock side="right" label="内容">
-            <StepContent />
+            {/*
+              右侧「这一步的内容」：**两个页签（思考 / 结果）**，
+              内容全部来自上面那份 blocks（= 真实事件切出来的块）。
+              currentBlockId 告诉它"现在该显示哪一步"。
+              它是客户端组件（页签要能点），props 只有可序列化的纯数据。
+            */}
+            <StepContent blocks={blocks} currentBlockId={currentBlockId} />
           </PanelDock>
         </div>
 
@@ -393,6 +438,14 @@ export default async function CanvasPage({
               runId={selectedRun.id}
               hasArtifact={artifact !== null}
               artifactBytes={artifact?.bytes ?? null}
+              /*
+                同一份 blocks 再传给下面那一栏（「生成过程」按它分块）。
+                ⚠️ 只传数据、不改它的 tab 契约与 open/closed 行为 ——
+                   这两个 props 在 RunWorkbench 上是可选的，
+                   退役的 /studio 工作台不传，行为与从前一模一样。
+              */
+              blocks={blocks}
+              currentBlockId={currentBlockId}
             />
           ) : (
             <div className="flex items-center justify-center px-6 py-4 text-center">

@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GenerateEvent, GeneratePhase } from "@/core/generate/service";
 import type { CheckResult } from "@/core/domain/check";
+import { toStepBlocks, type StepBlock } from "@/core/planning/step-blocks";
+import { ProcessBlocks } from "./process-blocks";
 import { RunTimeline } from "./run-timeline";
 
 /**
@@ -47,16 +49,43 @@ const PHASE_TONE: Record<GeneratePhase, string> = {
   failed: "border-amber-700 bg-amber-950/40 text-amber-300",
 };
 
+/**
+ * 实时事件的序号号段。
+ *
+ * ── 为什么实时事件需要一个"假"seq ──
+ *   切块（toStepBlocks）靠 seq 认身份：id 就是 `step-<起始 seq>`。
+ *   而实时事件**还没落库、也就还没有 seq** —— 库里的号是记录器写的，
+ *   浏览器这边拿不到。
+ *
+ *   所以给它们一段**明显在真实号段之外**的号（真实 seq 从 0 开始往上数）。
+ *   于是两边切出来的块 id 永远不会撞：`step-1000000` 一眼就知道
+ *   是"还没落库的那一份"。运行结束、服务端刷新回来之后，
+ *   这些临时块会被真实块**整批替换**掉（见下面 liveBlocks 那段）。
+ */
+const LIVE_SEQ_BASE = 1_000_000;
+
 export function GenerationConsole({
   runId,
   hasArtifact,
   onSettled,
+  blocks,
+  currentBlockId,
 }: {
   runId: string;
   /** 已经产出过成品时不自动开始，让用户自己决定要不要重跑 */
   hasArtifact: boolean;
   /** 生成结束时通知外层刷新数据 */
   onSettled: () => void;
+  /**
+   * 已经落库、由服务端切好的步骤块。
+   *
+   * ⚠️ **不传**表示这个上下文没有把事件通道接进来（退役的 /studio 工作台
+   * 就是这么用的）。那时这一栏退回老样子 —— 一整条连续日志。
+   * 两条路都留着不是偷懒：不传就按老样子渲染，页面上才不会平白空出一块。
+   */
+  blocks?: StepBlock[];
+  /** 服务端认定的"当前这一步"（/canvas 传的是最后一个块） */
+  currentBlockId?: string | null;
 }) {
   const [running, setRunning] = useState(false);
   /*
@@ -147,6 +176,29 @@ export function GenerationConsole({
   const pendingRef = useRef({ text: "", reasoning: "" });
   const rafRef = useRef<number | null>(null);
 
+  /* ---------- 运行中实时攒出来的步骤块 ---------- */
+  /*
+    ── 为什么要有这一份 ──
+      服务端传下来的 blocks 是**已经落库**的事件切出来的，生成过程中它是静止的；
+      而"看着它一步步往下走"正是这一栏存在的理由。
+      所以运行期间另攒一份：把 SSE 收到的每一条事件按到达顺序喂给
+      同一个切块函数（core/planning/step-blocks.ts），于是右边的块
+      和运行结束后落库切出来的块**是同一套规则**，不会"实时看着是这样、
+      刷新完变成那样"。
+
+    ── 它什么时候退场（这一条很要紧）──
+      当服务端那份 blocks 变成**新的一份**（说明这一轮的事件已经落库、
+      页面刷新过了），实时块立刻退场，由真实块接手 —— 否则同一批事件
+      会在列表里显示两遍。
+      判据用的是**数组身份**（`blocksAtStart === blocks`），不是长度：
+      长度可能碰巧相等（比如这一轮只多了一条 phase、又少了一条 check），
+      而身份变了只可能意味着"服务端重新算过一遍"。
+  */
+  const [liveBlocks, setLiveBlocks] = useState<StepBlock[]>([]);
+  const [blocksAtStart, setBlocksAtStart] = useState<StepBlock[] | null>(null);
+  const liveEventsRef = useRef<{ seq: number; payload: GenerateEvent }[]>([]);
+  const liveSeqRef = useRef(0);
+
   /* ---------- 按帧合并流式片段 ---------- */
   const flush = useCallback(() => {
     rafRef.current = null;
@@ -160,6 +212,15 @@ export function GenerationConsole({
       const chunk = pending.reasoning;
       pending.reasoning = "";
       setReasoning((prev) => prev + chunk);
+    }
+    /*
+      步骤块和正文**同一个节拍**重算。
+      一次生成会推来三千多个片段，逐条重算就是三千多次渲染；
+      合并到每帧一次之后，渲染次数降到几十次 ——
+      和上面那两行 setText / setReasoning 是同一条理由。
+    */
+    if (liveEventsRef.current.length > 0) {
+      setLiveBlocks(toStepBlocks(liveEventsRef.current));
     }
   }, []);
 
@@ -216,6 +277,15 @@ export function GenerationConsole({
     setStartedAt(Date.now());
     setElapsed(0);
     pendingRef.current = { text: "", reasoning: "" };
+    /*
+      实时块从零开始 —— **服务端那份 blocks 原样留着**，
+      它排在实时块**前面**，于是"旧的留在上方、新的追加在下方"这条
+      在重新生成时同样成立：上一轮那几步不会被清掉。
+    */
+    liveEventsRef.current = [];
+    liveSeqRef.current = 0;
+    setLiveBlocks([]);
+    setBlocksAtStart(blocks ?? null);
 
     const es = new EventSource(`/api/runs/${runId}/generate`);
     sourceRef.current = es;
@@ -227,6 +297,17 @@ export function GenerationConsole({
       } catch {
         return; // 半截数据直接跳过，不因为一行坏掉中断整条流
       }
+
+      /*
+        每一条事件都进实时缓冲 —— **正文与思考的片段也进**：
+        切块要看的正是"这一步里所有 delta 按顺序拼起来是什么"。
+        落库那份由记录器合并，这里不合并（界面要的是逐字的实时感）。
+      */
+      liveEventsRef.current.push({
+        seq: LIVE_SEQ_BASE + liveSeqRef.current++,
+        payload: event,
+      });
+      scheduleFlush();
 
       switch (event.kind) {
         case "phase":
@@ -316,12 +397,40 @@ export function GenerationConsole({
       stop();
       onSettled();
     };
-  }, [runId, stop, scheduleFlush, onSettled, phase]);
+  }, [runId, stop, scheduleFlush, onSettled, phase, blocks]);
 
   /* ---------- 渲染 ---------- */
   const passed = checks?.filter((c) => c.pass).length ?? 0;
   const total = checks?.length ?? 0;
   const activeText = showReasoning ? reasoning : text;
+
+  /*
+    实时块什么时候还算数：只有**服务端那份 blocks 一动不动**的时候。
+    它一变（页面带着新数据刷新回来），实时块退场 —— 理由见上面 liveEventsRef 那段。
+  */
+  const liveVisible =
+    blocks !== undefined && blocksAtStart !== null && blocksAtStart === blocks;
+
+  /**
+   * 真正摆到界面上的块列表：
+   *   服务端那份（旧的，在上面） + 运行中实时攒出来的（新的，追加在下面）。
+   *
+   * ⚠️ 这里**只追加、不重排、不清空** ——
+   *    这就是"旧的推上去但不销毁"在数据侧的写法：
+   *    老块的 id 不变（React 于是保留同一个 DOM 节点），
+   *    新块长在数组末尾（于是长在屏幕下方）。
+   */
+  const shownBlocks = useMemo<StepBlock[] | null>(() => {
+    if (blocks === undefined) return null; // 通道没接：退回一条连续日志
+    if (!liveVisible || liveBlocks.length === 0) return blocks;
+    return [...blocks, ...liveBlocks];
+  }, [blocks, liveVisible, liveBlocks]);
+
+  /** 右侧面板该显示哪一块：运行中就是最后那个实时块，否则听服务端的 */
+  const activeBlockId =
+    liveVisible && liveBlocks.length > 0
+      ? liveBlocks[liveBlocks.length - 1].id
+      : (currentBlockId ?? null);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -574,21 +683,36 @@ export function GenerationConsole({
         </ul>
       )}
 
-      {/* 流式内容 */}
-      <pre
-        ref={scrollRef}
-        className="scroll-hint min-h-0 flex-1 overflow-auto px-4 py-3 pb-0 text-[11px] leading-relaxed whitespace-pre-wrap text-slate-400"
-      >
-        {activeText || (
-          <span className="text-slate-600">
-            {running
-              ? "等待模型返回…"
-              : hasArtifact
-                ? "这次构建已经生成过成品。想看过程可以点「重新生成」，或在下面切到「预览」直接看结果。"
-                : "点右上角「开始生成」，这里会实时显示模型写的内容。"}
-          </span>
-        )}
-      </pre>
+      {/* 流式内容
+          ⚠️ 接上了事件通道（有 blocks）→ 按**步骤块**显示：
+             一步一块、块间有分隔线、旧的留在上方、新的追加在下面。
+             没接（退役的 /studio 工作台）→ 退回原来那条连续日志，
+             页面上不会平白空出一块。
+          两条路的实时性是一样的：块列表同样按帧追加，正文照样逐字往外蹦。 */}
+      {shownBlocks ? (
+        <ProcessBlocks
+          blocks={shownBlocks}
+          currentBlockId={activeBlockId}
+          prefer={showReasoning ? "reasoning" : "text"}
+          running={running}
+          className="flex-1"
+        />
+      ) : (
+        <pre
+          ref={scrollRef}
+          className="scroll-hint min-h-0 flex-1 overflow-auto px-4 py-3 pb-0 text-[11px] leading-relaxed whitespace-pre-wrap text-slate-400"
+        >
+          {activeText || (
+            <span className="text-slate-600">
+              {running
+                ? "等待模型返回…"
+                : hasArtifact
+                  ? "这次构建已经生成过成品。想看过程可以点「重新生成」，或在下面切到「预览」直接看结果。"
+                  : "点右上角「开始生成」，这里会实时显示模型写的内容。"}
+            </span>
+          )}
+        </pre>
+      )}
 
       {/*
         时间轴回放。放在实时日志下面，因为它是同一件事的「事后」形态：
