@@ -213,7 +213,23 @@ export const STAGES: readonly StageDef[] = [
     scope: "internal",
     // 看什么数：上一阶段的产物。数不出来就说明规格没写清
     watches: [{ label: "规格条目" }, { label: "依赖可用性" }],
-    implementation: "planned",
+    /*
+      改为 wired：执行与三条本地检查都接上了。
+
+      执行：调用模型、解析、产出 arch.json（core/generate/arch-stage.ts），
+            并且**兜底那一份也落盘**、以 fallback 标记自报家门。
+      检查：core/generate/arch-check.ts 逐条对应上面三条验收标准，
+            结果随 arch 事件发出，并决定清单里各模块任务点的状态。
+
+      ⚠️ 第二条要如实说明它的边界：
+        上面写的是「依赖清单里的包真实存在」，而**当前实现只做包名语法检查**，
+        不会联网核实它是否真的存在 —— 所以那一条检查的名字写成
+        「依赖包名合法（未联网核实是否真实存在）」，界面上照实这么显示。
+        把"没查"说成"查过了"比不查更糟：用户会据此省掉自己该做的核实。
+        真要做到"真实存在"，得由 adapters 层去查 registry（一次网络往返），
+        那是另一件事，而且必须让用户看见它在联网。
+    */
+    implementation: "wired",
   },
   {
     id: "ui",

@@ -16,7 +16,9 @@
 
 import type { Artifact } from "../domain/artifact";
 import { summarizeChecks, type CheckResult, type CheckSummary } from "../domain/check";
+import type { ArchSpec } from "../domain/arch";
 import type { AppSpec, SpecGate } from "../domain/spec";
+import type { ArchCheck } from "./arch-check";
 import type { ArtifactStore } from "../ports/artifact-store";
 import type { CostStore } from "../ports/cost-store";
 import type { ModelEffort, ModelPort, TokenUsage } from "../ports/model";
@@ -37,6 +39,16 @@ import {
 
 export type GeneratePhase =
   | "spec" // 规格化：把一句话需求整理成结构化规格
+  /*
+    arch —— 架构定型：把规格切成模块。
+    ── 为什么它是 phase 而不是"又一个 kind" ──
+      它和 spec 是同一类东西：一道工序**开工了**。
+      这个联合里的每个值都对应"哪一道工序在动"，而 from-run.ts 的
+      PHASE_OWNER 是个穷尽的 Record —— 加一个值，编译器就会逼着
+      在那里当场回答"这条 phase 算谁的"。写成一个只出现在 kind 上的
+      新事件的话，工序归属就得靠别处再判一次，两处迟早漂开。
+  */
+  | "arch" // 架构定型：把规格切分成模块并定下依赖
   | "awaiting" // 人工门禁：停下等用户回答规格里的疑问
   | "generating" // 模型正在写
   | "checking" // 正在做产物检查
@@ -83,6 +95,21 @@ export type GenerateEvent =
       spec: AppSpec;
       gate: SpecGate;
       /** 是不是降级来的。界面必须能区分，否则会把兜底当成真规格 */
+      fallback: boolean;
+    }
+  /**
+   * 架构定型阶段的产出（第二道工序）。
+   *
+   * 和 spec 事件同构，多带一个 check：那三条本地检查的结果
+   * 是**跟着产物一起发出来的** —— 左侧清单上那些模块任务点的状态
+   * 直接由它决定（全过 → done，有不过的 → failed，见 planning/from-run.ts）。
+   * 让界面各算一遍的话，同一件事就有两个口径了。
+   */
+  | {
+      kind: "arch";
+      arch: ArchSpec;
+      check: ArchCheck;
+      /** 是不是降级来的。兜底架构必须自报家门 */
       fallback: boolean;
     }
   | {

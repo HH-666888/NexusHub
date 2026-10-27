@@ -21,6 +21,9 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import type { GeneratePhase } from "@/core/generate/service";
 import { PLANNING_ROOT_ID } from "@/core/planning/from-run";
+import { inspectArch } from "@/core/generate/arch-check";
+import { reviewSpec, type AppSpec } from "@/core/domain/spec";
+import type { ArchSpec } from "@/core/domain/arch";
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
 import { fitFloor } from "@/core/canvas/viewport";
 import { expect_, finish, heading, info, ok, signUp } from "./e2e-kit";
@@ -402,6 +405,128 @@ function appendStepEvents(runId: string, startSeq: number, rows: Array<[string, 
 
 /** 只有正文、**一条 reasoning 都没有**的那种运行（第五类检查要的正是它） */
 const TEXT_ONLY_BODY = "这是模型写出来的正文，事件流里没有任何思考片段。";
+
+/* ============================================================
+   第二道工序「架构定型」（第二十三步）用的夹具
+   ------------------------------------------------------------
+   这一步验的是**清单自己长出子树**：arch 事件到来之后，
+   「架构定型」那一道下面应该逐个列出它的模块，而不再是「待规划」占位行。
+
+   ⚠️ 造出来的必须是"真的可能出现"的形状：
+     · 下面这份规格的 acceptance id（ac-1…ac-4）与 spec.json 的真实结构一致；
+     · arch 事件里的 check **由真的 inspectArch 现算**，不是手抄一份结果 ——
+       手抄的话，检查器改了而这里没改，夹具就会变成一份
+       "现实里不可能出现"的产物，底下那些断言也跟着失去意义；
+     · 模块划分本身能过这三条检查（依赖指向存在的模块、无环、覆盖全部条目）。
+
+   ── 为什么必须让检查全过 ──
+     模块点的状态就是由它决定的（全过 → done，有不过的 → failed）。
+     这里要验的是"清单长出了子树"，所以夹具得是那个正常形状；
+     用一条检查不过的夹具，验到的会是另一档状态。
+   ============================================================ */
+
+/** 规格里的四条功能条目 —— 架构必须逐条覆盖，否则第一条检查就红 */
+const ARCH_ACCEPTANCE: AppSpec["acceptance"] = [
+  { id: "ac-1", statement: "能新建任务", verifyBy: "点新建按钮，卡片出现在栏位里", level: "must" },
+  {
+    id: "ac-2",
+    statement: "能拖动卡片换栏位",
+    verifyBy: "拖到另一栏松手，卡片留在那一栏",
+    level: "must",
+  },
+  { id: "ac-3", statement: "刷新后数据还在", verifyBy: "按 F5 之后卡片位置不变", level: "should" },
+  { id: "ac-4", statement: "能删除任务", verifyBy: "点删除，卡片从栏位里消失", level: "should" },
+];
+
+/** 这一阶段的输入规格（第一条检查就靠它） */
+const ARCH_SPEC: AppSpec = {
+  prompt: "做一个团队任务看板",
+  goal: "小团队共用的任务看板",
+  audience: "3-8 人的小团队",
+  scenarios: ["新建任务", "拖动改状态", "刷新后仍在"],
+  acceptance: ARCH_ACCEPTANCE,
+  scope: { inScope: ["看板"], outOfScope: ["多人实时协作"] },
+  questions: [],
+  model: "e2e-fixture-model",
+  generatedAt: 0,
+};
+
+/** 架构产物：三个模块，链条式依赖，覆盖全部条目 */
+const ARCH_MODULES: ArchSpec["modules"] = [
+  {
+    id: "task-store",
+    name: "任务存储",
+    responsibility: "任务的增删改与查询，不碰界面",
+    dependsOn: [],
+    coversFeatures: ["ac-1", "ac-4"],
+  },
+  {
+    id: "board-ui",
+    name: "看板界面",
+    responsibility: "三栏看板与拖拽交互",
+    dependsOn: ["task-store"],
+    coversFeatures: ["ac-2"],
+  },
+  {
+    id: "local-persistence",
+    name: "本地持久化",
+    responsibility: "把看板状态写进 localStorage 并在启动时读回",
+    dependsOn: ["task-store"],
+    coversFeatures: ["ac-3"],
+  },
+];
+
+const ARCH_ARTIFACT: ArchSpec = {
+  modules: ARCH_MODULES,
+  packages: [{ name: "dayjs", why: "格式化卡片上的时间" }],
+};
+
+/** 三条本地检查的真实结果 —— 用真的检查器算，不手抄 */
+const ARCH_CHECK = inspectArch(ARCH_ARTIFACT, ARCH_SPEC);
+
+/**
+ * 一条「刚跑完架构定型」的运行：规格 + 架构两条产物事件都在。
+ *
+ * stage 取 'arch'、status 取 'done' —— 那正是这一阶段跑完时库里的真实取值。
+ */
+function seedArchRun(username: string): string {
+  const db = new Database("./data/nexus.db");
+  try {
+    const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as
+      | { id: number }
+      | undefined;
+    if (!user) throw new Error(`找不到测试账号 ${username}`);
+
+    const runId = `e2e-arch-${Date.now().toString(36)}`;
+    const now = Date.now();
+
+    db.prepare(
+      `INSERT INTO runs (id, user_id, prompt, stage, status, workflow_version, created_at, updated_at)
+       VALUES (?, ?, ?, 'arch', 'done', 'e2e-fixture', ?, ?)`,
+    ).run(runId, user.id, "端到端夹具：刚跑完架构定型的运行", now, now);
+
+    const rows: Array<[string, unknown]> = [
+      ["phase", stepPhase("spec", "正在把你的需求整理成规格")],
+      [
+        "spec",
+        { kind: "spec", spec: ARCH_SPEC, gate: reviewSpec(ARCH_SPEC), fallback: false },
+      ],
+      ["phase", stepPhase("arch", "正在把规格切分成模块")],
+      ["arch", { kind: "arch", arch: ARCH_ARTIFACT, check: ARCH_CHECK, fallback: false }],
+    ];
+
+    const ins = db.prepare(
+      `INSERT INTO run_events (run_id, seq, at, kind, payload) VALUES (?, ?, ?, ?, ?)`,
+    );
+    rows.forEach(([kind, payload], seq) => {
+      ins.run(runId, seq, now + seq, kind, JSON.stringify(payload));
+    });
+
+    return runId;
+  } finally {
+    db.close();
+  }
+}
 
 /*
   ---------- 「面板默认停在哪一块」那两条夹具（第二十二步之六）----------
@@ -4653,6 +4778,214 @@ async function main() {
     cleanupVerifyRun(pickRun);
     cleanupVerifyRun(lastContentRun);
     info("夹具已清理");
+
+    /* ---------- 23. ★ 第二道工序接上之后：清单里自己长出子树 ---------- */
+    /*
+      ★ 这一期交付的第二道工序「架构定型」，在界面上唯一的可见变化就在这里 ★
+
+      ── 要验的是什么 ──
+        一条运行跑过架构定型之后，左侧清单里「架构定型」那一道下面
+        **逐个列出它的模块**，而不再是那条「待规划」占位行。
+
+      ── 为什么它值得一步常驻回归 ──
+        这是"数据变多 → 界面自动长出子树"这条设计的**唯一证据**。
+        它坏起来非常安静：
+          · from-run.ts 不再投影 arch 事件 → 清单上那道工序写着 done、
+            下面却是一行「待规划」——字面上不矛盾，只是少了一整棵子树；
+          · 任务点的 id 规则漂了（比如写成下标）→ 行还在，
+            但点下去聚焦到一个画布上不存在的节点，"点了没反应"；
+          · 状态口径漂了（给模块点写 running）→ 用户坐着等一件没人开始的事。
+        三种都不会抛异常。所以要用断言把"结构 + id + 状态"三件一起钉住。
+
+      ── 为什么还要一条**对照**运行 ──
+        只验"有子树"的话，"占位行规则被整个删掉"也能让它变绿 ——
+        那就成了一条永远为真的断言。所以下面同时跑一条**没有 arch 事件**的运行：
+        它的 arch 那道**必须还是**「待规划」。
+        这一对放在一起，才说明"子树是因为那条 arch 事件长出来的"。
+
+      ── 夹具与现实的关系 ──
+        seedArchRun 插的是 runs 一行 + 四条事件，事件形状逐字段照
+        spec-stage.ts / arch-stage.ts 真正发出的那几条写
+        （check 更是由真的 inspectArch 现算的）。
+        真跑一次要调模型、花钱、几十秒 —— e2e 不该为了验一棵树去生成应用。
+    */
+    heading("第二十三步 · 架构定型：清单里 arch 那道自己长出模块子树");
+
+    /*
+      先在地面上把夹具自身验一遍：三条检查必须真的全过。
+      少了这一条，夹具哪天悄悄变成"检查不过"的形状，
+      下面"状态是 done"那条会红，而红的原因看起来像界面错了 ——
+      实际上是夹具变了。夹件的形状要由夹具自己负责。
+    */
+    expect_(
+      ARCH_CHECK.total === 3 && ARCH_CHECK.passed === 3,
+      `夹具自身成立：三条本地检查 ${ARCH_CHECK.passed}/${ARCH_CHECK.total} 通过（由真的 inspectArch 现算）`,
+      `夹具不成立：三条检查只有 ${ARCH_CHECK.passed}/${ARCH_CHECK.total} 通过 —— 下面的断言会验到另一档状态`,
+    );
+
+    const archRun = seedArchRun(username);
+    info(
+      `造了一条运行 ${archRun.slice(0, 8)}（stage=arch、status=done，带 ` +
+        `${ARCH_MODULES.length} 个模块：${ARCH_MODULES.map((m) => m.id).join(" ")}）`,
+    );
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${archRun}` });
+    await sleep(4200);
+
+    /** 只读 arch 那一组：它的二级行、每行的 id / 状态 / 标题 / 色点，以及它自己的状态 */
+    const READ_ARCH_SUB = `(() => {
+      const q = (s) => [...document.querySelectorAll(s)];
+      const group = document.querySelector('[data-outline-group="arch"]');
+      const kids = group
+        ? [...group.querySelectorAll('[data-outline-row][data-outline-level="2"]')]
+        : [];
+      const countEl = group ? group.querySelector('[data-outline-count]') : null;
+      const summary = group ? group.querySelector('summary') : null;
+      const level1 = q('[data-outline-row][data-outline-level="1"]').find(
+        (el) => el.getAttribute('data-outline-focus') === 'arch',
+      );
+      return JSON.stringify({
+        exists: !!group,
+        open: group ? group.open === true : false,
+        summaryText: summary ? summary.textContent.trim() : '',
+        countText: countEl ? countEl.textContent.trim() : null,
+        level1Status: level1 ? level1.getAttribute('data-outline-status') : null,
+        kids: kids.map((el) => {
+          const dot = el.querySelector('[data-outline-dot]');
+          return {
+            focus: el.getAttribute('data-outline-focus'),
+            status: el.getAttribute('data-outline-status'),
+            placeholder: el.hasAttribute('data-outline-placeholder'),
+            text: el.textContent.trim(),
+            dot: dot ? getComputedStyle(dot).backgroundColor : null,
+          };
+        }),
+      });
+    })()`;
+
+    interface ArchSubSnap {
+      exists: boolean;
+      open: boolean;
+      summaryText: string;
+      countText: string | null;
+      level1Status: string | null;
+      kids: {
+        focus: string | null;
+        status: string | null;
+        placeholder: boolean;
+        text: string;
+        dot: string | null;
+      }[];
+    }
+
+    const readArchSub = async (): Promise<ArchSubSnap> => {
+      const r = await cdp.send("Runtime.evaluate", {
+        expression: READ_ARCH_SUB,
+        returnByValue: true,
+      });
+      return JSON.parse(r.result!.value!) as ArchSubSnap;
+    };
+
+    const archSub = await readArchSub();
+    info(
+      `「架构定型」那一组：存在=${archSub.exists} · 组内二级行 ${archSub.kids.length} 个 · ` +
+        `占位 ${archSub.kids.filter((k) => k.placeholder).length} 个 · 计数「${archSub.countText}」`,
+    );
+    info(
+      `组里的行：` +
+        archSub.kids
+          .map((k) => `${k.focus}[${k.status}]${k.text}${k.placeholder ? "(占位)" : ""}`)
+          .join(" · "),
+    );
+
+    /* ★ 1. arch 那道下面有 N 个二级行（N = 模块数）★ */
+    expect_(
+      archSub.exists && archSub.kids.length === ARCH_MODULES.length,
+      `「架构定型」下面有 ${ARCH_MODULES.length} 个二级行（每个模块一行）`,
+      `「架构定型」下面只有 ${archSub.kids.length} 个二级行，期望 ${ARCH_MODULES.length}` +
+        `（那一组存在=${archSub.exists}）—— 架构事件没有投影成任务点？`,
+    );
+    /* ★ 2. 而且**没有**待规划占位行 ★ */
+    expect_(
+      archSub.kids.length > 0 && archSub.kids.every((k) => !k.placeholder),
+      "这几行里一个「待规划」占位行都没有 —— 那道工序这次真的跑过",
+      `还有 ${archSub.kids.filter((k) => k.placeholder).length} 行占位：` +
+        archSub.kids.filter((k) => k.placeholder).map((k) => k.text).join("、"),
+    );
+    /* ★ 3. 行 id 形如 arch:*（data-outline-focus）★ */
+    expect_(
+      archSub.kids.map((k) => k.focus).join(",") ===
+        ARCH_MODULES.map((m) => `arch:${m.id}`).join(","),
+      `行 id 形如 arch:*，且顺序就是模块顺序（${archSub.kids.map((k) => k.focus).join(" ")}）`,
+      `行 id 不对：读到的 ${JSON.stringify(archSub.kids.map((k) => k.focus))}，` +
+        `期望 ${JSON.stringify(ARCH_MODULES.map((m) => `arch:${m.id}`))}`,
+    );
+    /* 4. 每行的标题就是模块名（人可读的那一列） */
+    expect_(
+      archSub.kids.map((k) => k.text).join(",") === ARCH_MODULES.map((m) => m.name).join(","),
+      `每行的标题就是模块名（${archSub.kids.map((k) => k.text).join("、")}）`,
+      `标题不对：${JSON.stringify(archSub.kids.map((k) => k.text))}`,
+    );
+    /* ★ 5. 状态口径：三条检查全过 → done（蓝），绝不是 running ★ */
+    expect_(
+      archSub.kids.every((k) => k.status === "done") &&
+        archSub.kids.every((k) => k.dot === "rgb(96, 165, 250)"),
+      "三条检查全过，所以每个模块行都是 done（蓝色 96 165 250）—— 模块没有被说成「正在跑」",
+      `状态不对：${JSON.stringify(archSub.kids.map((k) => `${k.status}/${k.dot}`))}` +
+        ` —— 期望全是 done 且色点为 rgb(96, 165, 250)`,
+    );
+    /* 6. 收起之后还看得见计数，它得等于模块数 */
+    expect_(
+      archSub.countText === String(ARCH_MODULES.length),
+      `summary 上的计数是 ${archSub.countText}（收起时也看得出这一组下面有几个点）`,
+      `计数是「${archSub.countText}」，期望 ${ARCH_MODULES.length}`,
+    );
+    /*
+      7. arch 那一级行自己的状态：这条运行 status=done，而 arch 确实留下了痕迹，
+         所以它是 done —— 顺带证明"长出子树"没有把工序自己的状态带偏。
+    */
+    expect_(
+      archSub.level1Status === "done",
+      "「架构定型」那一级行自己是 done（这条运行跑完了，而它确实留下了产物）",
+      `一级行状态是 ${archSub.level1Status}，期望 done`,
+    );
+
+    /* ---- 对照：没有 arch 事件的运行，那一道**必须还是**「待规划」 ---- */
+    const noArchRun = seedRunningRun(username);
+    info(`对照：造了一条只有 phase:spec 的运行 ${noArchRun.slice(0, 8)}（没有任何 arch 事件）`);
+
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?run=${noArchRun}` });
+    await sleep(4200);
+
+    const noArchSub = await readArchSub();
+    info(
+      `对照组「架构定型」那一组：二级行 ${noArchSub.kids.length} 个 · ` +
+        `占位 ${noArchSub.kids.filter((k) => k.placeholder).length} 个 · ` +
+        `文字 ${JSON.stringify(noArchSub.kids.map((k) => k.text))}`,
+    );
+
+    expect_(
+      noArchSub.kids.length === 1 && noArchSub.kids[0].placeholder,
+      "★ 对照：没有 arch 事件时，那一道下面是一行「待规划」占位行（子树不是白给的）",
+      `对照组的二级行是 ${JSON.stringify(noArchSub.kids.map((k) => ({ text: k.text, placeholder: k.placeholder })))}` +
+        ` —— 期望恰好 1 行占位`,
+    );
+    expect_(
+      noArchSub.kids.every((k) => !(k.focus ?? "").startsWith("arch:")),
+      "对照：一个 arch:* 的点都没有 —— 没有事件就是没有，不是「有计划但没跑」",
+      `对照组里出现了模块行：${JSON.stringify(noArchSub.kids.map((k) => k.focus))}`,
+    );
+
+    cleanupVerifyRun(archRun);
+    cleanupVerifyRun(noArchRun);
+    info("夹具已清理");
+
+    ok(
+      "架构定型（第二道工序）接上之后：清单里「架构定型」那道**自己长出**模块子树 ——" +
+        `这种运行里 ${ARCH_MODULES.length} 个模块各一行、id 形如 arch:*、` +
+        "三条本地检查全过所以是 done（不是 running）；" +
+        "而没有 arch 事件的运行那一道仍是「待规划」占位行（对照组验过，不是恒真的）—— 全部通过",
+    );
 
     cdp.close();
     ok("画布交互、详情、面板、顶栏一致性、缩放让位、退役页面、子树与双击聚焦全部通过");

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { summarizeChecks, type CheckResult } from "@/core/domain/check";
 import { fallbackSpec, reviewSpec } from "@/core/domain/spec";
+import type { ArchSpec } from "@/core/domain/arch";
+import { inspectArch } from "@/core/generate/arch-check";
 import { inspectArtifact } from "@/core/generate/prompt";
 import { STAGES } from "@/core/pipeline/stages";
 import {
@@ -259,7 +261,20 @@ describe("★ 诚实底线：没有真实事件的工序必须停在 pending", (
     }
 
     // 这三道未接入的工序，正是 STAGES 自己声明为 planned 的那三道
-    expect(PLANNED_IDS).toEqual(["arch", "ui", "assemble"]);
+    /*
+      ⚠️ 这一条是**必须改**的（本期改动的现有断言之二，另一条在
+         pipeline-stages.test.ts 的「运行完成时…」里）。
+
+      原来期望 ["arch", "ui", "assemble"]。这一期「架构定型」接上了
+      （stages.ts 里 implementation 从 planned 改成 wired），
+      所以按 implementation 动态取出来的未接入名单里不再有 arch。
+
+      这不是放松：**动态取名单**这个写法本身没变 ——
+      哪天 ui/assemble 接上了，这里会自动少一个，而不是继续拿旧名单断言。
+      而 arch 那条底线一点没丢：下面新增的那组用例单独守着
+      「已接入、但这一次没有留下任何痕迹的工序」同样必须停在 pending。
+    */
+    expect(PLANNED_IDS).toEqual(["ui", "assemble"]);
   });
 
   it("runStatus 为 done 时，未接入的三道仍然 pending —— 有产出的才配 done", () => {
@@ -691,5 +706,271 @@ describe("纯函数：不改输入，可重复", () => {
 
     expect(first).not.toBe(second);
     expect(first).toEqual(second);
+  });
+});
+
+/* ============================================================
+   ⑨ 架构定型 → 模块子树（「清单自己长出子树」就在这里）
+   ============================================================
+   这一组是本期的核心证据：**一行 UI 都不用改**，左侧清单里
+   「架构定型」那一道下面长出了它的模块。
+
+   它成立的全部原因是数据侧做了两件事：
+     一、from-run.ts 把 arch 事件投影成 `arch:<模块id>` 的任务点
+         （parentId="arch"、depth=2 —— 正是 toOutline 认的二级行）；
+     二、outline.ts 本来就有的规则：一级行**有二级子节点时不再补占位行**。
+   也就是说，"长出子树"不是新写的界面逻辑，而是同一条老规则
+   在数据变多之后自然得到的结果。
+
+   ── 取材 ──
+     模块划分是真的能被检查器接受的那种（依赖指向存在的模块、无环、
+     覆盖规格里每一条功能），而 check 用**真的 inspectArch 现算**，
+     不手抄一份结果 —— 手抄的 check 迟早和检查器漂开，
+     那时候这些断言验的就是另一件事了。
+   ============================================================ */
+
+/** 一份能被三条检查全过的架构。条目 id 从 SPEC 里取，不手写 */
+const ARCH: ArchSpec = {
+  modules: [
+    {
+      id: "task-store",
+      name: "任务存储",
+      responsibility: "任务的增删改与本地持久化",
+      dependsOn: [],
+      coversFeatures: [SPEC.acceptance[0].id],
+    },
+    {
+      id: "board-ui",
+      name: "看板界面",
+      responsibility: "三栏看板与拖拽交互",
+      dependsOn: ["task-store"],
+      coversFeatures: SPEC.acceptance.slice(1).map((a) => a.id),
+    },
+  ],
+  packages: [{ name: "dayjs", why: "格式化时间" }],
+};
+
+/** 现算的三条检查（全过） */
+const ARCH_CHECK = inspectArch(ARCH, SPEC);
+
+/** arch 事件：架构产物落地。结构照 arch-stage.ts 真正发出的那条写 */
+function archEvent(seq: number, check: unknown = ARCH_CHECK): RawEvent {
+  return {
+    seq,
+    kind: "arch",
+    payload: { kind: "arch", arch: ARCH, check, fallback: false },
+  };
+}
+
+/** 此刻 arch 名下的模块点 */
+function archPointsAt(log: readonly PlanningEvent[], seq: number): TaskPoint[] {
+  return projectAt(log, seq).filter((p) => p.id.startsWith("arch:"));
+}
+
+describe("架构定型 → 模块任务点", () => {
+  it("每个模块长出一个 depth 2 的点，挂在 arch 下面，标题就是模块名", () => {
+    const log = planningFromRun(src([archEvent(30)]));
+    const kids = archPointsAt(log, 30);
+
+    expect(kids).toHaveLength(ARCH.modules.length);
+    expect(ids(kids)).toEqual(ARCH.modules.map((m) => `arch:${m.id}`));
+
+    for (const kid of kids) {
+      expect(kid.parentId).toBe("arch");
+      expect(kid.depth).toBe(2);
+      expect(kid.kind).toBe("exec");
+      expect(kid.bornAtSeq).toBe(30);
+    }
+    // 标题是人可读的模块名，而不是 id
+    expect(kids.map((k) => k.title)).toEqual(ARCH.modules.map((m) => m.name));
+    expect(hasOrphans(projectAt(log, 30))).toBe(false);
+  });
+
+  it("到点生成：第 29 刻一个模块点都没有，第 30 刻全在 —— 出生时刻就是那条 arch 事件的 seq", () => {
+    /*
+      不另算一个序号（比如 maxSeq+1）：那种算法在乱序追加时会给出
+      「早于自己声明的出生时刻」的点，而 projectAt 的到点语义按 bornAtSeq 判。
+    */
+    const log = planningFromRun(src([archEvent(30)]));
+
+    expect(ids(archPointsAt(log, 29))).toEqual([]);
+    expect(archPointsAt(log, 30).map((p) => p.bornAtSeq)).toEqual(
+      new Array(ARCH.modules.length).fill(30),
+    );
+
+    const other = planningFromRun(src([archEvent(77)]));
+    for (const p of archPointsAt(other, 100)) expect(p.bornAtSeq).toBe(77);
+  });
+
+  it("三条检查全过 → done；有不过的 → failed（★ 模块没有「执行」过，绝不给 running）", () => {
+    /*
+      ── 状态口径与理由（这一期自定的一处口径，写在这里免得下一个人猜）──
+        模块是**将来**第四道要并行去做的事，此刻没有任何人在做它，
+        所以 running 是错的（用户会坐着等一件没人开始的事）。
+        而三条本地检查是**真的判过**的：
+          · 全过 → done：这个模块划分被架构定型接受了；
+          · 有不过的 → failed：保守方向不能反 —— 显示成没过，用户最多多看一眼。
+    */
+    const passing = planningFromRun(src([archEvent(30)]));
+    for (const kid of archPointsAt(passing, 30)) {
+      expect(kid.status, `${kid.id} 三条检查全过却没显示成 done`).toBe("done");
+    }
+
+    // 造一份**真的过不了**检查的架构（引用了不存在的模块），检查结果用真检查器现算
+    const broken: ArchSpec = {
+      modules: [{ ...ARCH.modules[0], dependsOn: ["ghost"] }, ARCH.modules[1]],
+      packages: [],
+    };
+    const brokenCheck = inspectArch(broken, SPEC);
+    expect(brokenCheck.passed).toBeLessThan(brokenCheck.total); // 前提：这份夹具确实没过
+
+    const log = planningFromRun(
+      src([{ seq: 30, kind: "arch", payload: { kind: "arch", arch: broken, check: brokenCheck } }]),
+    );
+    const kids = archPointsAt(log, 30);
+    expect(kids).toHaveLength(broken.modules.length);
+    for (const kid of kids) {
+      expect(kid.status, `${kid.id} 检查没过却显示成 ${kid.status}`).toBe("failed");
+      // 无论哪一档，都不许是 running —— 这一条是本节的口径本身
+      expect(kid.status).not.toBe("running");
+    }
+  });
+
+  it("读不到检查结果时不硬说它过了：按 failed（保守方向不能反）", () => {
+    /*
+      事件是从数据库那行 JSON 还原出来的，payload 残缺是可能的。
+      读不出"三条都过了"就说"过了"，等于替一个来路不明的产物背书。
+
+      ⚠️ 这里逐个手写 payload，**不用上面那个 archEvent 助手** ——
+         它给 check 了一个默认值（全过的那份），走它的话
+         "完全没有 check 字段"这种情况根本造不出来，这条测试就永远绿着。
+    */
+    const payloads: Array<{ label: string; payload: unknown }> = [
+      { label: "完全没有 check 字段", payload: { kind: "arch", arch: ARCH } },
+      { label: "check 是 null", payload: { kind: "arch", arch: ARCH, check: null } },
+      { label: "check 是空对象", payload: { kind: "arch", arch: ARCH, check: {} } },
+      { label: "results 是 null", payload: { kind: "arch", arch: ARCH, check: { results: null } } },
+      { label: "results 是空数组", payload: { kind: "arch", arch: ARCH, check: { results: [] } } },
+      { label: "check 是一个数字", payload: { kind: "arch", arch: ARCH, check: 42 } },
+    ];
+
+    for (const { label, payload } of payloads) {
+      const log = planningFromRun(src([{ seq: 30, kind: "arch", payload }]));
+      const kids = archPointsAt(log, 30);
+      expect(kids, `${label} 时模块点没长出来`).toHaveLength(ARCH.modules.length);
+      for (const kid of kids) {
+        expect(kid.status, `${label} 时被当成通过了`).toBe("failed");
+      }
+    }
+  });
+
+  it("arch 事件让那一道工序真的动起来：运行结束时它是 done，而不是停在 pending", () => {
+    const running = planningFromRun(src([archEvent(30)]));
+    expect(find(projectAt(running, 30), "arch").status).toBe("running");
+
+    const doneLog = planningFromRun(src([archEvent(30), phaseEvent(50, "done")]));
+    const now = projectAt(doneLog, maxSeq(doneLog));
+    expect(find(now, "arch").status).toBe("done");
+    expect(childrenOf(now, "arch")).toHaveLength(ARCH.modules.length);
+  });
+
+  it("同一条 arch 事件到来两次：模块点只出生一次（appendBorn 幂等）", () => {
+    const log = planningFromRun(src([archEvent(30), archEvent(45)]));
+    const kids = archPointsAt(log, 100);
+
+    expect(kids).toHaveLength(ARCH.modules.length);
+    expect(kids.map((k) => k.bornAtSeq)).toEqual(new Array(ARCH.modules.length).fill(30));
+  });
+
+  it("payload 残缺时不硬造任务点：没有 modules 就一个点都不生成", () => {
+    const cases: unknown[] = [
+      null,
+      {},
+      { arch: null },
+      { arch: { modules: null } },
+      { arch: { modules: "两个模块" } },
+      42,
+    ];
+
+    for (const payload of cases) {
+      const log = planningFromRun(src([{ seq: 30, kind: "arch", payload }]));
+      expect(archPointsAt(log, 100), `payload=${JSON.stringify(payload)} 时凭空造了点`).toEqual(
+        [],
+      );
+    }
+  });
+});
+
+describe("★ 串一遍 projectAt → toOutline：清单里 arch 那道自己长出了子树", () => {
+  it("有 arch 事件时：不再有「待规划」占位行，而是逐个列出模块", () => {
+    /*
+      ★★★ 这就是「清单自己长出子树」的硬证据 ★★★
+
+      三件事一起断言，缺一条这个证据就不成立：
+        ① 清单里 arch 那一道**一个占位行都没有**了；
+        ② 它下面**真的列出了每个模块**（id / 标题 / 层级都对得上）；
+        ③ 二级行的状态是 done（三条检查全过）—— 不是随手的绿点。
+
+      注意①必须和下面那条"没有 arch 事件时占位行还在"的对照一起看：
+      否则"没有占位行"也可能是因为规则被改掉了，而不是因为长出了子树。
+    */
+    const log = planningFromRun(src([specEvent(10), archEvent(20)]));
+    const rows = toOutline(projectAt(log, maxSeq(log)));
+
+    // ① 占位行没了
+    const archPlaceholders = rows.filter((r) => r.placeholder && r.id.startsWith("arch"));
+    expect(archPlaceholders, "arch 那道还有待规划占位行 —— 子树没长出来").toEqual([]);
+
+    // ② 列出来的就是那几个模块
+    const archRows = rows.filter((r) => r.id.startsWith("arch:"));
+    expect(archRows.map((r) => r.id)).toEqual(ARCH.modules.map((m) => `arch:${m.id}`));
+    expect(archRows.map((r) => r.title)).toEqual(ARCH.modules.map((m) => m.name));
+    for (const row of archRows) {
+      expect(row.level).toBe(2);
+      expect(row.placeholder).toBe(false);
+      expect(row.status).toBe("done");
+      // 二级实体行是可点的：canvasNodeId 就是它自己的 id
+      expect(row.canvasNodeId).toBe(row.id);
+    }
+
+    // arch 那一级行本身照旧在场，顺序不变（六道工序的位置不该被新子树动到）
+    const level1 = rows.filter((r) => r.level === 1);
+    expect(level1.map((r) => r.id)).toEqual(STAGE_INPUT.map((s) => s.id));
+  });
+
+  it("对照：没有 arch 事件的运行，arch 那道**仍然是**「待规划」占位行", () => {
+    /*
+      这一条是上一条的对照组，防的是"断言永远为真"：
+      如果 outline.ts 哪天被改成"一级行一律不补占位行"，
+      上面那条会照样绿，而它想守的"子树长出来了"其实什么都没验到。
+    */
+    const log = planningFromRun(src([specEvent(10), checkEvent(20)]));
+    const rows = toOutline(projectAt(log, maxSeq(log)));
+
+    const archPlaceholders = rows.filter((r) => r.placeholder && r.id.startsWith("arch"));
+    expect(archPlaceholders).toHaveLength(1);
+    expect(archPlaceholders[0].title).toBe("待规划");
+    expect(archPlaceholders[0].level).toBe(2);
+    // 而且一个模块点都没有 —— 没有事件就是没有，不是"有计划但没跑"
+    expect(rows.filter((r) => r.id.startsWith("arch:"))).toEqual([]);
+  });
+
+  it("★ 诚实底线也适用于已接入的 arch：这一次没跑过就仍然是 pending、名下无子点", () => {
+    /*
+      arch 这一期从 planned 改成 wired 了（stages.ts）。
+      「已接入」描述的是**这道工序有没有实现**，不是"这一次跑没跑过"。
+      所以拿一条只有 spec + check 事件的运行去问它，答案必须是 pending ——
+      这正是 progress.ts 里那条规则在投影层的同一条（见文件头那段）。
+
+      这一条单独写，是因为它是"接线之后最容易顺手破坏"的一处：
+      「都接上了，那把六道工序都标成跑过了吧」这种推断看起来无害。
+    */
+    const log = planningFromRun(src([specEvent(10), checkEvent(20)], "done"));
+    const now = projectAt(log, maxSeq(log));
+
+    expect(find(now, "arch").status).toBe("pending");
+    expect(childrenOf(now, "arch")).toHaveLength(0);
+    // 而且日志里根本没有针对它的状态事件 —— 我们从未碰过它
+    expect(statusEventsFor(log, "arch")).toHaveLength(0);
   });
 });

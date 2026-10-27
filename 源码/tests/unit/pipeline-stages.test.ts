@@ -66,8 +66,22 @@ describe("流水线进度推算", () => {
     expect(done.build).toBe("passed");
     expect(done.verify).toBe("passed");
 
+    /*
+      ⚠️ 这一条是**必须改**的（本期改动的现有断言之一）。
+
+      原来断言 done.arch 是 pending，因为那时「架构定型」标着 planned
+      —— 它一行代码都没跑过，显示成已通过就是撒谎。
+
+      现在它真的接上了：编排层在规格化之后、门禁之后调 runArchStage，
+      会调模型、产出 arch.json、跑三条本地检查（route.ts 第二道那一段）。
+      也就是说跑到 verify 时，arch **确实跑过并交出了产物** ——
+      再断言 pending 就变成另一种撒谎（把做成了的说成没做成）。
+      下面「兜底断言」那条按 implementation 动态取，仍然守着真正的底线：
+      凡是还标着未接入的，无论跑到哪一步都必须是 pending。
+    */
+    expect(done.arch).toBe("passed");
+
     // 没接入的一律 pending
-    expect(done.arch).toBe("pending");
     expect(done.ui).toBe("pending");
     expect(done.assemble).toBe("pending");
   });

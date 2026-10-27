@@ -28,6 +28,7 @@ import { env } from "@/config/env";
 import { recordRunEvents } from "@/core/generate/recorder";
 import { generateApp, type GenerateEvent } from "@/core/generate/service";
 import { runSpecStage, SPEC_ARTIFACT_NAME } from "@/core/generate/spec-stage";
+import { runArchStage } from "@/core/generate/arch-stage";
 import {
   ANSWERS_ARTIFACT_NAME,
   decideGate,
@@ -254,12 +255,27 @@ export async function GET(
           }
 
           // ---------- 第一道：规格化 ----------
+          /*
+            ⚠️ 这一段顺手把规格**接下来**（specFromStage）。
+            第二道「架构定型」的输入就是它 —— 架构必须建立在真规格上，
+            它的第一条验收标准（规格里每条功能都能映射到至少一个模块）
+            没有规格根本判不了。
+
+            ── 为什么不改成"回头再读一次 spec.json" ──
+              读盘要经过"按文件名找产物 → 读内容 → JSON.parse"三步，
+              每一步都有失败分支（找不到、读不到、解析不了），
+              而那些分支在这里都不可达：规格是**刚刚**由上面的循环产出的。
+              凭空多三个"理论上不会发生"的分支，只会让人以为它们会真的发生。
+              真的需要落盘那份时（比如换了一条请求），再读盘也不迟。
+          */
+          let specFromStage: AppSpec | null = null;
           for await (const e of runSpecStage(ports, {
             runId,
             prompt: runPrompt,
             costLimitCny: env.run.costLimitCny,
             spentCny: spent,
           })) {
+            if (e.kind === "spec") specFromStage = e.spec;
             // SpecStageEvent 的几种事件与 GenerateEvent 结构一致，直接透传
             yield e as GenerateEvent;
           }
@@ -312,13 +328,56 @@ export async function GET(
             yield { kind: "phase", phase: "spec", label: decision.reason };
           }
 
+          // ---------- 第二道：架构定型 ----------
+          /*
+            ── 为什么它必须在**门禁之后** ──
+              规格里还有没回答的疑问时，上面那个分支已经 return 了（相位 awaiting）。
+              架构如果排到门禁前面，就会在"用户还没确认要做什么"的时候
+              先把模块切好 —— 那等于替用户把需求拍死了，
+              而那道门禁存在的全部理由恰恰是"别替用户猜"。
+              所以顺序是：规格化 → 人工门禁 → 架构定型 → 并行构建。
+
+            ── 为什么先查一次钱 ──
+              规格那一道花完之后，钱可能已经到顶了。这里把最新的累计值
+              查出来交给架构闸门 —— 它宁可拒绝，也不会花完才说超了。
+              同一次查询的结果**不复用**给第四道：架构自己也会花钱，
+              第四道必须拿到含上这一笔的数（见下面那行）。
+          */
+          const spentBeforeArch = await sqliteCostStore.totalByRun(runId);
+
+          /*
+            specFromStage 为空只有一种情况：规格化那一道在预算闸门上
+            直接 return 了（它连 spec 事件都没发）。
+            那时候没有规格可依据，架构**不许硬造**一份出来 ——
+            跳过它，让第四道的预算闸门去说那句"已花费达到上限"。
+          */
+          if (specFromStage) {
+            for await (const e of runArchStage(ports, {
+              runId,
+              prompt: runPrompt,
+              // 用户原话一字不改地传下去；规格作为"上一阶段的产物"一起带上
+              spec: specFromStage,
+              costLimitCny: env.run.costLimitCny,
+              spentCny: spentBeforeArch,
+            })) {
+              // 和上面同一个做法：ArchStageEvent 与 GenerateEvent 结构一致，直接透传
+              yield e as GenerateEvent;
+            }
+          }
+
           // ---------- 第四道：并行构建（当前是直通模式） ----------
-          const spentAfterSpec = await sqliteCostStore.totalByRun(runId);
+          /*
+            ⚠️ 这一行必须在架构定型**之后**重新查一次。
+            复用规格那一步的旧值的话，第四道拿到的 spentCny 会少掉架构那一笔，
+            于是"总花费已经到了上限、第四道却还在花钱"——
+            这种账要等到对账时才看得出来（runs.totalCostCny 对不上流水总额）。
+          */
+          const spentAfterArch = await sqliteCostStore.totalByRun(runId);
           yield* generateApp(ports, {
             runId,
             prompt: runPrompt,
             costLimitCny: env.run.costLimitCny,
-            spentCny: spentAfterSpec,
+            spentCny: spentAfterArch,
             // 07 回流：上一轮没过的地方，这一段会作为一条 system 消息发给模型
             callbackContext,
           });

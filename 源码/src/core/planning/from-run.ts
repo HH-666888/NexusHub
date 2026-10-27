@@ -109,6 +109,16 @@ const PHASE_OWNER: Record<GeneratePhase, PhaseOwner> = {
   spec: { kind: "stage", stageId: "spec" },
 
   /*
+    arch 是架构定型自己的 phase：
+      · arch-stage.ts  `| { kind: "phase"; phase: "arch"; label: string }`
+        —— ArchStageEvent 的类型定义，phase 取值被钉死成 "arch"；
+      · arch-stage.ts  `yield { kind: "phase", phase: "arch", label: "正在把规格切分成模块" };`
+      · arch-stage.ts  `stage: "arch"` —— 这一阶段的记账也记在 arch 名下。
+    三处同指第二道工序，归属没有歧义。
+  */
+  arch: { kind: "stage", stageId: "arch" },
+
+  /*
     awaiting 是规格化的**人工门禁**，不是新的一道工序：
       · route.ts:286  `const policy = resolveGatePolicy("spec", env.run.specGate);`
         —— 问的是 spec 这道工序要不要人点头；
@@ -178,6 +188,7 @@ const PHASE_OWNER: Record<GeneratePhase, PhaseOwner> = {
 
 /** 工序 id 字面量。用常量是为了和 phase 表里的取值保持一个来源 */
 const SPEC_STAGE_ID = "spec";
+const ARCH_STAGE_ID = "arch";
 const VERIFY_STAGE_ID = "verify";
 
 /**
@@ -190,6 +201,7 @@ const VERIFY_STAGE_ID = "verify";
  */
 const PRODUCT_STAGE: Record<string, string> = {
   spec: SPEC_STAGE_ID,
+  arch: ARCH_STAGE_ID,
   check: VERIFY_STAGE_ID,
 };
 
@@ -313,6 +325,97 @@ function specPoints(payload: Record<string, unknown> | null, seq: number): TaskP
     });
   }
   return points;
+}
+
+/**
+ * ★ 架构产物 → 模块任务点（左侧清单的二级子树就是从这儿长出来的）★
+ *
+ * ── 为什么一个模块配得上一个任务点 ──
+ *   `stages.ts:241-243` 写着并行构建的粒度：「并行的粒度是「模块」而不是「文件」。
+ *   文件级并行会产生大量合并冲突，收益为负。」
+ *   也就是说**模块就是第四道工序要并行去做的那些活儿** ——
+ *   它们不是"架构里的一个名词"，而是将来真会被派给执行 Agent 的任务单元。
+ *   所以它们该进树、该有自己的点：清单里「架构定型」下面列出几个模块，
+ *   回答的正是"接下来会并行做几件事"。
+ *
+ *   ⚠️ 顺带守住了那条诚实底线：**没有 arch 事件的运行，这里一个点都长不出来。**
+ *      清单上「架构定型」那一道下面是「待规划」占位行 —— 不是"模块待定"，
+ *      而是"这道工序这次根本没跑过"。
+ *
+ * ── 状态口径（★ 这里是本期最需要写清楚的一个判断）★ ──
+ *   模块自己**没有"执行"过** —— 真正去实现它的是第四道并行构建，
+ *   而那时候还没有发生。所以：
+ *     · **不给 running**：那会显示成"正在做"，而这一刻没有任何人在做它。
+ *       这是最容易顺手写错的一档（"架构阶段在跑，那它的子点也在跑吧"），
+ *       而它撒谎的方向最坏：用户会坐着等一件没人开始的事。
+ *     · 三条本地检查**全过** → `done`：
+ *       我们确实知道的事情是"这个模块被架构定型接受了"——
+ *       它覆盖了规格里的功能、依赖合法、依赖图无环。
+ *     · **有不过的** → `failed`：
+ *       一个没过检查的架构产出的模块，不该显示成"已就绪"。
+ *       保守的方向不能反 —— 显示成没过，用户最多多看一眼；
+ *       显示成过了，他会拿着一个没验证过的模块划分往下走。
+ *
+ *   这两档都是**出生时就定下的**（理由同 checkPoints）：检查结果是
+ *   跟着 arch 事件一起来的，模块没有"先出生、再慢慢被判定"的过程。
+ *
+ * ── 读不到检查结果时为什么按 failed ──
+ *   事件是从数据库那行 JSON 还原出来的，payload 残缺是可能的。
+ *   读不出"三条都过了"就说"过了"，等于替一个来路不明的产物背书。
+ *   宁可让清单红着 —— 那一抹红恰好会把人的注意力引到该看的地方。
+ */
+function archPoints(payload: Record<string, unknown> | null, seq: number): TaskPoint[] {
+  const arch = asRecord(payload?.arch);
+  const modules = arch?.modules;
+  if (!Array.isArray(modules)) return [];
+
+  const allPassed = didAllChecksPass(payload);
+
+  const points: TaskPoint[] = [];
+  for (const raw of modules) {
+    /*
+      ⚠️ 变量叫 item 不叫 module：`module` 是 Node 的保留标识符，
+         eslint（@next/next/no-assign-module-variable）会直接报错 ——
+         而报错的原因和这一段的逻辑毫无关系，改个名字比加一行 disable 干净。
+    */
+    const item = asRecord(raw);
+    /*
+      id 是稳定标识，也是这个点的身份（`arch:<模块id>`）。
+      没有它就凑不出一个不会漂的 id —— 拿下标凑的话，
+      模块顺序一变，清单里那一行指向的就是另一个模块了
+      （和 checkPoints 里"宁可不要这个点"是同一条理由）。
+    */
+    const id = asString(item?.id);
+    if (!id) continue;
+
+    points.push({
+      id: `arch:${id}`,
+      parentId: ARCH_STAGE_ID,
+      depth: 2,
+      kind: "exec",
+      // 标题取模块名：那是这个模块里唯一一句人话，id 是给机器引用的
+      title: asString(item?.name) || id,
+      status: allPassed ? "done" : "failed",
+      bornAtSeq: seq,
+    });
+  }
+  return points;
+}
+
+/**
+ * arch 事件里那三条本地检查是不是全过了。
+ *
+ * 逐项读 `pass === true`，而不是读汇总的 `passed === total`：
+ * 汇总数字是**算出来的**，逐项才是原始事实；两者万一不一致
+ * （比如有人手写了一条夹具），以逐项为准更接近"到底发生了什么"。
+ *
+ * 缺 results、results 为空、pass 字段缺失，一律算**没过** ——
+ * 理由见 archPoints 里那段：读不出来就说"过了"，是在替产物背书。
+ */
+function didAllChecksPass(payload: Record<string, unknown> | null): boolean {
+  const results = asRecord(payload?.check)?.results;
+  if (!Array.isArray(results) || results.length === 0) return false;
+  return results.every((r) => asRecord(r)?.pass === true);
 }
 
 /* ============================================================
@@ -466,10 +569,21 @@ export function planningFromRun(src: PlanningSource): PlanningEvent[] {
     */
     if (!stageIds.has(ownerStage)) return;
 
+    /*
+      产出 → 它名下的执行点。三种产出各有一套派生规则：
+        · check → 七个检查项（verify 名下）
+        · arch  → 每个模块一个点（arch 名下）—— 清单的二级子树从这儿长出来
+        · spec  → 每条验收标准一个点（spec 名下）
+      规则分开写而不是合并成一个"万能函数"：三者的字段名、id 约定、
+      状态口径都不一样（pending / done|failed / done|failed），
+      硬凑成一个只会让每条规则都变得难读、也难改。
+    */
     const born =
       event.kind === "check"
         ? checkPoints(payload, event.seq)
-        : specPoints(payload, event.seq);
+        : event.kind === "arch"
+          ? archPoints(payload, event.seq)
+          : specPoints(payload, event.seq);
     for (const point of born) {
       log = appendBorn(log, point);
     }
