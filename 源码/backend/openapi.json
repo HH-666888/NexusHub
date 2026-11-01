@@ -1,0 +1,61 @@
+{
+  "components": {
+    "schemas": {
+      "HealthStatus": {
+        "properties": {
+          "db": {
+            "enum": [
+              "ok",
+              "down"
+            ],
+            "title": "Db",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "version",
+          "db"
+        ],
+        "title": "HealthStatus",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Nexus API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  }
+}

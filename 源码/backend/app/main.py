@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app import __version__
 from app.config import get_settings
 from app.deps import get_db
+from app.domain.health import HealthStatus
 from app.features.artifacts.router import router as artifacts_router
 from app.features.auth.router import router as auth_router
 from app.features.gate.router import router as gate_router
@@ -55,8 +56,8 @@ def create_app() -> FastAPI:
     ):
         app.include_router(router, prefix=API_PREFIX)
 
-    @app.get(f"{API_PREFIX}/health", tags=["health"])
-    def health(db: Session = Depends(get_db)) -> dict[str, object]:
+    @app.get(f"{API_PREFIX}/health", tags=["health"], response_model=HealthStatus)
+    def health(db: Session = Depends(get_db)) -> HealthStatus:
         return build_health(db)
 
     # 同源部署（前端 rewrite 到本服务）不需要 CORS；只有本地两端不同端口时才开

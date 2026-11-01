@@ -30,7 +30,10 @@
     "demo:seed": "tsx src/scripts/demo-seed.ts",
     "demo:token": "tsx src/scripts/demo-token.ts",
     "probe": "tsx src/scripts/probe-capability.ts",
-    "verify": "npm run typecheck && npm run lint && npm run test && npm run build"
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
+    "gen:openapi": "cd ../backend && python -m tools.export_openapi openapi.json",
+    "gen:types": "openapi-ts -f openapi-ts.config.ts",
+    "verify:types": "npm run gen:types && git diff --exit-code -- src/api/generated"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
@@ -41,6 +44,7 @@
     "server-only": "^0.0.1"
   },
   "devDependencies": {
+    "@hey-api/openapi-ts": "^0.99.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.5",
