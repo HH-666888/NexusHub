@@ -328,6 +328,7 @@ export function CanvasWorkbench({
         minFitScale={minFitScale}
         focusRequest={focusRequest}
         onUserMoved={onUserMoved}
+        hideControls={empty}
       >
         <PipelineCanvas
           nodes={empty ? [] : graph.nodes}

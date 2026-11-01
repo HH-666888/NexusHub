@@ -28,7 +28,7 @@ export function NewProjectCta() {
       >
         <p className="text-[13px] text-slate-200">这是一个空项目</p>
         <p className="mt-1 text-[11.5px] leading-relaxed text-slate-500">
-          说一句你想做的软件，六道工序会随着生成依次亮起来。也可以从上面的历史项目里挑一条。
+          说一句你想做的软件，六道工序会随着生成依次亮起来。
         </p>
 
         <textarea

@@ -47,6 +47,11 @@ export interface CanvasStageProps {
   /** “回到原点”按钮去的地方。不传就是核心格 */
   homeBounds?: { x: number; y: number; w: number; h: number };
   /**
+   * 空画布：连“拖动平移·滚轮缩放”的提示和右下角缩放条都不显示。
+   * 一整片干净网格里浮一个输入卡，比一堆暂时用不上的控件更像“还没开始”。
+   */
+  hideControls?: boolean;
+  /**
    * 自动适应的缩放下限。面板里给 0.62 左右：不设的话，一个 808×371 的面板
    * 会把六道工序缩到 48%，卡片上的字只剩 7 像素。
    */
@@ -136,6 +141,7 @@ export function CanvasStage({
   children,
   fitBounds,
   homeBounds,
+  hideControls = false,
   minFitScale = 0,
   focusRequest = null,
   fitAllBounds,
@@ -359,58 +365,62 @@ export function CanvasStage({
         操作提示放左上角：左下角是 Next.js 开发浮标的位置，会和它叠住；
         右上角有缩放控件，右下角留给状态栏。pointer-events-none，不该挡住拖拽。
       */}
-      <div className="pointer-events-none absolute top-3 left-4 text-[11px] leading-relaxed text-slate-600">
-        拖动平移 · 滚轮缩放
-      </div>
+      {!hideControls && (
+        <div className="pointer-events-none absolute top-3 left-4 text-[11px] leading-relaxed text-slate-600">
+          拖动平移 · 滚轮缩放
+        </div>
+      )}
 
       {/* 右下角缩放控制 */}
-      <div className="absolute right-4 bottom-4 flex items-center gap-1 rounded-full border border-[var(--color-border-soft)] bg-[var(--color-surface)]/90 px-1.5 py-1 backdrop-blur">
-        <button
-          type="button"
-          onClick={() => zoomButton(1 / 1.25)}
-          disabled={viewport.scale <= MIN_SCALE}
-          aria-label="缩小"
-          className="flex h-7 w-7 items-center justify-center rounded-full text-[14px] leading-none text-slate-400 transition-colors duration-150 hover:bg-slate-700/50 hover:text-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
-        >
-          −
-        </button>
+      {!hideControls && (
+        <div className="absolute right-4 bottom-4 flex items-center gap-1 rounded-full border border-[var(--color-border-soft)] bg-[var(--color-surface)]/90 px-1.5 py-1 backdrop-blur">
+          <button
+            type="button"
+            onClick={() => zoomButton(1 / 1.25)}
+            disabled={viewport.scale <= MIN_SCALE}
+            aria-label="缩小"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-[14px] leading-none text-slate-400 transition-colors duration-150 hover:bg-slate-700/50 hover:text-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
+          >
+            −
+          </button>
 
-        <button
-          type="button"
-          onClick={goHome}
-          title="回到原点（第 3 列第 2 行）"
-          data-canvas-zoom
-          className="min-w-[52px] rounded-full px-2 py-1 text-[11.5px] text-slate-300 tabular-nums transition-colors duration-150 hover:bg-slate-700/50 hover:text-slate-100"
-        >
-          {formatScale(viewport.scale)}
-        </button>
+          <button
+            type="button"
+            onClick={goHome}
+            title="回到原点（第 3 列第 2 行）"
+            data-canvas-zoom
+            className="min-w-[52px] rounded-full px-2 py-1 text-[11.5px] text-slate-300 tabular-nums transition-colors duration-150 hover:bg-slate-700/50 hover:text-slate-100"
+          >
+            {formatScale(viewport.scale)}
+          </button>
 
-        {/*
+          {/*
           挨着倍率按钮放。它和“回到原点”是一对相反的出口：一个看得清但看不全，
           一个装下整棵树但读不清字。把代价写在 title 里 —— 知道了再点和被骗着点是两件事。
         */}
-        {fitAllBounds && (
+          {fitAllBounds && (
+            <button
+              type="button"
+              onClick={fitAll}
+              data-canvas-fit-all
+              title="装下整棵树（会很小，读不清字）"
+              className="rounded-full px-2 py-1 text-[11.5px] text-slate-400 transition-colors duration-150 hover:bg-slate-700/50 hover:text-slate-100"
+            >
+              看全
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={fitAll}
-            data-canvas-fit-all
-            title="装下整棵树（会很小，读不清字）"
-            className="rounded-full px-2 py-1 text-[11.5px] text-slate-400 transition-colors duration-150 hover:bg-slate-700/50 hover:text-slate-100"
+            onClick={() => zoomButton(1.25)}
+            disabled={viewport.scale >= MAX_SCALE}
+            aria-label="放大"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-[14px] leading-none text-slate-400 transition-colors duration-150 hover:bg-slate-700/50 hover:text-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
           >
-            看全
+            +
           </button>
-        )}
-
-        <button
-          type="button"
-          onClick={() => zoomButton(1.25)}
-          disabled={viewport.scale >= MAX_SCALE}
-          aria-label="放大"
-          className="flex h-7 w-7 items-center justify-center rounded-full text-[14px] leading-none text-slate-400 transition-colors duration-150 hover:bg-slate-700/50 hover:text-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
-        >
-          +
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

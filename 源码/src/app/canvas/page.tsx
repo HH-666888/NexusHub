@@ -73,6 +73,12 @@ export default async function CanvasPage({
   // 未指定 run 时选中最近一条；但“新建项目”明确要空画布，不兜底
   if (!selectedRun && !wantsNew && runs.length > 0) selectedRun = runs[0];
 
+  /*
+    空项目：画布之外的东西一律不渲染，但组件都留着 ——
+    一旦选中运行（点上面的历史项目）就照常出现。
+  */
+  const blankProject = wantsNew && !selectedRun;
+
   // 顶栏右侧的累计花费，未花过时传 null，界面据此区分尚未运行与花费为零
   const spent = await sqliteCostStore.totalByUser(user.id);
 
@@ -188,7 +194,10 @@ export default async function CanvasPage({
       />
 
       {/* 切换运行：单行横带，画布是主角 */}
-      <RunSwitcher runs={runs} selectedRunId={selectedRun?.id ?? null} />
+      {/* 空项目不显示运行切换条：一条记录都没有时它只会解释一堆用不上的操作 */}
+      {!blankProject && (
+        <RunSwitcher runs={runs} selectedRunId={selectedRun?.id ?? null} />
+      )}
 
       <main className="flex min-h-0 flex-1 flex-col">
         {/*
@@ -202,13 +211,15 @@ export default async function CanvasPage({
             清单是服务端组件（只读，算一次），内容面板是客户端组件，props 均为可序列化纯数据。
             面板本体作为 children 传入，客户端/服务端身份由它自己决定。
           */}
-          <PanelDock side="left" label="清单">
-            {/*
-              runId 只用于拼点一行跳哪儿的链接；不传会丢掉已有的 ?run=，
-              点一行就会跳到另一次运行，用户看到的是别的树。
-            */}
-            <PlanningOutline rows={outlineRows} runId={selectedRun?.id ?? null} />
-          </PanelDock>
+          {!blankProject && (
+            <PanelDock side="left" label="清单">
+              {/*
+                runId 只用于拼点一行跳哪儿的链接；不传会丢掉已有的 ?run=，
+                点一行就会跳到另一次运行，用户看到的是别的树。
+              */}
+              <PlanningOutline rows={outlineRows} runId={selectedRun?.id ?? null} />
+            </PanelDock>
+          )}
 
           <div className="relative min-h-0 min-w-0 flex-1">
             <CanvasWorkbench
@@ -240,19 +251,21 @@ export default async function CanvasPage({
               */
               runKey={selectedRun?.id}
               /* 新建项目要的是空白：连六道工序的骨架都不画 */
-              empty={wantsNew && !selectedRun}
+              empty={blankProject}
             />
-            {/* 空项目：叠一层开工入口，画布骨架仍然可见 */}
-            {wantsNew && !selectedRun && <NewProjectCta />}
+            {/* 空项目：整片网格上只留这一张开工卡 */}
+            {blankProject && <NewProjectCta />}
           </div>
 
-          <PanelDock side="right" label="内容">
-            {/*
-              右侧内容面板：两个页签（思考 / 结果），内容来自同一份 blocks，
-              currentBlockId 指明当前显示哪一步；它是客户端组件，props 只有可序列化数据。
-            */}
-            <StepContent blocks={blocks} currentBlockId={currentBlockId} />
-          </PanelDock>
+          {!blankProject && (
+            <PanelDock side="right" label="内容">
+              {/*
+                右侧内容面板：两个页签（思考 / 结果），内容来自同一份 blocks，
+                currentBlockId 指明当前显示哪一步；它是客户端组件，props 只有可序列化数据。
+              */}
+              <StepContent blocks={blocks} currentBlockId={currentBlockId} />
+            </PanelDock>
+          )}
         </div>
 
         {/*
@@ -260,8 +273,9 @@ export default async function CanvasPage({
           这里只写 shrink-0，避免被上面的画布挤扁。
           收起时是 40px 标签条，展开时是 38vh。
         */}
-        <div className="shrink-0 border-t border-[var(--color-border-soft)] bg-[var(--color-canvas)]">
-          {selectedRun ? (
+        {/* 没有选中运行就没有过程可看，这条也不留空壳 */}
+        {selectedRun && (
+          <div className="shrink-0 border-t border-[var(--color-border-soft)] bg-[var(--color-canvas)]">
             <RunWorkbench
               key={selectedRun.id}
               runId={selectedRun.id}
@@ -274,14 +288,8 @@ export default async function CanvasPage({
               blocks={blocks}
               currentBlockId={currentBlockId}
             />
-          ) : (
-            <div className="flex items-center justify-center px-6 py-4 text-center">
-              <p className="text-[11.5px] text-slate-500">
-                还没有选中任何构建 —— 在上面写一句你要做的东西，就会开始
-              </p>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </main>
     </div>
   );

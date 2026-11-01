@@ -1849,11 +1849,17 @@ async function main() {
     );
 
     // 空画布必须自己给出下一步，否则用户面对一片空网格不知道该干什么。
+    // 同时：左右面板、底部过程流、缩放条全都不该出现 —— 一片网格 + 一张卡。
     const emptyProbeRes = await cdp.send("Runtime.evaluate", {
       expression: `(() => JSON.stringify({
         cta: !!document.querySelector('[data-new-project]'),
         textarea: !!document.querySelector('[data-new-project] textarea'),
         canvas: !!document.querySelector('[data-canvas-stage]'),
+        outline: !!document.querySelector('[data-planning-outline]'),
+        content: !!document.querySelector('[data-step-content]'),
+        zoom: !!document.querySelector('[data-canvas-zoom]'),
+        switcher: !!document.querySelector('[data-run-import]'),
+        panHint: document.body.innerText.includes('拖动平移'),
       }))()`,
       returnByValue: true,
     });
@@ -1861,6 +1867,11 @@ async function main() {
       cta: boolean;
       textarea: boolean;
       canvas: boolean;
+      outline: boolean;
+      content: boolean;
+      zoom: boolean;
+      switcher: boolean;
+      panHint: boolean;
     };
     check(
       emptyProbe.cta && emptyProbe.textarea,
@@ -1869,8 +1880,23 @@ async function main() {
     );
     check(
       emptyProbe.canvas,
-      "空画布仍然占住版面（画布元素在，四分版面不塌）",
+      "空画布仍然占住版面（画布元素在，四分版面不会塌）",
       "空画布时画布元素消失了 —— 版面会塌成两列",
+    );
+    check(
+      !emptyProbe.outline && !emptyProbe.content,
+      "空画布上左右两块面板都不渲染（清单 / 这一步的内容）",
+      `空画布还留着面板：清单 ${emptyProbe.outline} · 内容 ${emptyProbe.content}`,
+    );
+    check(
+      !emptyProbe.switcher,
+      "空画布上也不显示运行切换条（没有记录可切）",
+      "空画布还留着运行切换条 —— 一条记录都没有时它只会解释一堆用不上的操作",
+    );
+    check(
+      !emptyProbe.zoom && !emptyProbe.panHint,
+      "空画布上没有缩放条和“拖动平移”提示（没有内容可看全）",
+      `空画布还留着控件：缩放条 ${emptyProbe.zoom} · 平移提示 ${emptyProbe.panHint}`,
     );
 
     // 视口策略两件事：“看全”要忽略 0.45 下限把整棵树装进视口；
