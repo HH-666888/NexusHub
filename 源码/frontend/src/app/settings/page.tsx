@@ -8,10 +8,10 @@ import {
   loadModelConfig,
   SETTINGS_KEYS,
 } from "@/core/settings/service";
-import { AppearancePanel } from "@/components/settings/appearance-panel";
-import { ModelPanel } from "@/components/settings/model-panel";
-import { AppNav } from "@/components/shell/app-nav";
-import { ThemeToggleServer } from "@/components/theme-toggle-server";
+import { AppearancePanel } from "@/features/settings/components/appearance-panel";
+import { ModelPanel } from "@/features/settings/components/model-panel";
+import { AppNav } from "@/components/layout/app-nav";
+import { ThemeToggleServer } from "@/components/ui/theme-toggle-server";
 import { sqliteCostStore } from "@/adapters/store/cost-repo";
 import { requireUser } from "@/server/auth-context";
 

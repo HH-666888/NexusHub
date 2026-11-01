@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { createRunAction, type RunFormState } from "@/app/actions/run";
-import { NAV_GUTTER } from "@/components/shell/gutter";
+import { NAV_GUTTER } from "@/components/layout/gutter";
 
 /**
  * 首页主区：标题 + 类型分段 + 输入框。这一屏是整页的重心，占了将近一半高度。

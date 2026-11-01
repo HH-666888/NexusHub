@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { AppNav } from "@/components/shell/app-nav";
-import { ThemeToggleServer } from "@/components/theme-toggle-server";
-import { Features } from "@/components/welcome/features";
-import { PipelineFlow } from "@/components/welcome/pipeline-flow";
-import { SectionHead } from "@/components/welcome/section-head";
-import { StatsRow } from "@/components/welcome/stats-row";
+import { AppNav } from "@/components/layout/app-nav";
+import { ThemeToggleServer } from "@/components/ui/theme-toggle-server";
+import { Features } from "@/features/welcome/components/features";
+import { PipelineFlow } from "@/features/welcome/components/pipeline-flow";
+import { SectionHead } from "@/features/welcome/components/section-head";
+import { StatsRow } from "@/features/welcome/components/stats-row";
 import { getCurrentUser } from "@/server/auth-context";
 
 /**

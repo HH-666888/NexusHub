@@ -5,8 +5,8 @@ import { useActionState } from "react";
 import { logoutAction } from "@/app/actions/auth";
 import { createRunAction, type RunFormState } from "@/app/actions/run";
 import { PROMPT_MAX } from "@/core/domain/run";
-import { AppNav } from "@/components/shell/app-nav";
-import { NAV_GUTTER } from "@/components/shell/gutter";
+import { AppNav } from "@/components/layout/app-nav";
+import { NAV_GUTTER } from "@/components/layout/gutter";
 
 const INITIAL: RunFormState = {};
 

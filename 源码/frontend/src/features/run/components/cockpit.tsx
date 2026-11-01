@@ -18,7 +18,7 @@ import type { GateOverride } from "@/core/pipeline/gate-policy";
 import { CockpitHeader } from "./cockpit-header";
 import { RunList, type RunView } from "./run-list";
 import { RunWorkbench } from "./run-workbench";
-import { CanvasWorkbench } from "@/components/canvas/canvas-workbench";
+import { CanvasWorkbench } from "@/features/canvas/components/canvas-workbench";
 
 /**
  * 驾驶舱。左 = 阶段流水线，中 = 构建记录 / 任务图两个标签页，

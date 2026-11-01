@@ -1,9 +1,9 @@
-import { HomeHero } from "@/components/home/home-hero";
-import { AppNav } from "@/components/shell/app-nav";
-import { HomeProjects } from "@/components/home/home-projects";
-import { HomeShowcase } from "@/components/home/home-showcase";
-import type { RunView } from "@/components/cockpit/run-list";
-import { ThemeToggleServer } from "@/components/theme-toggle-server";
+import { HomeHero } from "@/features/home/components/home-hero";
+import { AppNav } from "@/components/layout/app-nav";
+import { HomeProjects } from "@/features/home/components/home-projects";
+import { HomeShowcase } from "@/features/home/components/home-showcase";
+import type { RunView } from "@/features/run/components/run-list";
+import { ThemeToggleServer } from "@/components/ui/theme-toggle-server";
 import { sqliteCostStore } from "@/adapters/store/cost-repo";
 import { sqliteRunStore } from "@/adapters/store/run-repo";
 import { describeTime } from "@/core/domain/run";

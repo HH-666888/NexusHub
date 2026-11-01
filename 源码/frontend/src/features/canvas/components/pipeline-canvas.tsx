@@ -34,7 +34,7 @@ import {
   type TaskPointStatus,
 } from "@/core/planning/task-point";
 import type { StageId } from "@/core/pipeline/stages";
-import { useAnimatedLayout } from "./use-animated-layout";
+import { useAnimatedLayout } from "../hooks/use-animated-layout";
 
 /**
  * 画布上的六道工序：位置由 core/canvas 的纯函数给出，画布只画它拿到的那棵树。

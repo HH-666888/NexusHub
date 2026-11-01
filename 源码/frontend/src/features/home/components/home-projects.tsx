@@ -2,8 +2,8 @@ import Link from "next/link";
 import { computeStageStatuses } from "@/core/pipeline/progress";
 import { STAGES } from "@/core/pipeline/stages";
 import { tintVarAt } from "@/core/domain/appearance";
-import type { RunView } from "@/components/cockpit/run-list";
-import { NAV_GUTTER } from "@/components/shell/gutter";
+import type { RunView } from "@/features/run/components/run-list";
+import { NAV_GUTTER } from "@/components/layout/gutter";
 
 /**
  * 项目卡片行：参考图里“+ 新建项目”后面那一排缩略图，我们放的是用户自己的构建记录，

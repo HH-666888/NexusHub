@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { NAV_GUTTER } from "@/components/shell/gutter";
+import { NAV_GUTTER } from "@/components/layout/gutter";
 
 /**
  * 能力展示。参考图下半部分是“最近上新”的一排作品图，我们没有作品图可放：

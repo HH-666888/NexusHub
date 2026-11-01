@@ -1,14 +1,14 @@
 import { notFound } from "next/navigation";
-import { CanvasWorkbench } from "@/components/canvas/canvas-workbench";
-import { NewProjectCta } from "@/components/canvas/new-project-cta";
-import { RunSwitcher } from "@/components/canvas/run-switcher";
-import { RunWorkbench } from "@/components/cockpit/run-workbench";
-import type { RunView } from "@/components/cockpit/run-list";
-import { PanelDock } from "@/components/planning/panel-dock";
-import { PlanningOutline } from "@/components/planning/planning-outline";
-import { StepContent } from "@/components/planning/step-content";
-import { AppNav } from "@/components/shell/app-nav";
-import { ThemeToggleServer } from "@/components/theme-toggle-server";
+import { CanvasWorkbench } from "@/features/canvas/components/canvas-workbench";
+import { NewProjectCta } from "@/features/canvas/components/new-project-cta";
+import { RunSwitcher } from "@/features/canvas/components/run-switcher";
+import { RunWorkbench } from "@/features/run/components/run-workbench";
+import type { RunView } from "@/features/run/components/run-list";
+import { PanelDock } from "@/features/canvas/components/panel-dock";
+import { PlanningOutline } from "@/features/canvas/components/planning-outline";
+import { StepContent } from "@/features/canvas/components/step-content";
+import { AppNav } from "@/components/layout/app-nav";
+import { ThemeToggleServer } from "@/components/ui/theme-toggle-server";
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
 import { sqliteCostStore } from "@/adapters/store/cost-repo";
 import { sqliteEventStore } from "@/adapters/store/event-repo";
@@ -29,7 +29,7 @@ import { STAGES, isStageId } from "@/core/pipeline/stages";
 import { getOwnedRun, listRuns } from "@/core/run/service";
 import { requireUser } from "@/server/auth-context";
 import { serverNow } from "@/server/clock";
-import type { CanvasRootCard } from "@/components/canvas/pipeline-canvas";
+import type { CanvasRootCard } from "@/features/canvas/components/pipeline-canvas";
 import type { StageId } from "@/core/pipeline/stages";
 
 /**

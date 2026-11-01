@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { deleteRunAction } from "@/app/actions/run";
 import { RUN_STATUS_LABEL } from "@/core/domain/run";
-import type { RunView } from "@/components/cockpit/run-list";
+import type { RunView } from "@/features/run/components/run-list";
 
 /**
  * 运行切换器（横排）。画布是主角，切换只能用一条横带，不沿用工作台那张竖排卡片列表。

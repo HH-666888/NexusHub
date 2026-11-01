@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import { Cockpit } from "@/components/cockpit/cockpit";
-import type { RunView } from "@/components/cockpit/run-list";
-import { ThemeToggleServer } from "@/components/theme-toggle-server";
+import { Cockpit } from "@/features/run/components/cockpit";
+import type { RunView } from "@/features/run/components/run-list";
+import { ThemeToggleServer } from "@/components/ui/theme-toggle-server";
 import { env } from "@/config/env";
 import { fsArtifactStore } from "@/adapters/store/artifact-repo";
 import { sqliteCostStore } from "@/adapters/store/cost-repo";
