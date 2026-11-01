@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { CanvasWorkbench } from "@/components/canvas/canvas-workbench";
+import { NewProjectCta } from "@/components/canvas/new-project-cta";
 import { RunSwitcher } from "@/components/canvas/run-switcher";
 import { RunWorkbench } from "@/components/cockpit/run-workbench";
 import type { RunView } from "@/components/cockpit/run-list";
@@ -39,10 +40,15 @@ import type { StageId } from "@/core/pipeline/stages";
 export default async function CanvasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ run?: string; focus?: string }>;
+  searchParams: Promise<{ run?: string; focus?: string; new?: string }>;
 }) {
   const user = await requireUser();
-  const { run: runId, focus: focusParam } = await searchParams;
+  const { run: runId, focus: focusParam, new: newParam } = await searchParams;
+  /*
+    ?new=1 是“新建项目”的入口：要的是空画布，不是最近一条。
+    没有它的话点“新建项目”永远落回上一次的树。
+  */
+  const wantsNew = newParam === "1";
 
   // ?focus=<节点 id>：状态放 URL，刷新、分享、后退都成立。
   // 未传、空串、数组都当作没有点名，查不到就保持默认视图，不落到随便聚焦一个。
@@ -64,8 +70,8 @@ export default async function CanvasPage({
     // 不属于当前用户时按不存在处理，不泄露 id 是否有效
     if (!selectedRun) notFound();
   }
-  // 未指定 run 时选中最近一条，与首页输入框的默认行为一致
-  if (!selectedRun && runs.length > 0) selectedRun = runs[0];
+  // 未指定 run 时选中最近一条；但“新建项目”明确要空画布，不兜底
+  if (!selectedRun && !wantsNew && runs.length > 0) selectedRun = runs[0];
 
   // 顶栏右侧的累计花费，未花过时传 null，界面据此区分尚未运行与花费为零
   const spent = await sqliteCostStore.totalByUser(user.id);
@@ -204,7 +210,7 @@ export default async function CanvasPage({
             <PlanningOutline rows={outlineRows} runId={selectedRun?.id ?? null} />
           </PanelDock>
 
-          <div className="min-h-0 min-w-0 flex-1">
+          <div className="relative min-h-0 min-w-0 flex-1">
             <CanvasWorkbench
               run={
                 selectedRun
@@ -234,6 +240,8 @@ export default async function CanvasPage({
               */
               runKey={selectedRun?.id}
             />
+            {/* 空项目：叠一层开工入口，画布骨架仍然可见 */}
+            {wantsNew && !selectedRun && <NewProjectCta />}
           </div>
 
           <PanelDock side="right" label="内容">

@@ -41,7 +41,7 @@ export function HomeProjects({ runs }: HomeProjectsProps) {
       <div className="grid grid-cols-4 gap-5">
         {/* 新建 */}
         <Link
-          href="/canvas"
+          href="/canvas?new=1"
           data-home-new-project
           className="group flex flex-col overflow-hidden rounded-2xl border border-dashed border-[var(--color-border-soft)] transition-colors duration-150 hover:border-slate-600"
         >

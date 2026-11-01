@@ -454,11 +454,38 @@ async function main() {
     check(homeHtml.includes(needle), `首页有“${label}”`, `首页缺少“${label}”`);
   }
 
-  // 新建项目必须指向 /canvas，这个链接很容易在重构时被改回工作台。
+  // 新建项目必须是“空画布”入口：带 ?new=1，否则画布会兜底成最近一条旧项目。
   check(
-    homeHtml.includes('href="/canvas"'),
-    "首页“新建项目”指向画布 /canvas",
-    "首页“新建项目”没有指向 /canvas",
+    homeHtml.includes('href="/canvas?new=1"'),
+    "首页“新建项目”指向空画布 /canvas?new=1",
+    "首页“新建项目”没带 new=1（点进去会看到上一条旧项目）",
+  );
+
+  /*
+    空画布入口的两面：带 new=1 必须是空的，不带仍然打开最近一条。
+    两条一起断言才算数 —— 只验前者的话，把 new 判断写成恒真也能过。
+  */
+  const freshCanvas = await fetch(`${BASE}/canvas?new=1`, {
+    headers: { cookie: cookieA },
+  });
+  const freshHtml = await freshCanvas.text();
+  check(
+    freshCanvas.status === 200,
+    "登录后可以打开空画布 /canvas?new=1",
+    `返回 ${freshCanvas.status}`,
+  );
+  check(
+    freshHtml.includes("data-new-project"),
+    "空画布上有“说一句就开工”的输入卡（说明没兜底选最近一条）",
+    "空画布没有开工入口 —— 又被兜底成最近一条旧项目了",
+  );
+
+  const plainCanvas = await fetch(`${BASE}/canvas`, { headers: { cookie: cookieA } });
+  const plainHtml = await plainCanvas.text();
+  check(
+    !plainHtml.includes("data-new-project"),
+    "不带 new=1 的 /canvas 仍然直接打开最近一条（对照，证明上一条不是恒真）",
+    "不带 new=1 也出现开工入口 —— new 判断写成了恒真",
   );
 
   // 首页会显示构建记录与累计花费，未登录必须跳登录页。
