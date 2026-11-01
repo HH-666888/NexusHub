@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiJson, apiSend } from "@/api/client";
+import { openRunStream } from "@/api/sse";
 import type { GenerateEvent, GeneratePhase } from "@/core/generate/service";
 import type { CheckResult } from "@/core/domain/check";
 import { toStepBlocks, type StepBlock } from "@/core/planning/step-blocks";
@@ -122,9 +124,7 @@ export function GenerationConsole({
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`/api/runs/${runId}/gate`);
-        if (!res.ok) return;
-        const json = (await res.json()) as {
+        const json = await apiJson<{
           hasSpec?: boolean;
           spec?: {
             goal: string;
@@ -139,7 +139,7 @@ export function GenerationConsole({
             questions: string[];
           } | null;
           gate?: { pending: string[]; fallback: boolean; reason: string } | null;
-        };
+        }>(`/api/runs/${runId}/gate`);
         if (cancelled || !json.hasSpec || !json.spec) return;
         const pending = json.gate?.pending ?? [];
         setSpec(
@@ -266,7 +266,8 @@ export function GenerationConsole({
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
 
-  const sourceRef = useRef<EventSource | null>(null);
+  /** 关闭当前事件流。用 api/sse 的封装而不是裸 EventSource：坏帧与未知事件在那里统一忽略 */
+  const closerRef = useRef<(() => void) | null>(null);
   const scrollRef = useRef<HTMLPreElement | null>(null);
   /** 待写入的片段。累积到下一帧再一次性合并进 state */
   const pendingRef = useRef({ text: "", reasoning: "" });
@@ -315,8 +316,8 @@ export function GenerationConsole({
 
   /* 关闭连接并清理 */
   const stop = useCallback(() => {
-    sourceRef.current?.close();
-    sourceRef.current = null;
+    closerRef.current?.();
+    closerRef.current = null;
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -343,44 +344,9 @@ export function GenerationConsole({
     if (el) el.scrollTop = el.scrollHeight;
   }, [text, reasoning, showReasoning]);
 
-  /* 发起生成 */
-  const start = useCallback(() => {
-    if (sourceRef.current) return;
-
-    setRunning(true);
-    setPhase("generating");
-    setPhaseLabel("正在连接…");
-    setText("");
-    setReasoning("");
-    setCost(null);
-    setLatency(null);
-    setUsage(null);
-    setChecks(null);
-    setCallbackNote("");
-    setError(null);
-    setStartedAt(Date.now());
-    setElapsed(0);
-    pendingRef.current = { text: "", reasoning: "" };
-    /*
-      实时块从零开始，服务端那份 blocks 原样留着并排在前面 ——
-      于是“旧的留在上方、新的追加在下方”在重新生成时同样成立。
-    */
-    liveEventsRef.current = [];
-    liveSeqRef.current = 0;
-    setLiveBlocks([]);
-    setBlocksAtStart(blocks ?? null);
-
-    const es = new EventSource(`/api/runs/${runId}/generate`);
-    sourceRef.current = es;
-
-    es.onmessage = (msg) => {
-      let event: GenerateEvent;
-      try {
-        event = JSON.parse(msg.data) as GenerateEvent;
-      } catch {
-        return; // 半截数据直接跳过，不因为一行坏掉中断整条流
-      }
-
+  /* 单条事件 → state。和"开流"分开：一个负责解释事件，一个负责连接 */
+  const handleEvent = useCallback(
+    (event: GenerateEvent) => {
       /*
         每条事件都进实时缓冲，正文与思考的片段也进：切块要看的是
         “这一步里所有 delta 按顺序拼起来是什么”。界面要的是逐字的实时感，不在这里合并。
@@ -459,36 +425,66 @@ export function GenerationConsole({
           setError({ message: event.message, hint: event.hint });
           break;
       }
-    };
+    },
+    [scheduleFlush, stop, onSettled],
+  );
 
-    es.onerror = () => {
-      // 服务端正常收尾也会触发 onerror。如果已经在终态，忽略即可。
-      if (phase === "done" || phase === "failed") {
-        stop();
-        return;
-      }
-      setError({
-        message: "连接中断",
-        hint: "可能是服务器重启或网络抖动。已有产物仍然保留。",
-      });
+  /** 连接异常。服务端正常收尾也会触发，所以先看是不是已经到终态 */
+  const handleStreamError = useCallback(() => {
+    if (phase === "done" || phase === "failed") {
       stop();
-      onSettled();
-    };
-  }, [runId, stop, scheduleFlush, onSettled, phase, blocks]);
+      return;
+    }
+    setError({
+      message: "连接中断",
+      hint: "可能是服务器重启或网络抖动。已有产物仍然保留。",
+    });
+    stop();
+    onSettled();
+  }, [phase, stop, onSettled]);
+
+  /* 发起生成 */
+  const start = useCallback(() => {
+    if (closerRef.current) return;
+
+    setRunning(true);
+    setPhase("generating");
+    setPhaseLabel("正在连接…");
+    setText("");
+    setReasoning("");
+    setCost(null);
+    setLatency(null);
+    setUsage(null);
+    setChecks(null);
+    setCallbackNote("");
+    setError(null);
+    setStartedAt(Date.now());
+    setElapsed(0);
+    pendingRef.current = { text: "", reasoning: "" };
+    /*
+      实时块从零开始，服务端那份 blocks 原样留着并排在前面 ——
+      于是“旧的留在上方、新的追加在下方”在重新生成时同样成立。
+    */
+    liveEventsRef.current = [];
+    liveSeqRef.current = 0;
+    setLiveBlocks([]);
+    setBlocksAtStart(blocks ?? null);
+
+    closerRef.current = openRunStream(runId, {
+      onEvent: handleEvent,
+      onError: handleStreamError,
+    });
+  }, [runId, blocks, handleEvent, handleStreamError]);
 
   /**
    * 清空重跑：先删产物，再走一次生成。
    * 有成品时点「开始生成」只会回放（不花钱），想真正重做必须走这里。
    */
   const regenerate = useCallback(async () => {
-    if (sourceRef.current || regenerating) return;
+    if (closerRef.current || regenerating) return;
     setRegenerating(true);
     try {
-      const res = await fetch(`/api/runs/${runId}/generate`, { method: "DELETE" });
-      if (!res.ok) {
-        setError({ message: `清空失败（HTTP ${res.status}）` });
-        return;
-      }
+      await apiSend(`/api/runs/${runId}/generate`, { method: "DELETE" });
       setHasArtifactLocal(false);
       onSettled();
       start();

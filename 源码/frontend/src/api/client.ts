@@ -28,6 +28,12 @@ export async function apiJson<T>(path: string, init: RequestInit = {}): Promise<
   return (await response.json()) as T;
 }
 
+/** 只关心成功/失败、不读响应体的写操作（DELETE / POST）。 */
+export async function apiSend(path: string, init: RequestInit = {}): Promise<void> {
+  const response = await fetch(path, { credentials: "same-origin", ...init });
+  if (!response.ok) throw await readError(response);
+}
+
 /**
  * 把错误响应变成 ApiError。
  *
