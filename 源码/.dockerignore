@@ -1,0 +1,4 @@
+# 构建上下文是仓库根，只把两个目录发给 daemon
+frontend/
+docs/
+database/

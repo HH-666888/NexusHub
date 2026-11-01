@@ -74,3 +74,17 @@ tmp/
 temp/
 *.tmp
 *.bak
+
+# ============================================================
+# Python（backend/）
+# ============================================================
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.import_linter_cache/
+*.egg-info/
+backend/.env
