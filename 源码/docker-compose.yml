@@ -1,0 +1,54 @@
+name: nexus
+
+services:
+  mysql:
+    image: mysql:8.0
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: nexus
+      MYSQL_USER: nexus
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-nexus}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      # 后端启动前必须等到这里 ok，否则迁移会撞上"表还没建"的假故障
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-unexus", "-p${MYSQL_PASSWORD:-nexus}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: mysql+pymysql://nexus:${MYSQL_PASSWORD:-nexus}@mysql:3306/nexus?charset=utf8mb4
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      RUN_COST_LIMIT_CNY: ${RUN_COST_LIMIT_CNY:-5}
+      MAX_PARALLEL_BUILD: ${MAX_PARALLEL_BUILD:-3}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      # rewrite 目标：容器内直接用服务名
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  mysql-data:
