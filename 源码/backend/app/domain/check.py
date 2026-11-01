@@ -20,3 +20,19 @@ class CheckSummary(ApiModel):
     passed: int
     failed: int
     failures: list[CheckResult] = []
+
+
+class StageCheckItem(ApiModel):
+    """单阶段（架构 / 界面）的检查条目，形状与产物检查一致。"""
+
+    name: str
+    pass_: bool = Field(alias="pass")
+    detail: str
+
+
+class StageCheck(ApiModel):
+    """架构检查与界面检查共用的形状：逐条结果 + 汇总计数。"""
+
+    results: list[StageCheckItem] = []
+    passed: int
+    total: int
