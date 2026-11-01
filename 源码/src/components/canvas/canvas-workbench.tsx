@@ -87,6 +87,12 @@ export interface CanvasWorkbenchProps {
    * 验收条目），URL 也可能被手写成一个不存在的 id。猜一个位置比不动更坏。
    */
   focusRequestId?: string | null;
+  /**
+   * 空画布：还没有任何选中的运行时不画工序卡。
+   * 六道工序是"这次运行的六道工序"，连运行都没有的时候画出来，
+   * 等于替用户先承诺了一件还没发生的事。
+   */
+  empty?: boolean;
 }
 
 export function CanvasWorkbench({
@@ -99,6 +105,7 @@ export function CanvasWorkbench({
   focusStageId = null,
   focusRequestId = null,
   runKey,
+  empty = false,
 }: CanvasWorkbenchProps) {
   const [activeId, setActiveId] = useState<StageId | null>(null);
   const geometry = variant === "panel" ? PANEL_GEOMETRY : WIDE_GEOMETRY;
@@ -323,7 +330,7 @@ export function CanvasWorkbench({
         onUserMoved={onUserMoved}
       >
         <PipelineCanvas
-          nodes={graph.nodes}
+          nodes={empty ? [] : graph.nodes}
           chain={chain}
           activeId={activeId}
           onPick={pick}

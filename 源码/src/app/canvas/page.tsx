@@ -239,6 +239,8 @@ export default async function CanvasPage({
                 必须是 id：上面的 run prop 是每次渲染新建的字面量，作依赖会让记忆每次清零。
               */
               runKey={selectedRun?.id}
+              /* 新建项目要的是空白：连六道工序的骨架都不画 */
+              empty={wantsNew && !selectedRun}
             />
             {/* 空项目：叠一层开工入口，画布骨架仍然可见 */}
             {wantsNew && !selectedRun && <NewProjectCta />}
@@ -275,7 +277,7 @@ export default async function CanvasPage({
           ) : (
             <div className="flex items-center justify-center px-6 py-4 text-center">
               <p className="text-[11.5px] text-slate-500">
-                还没有选中任何构建 —— 回到首页说一句你想做的软件，点“↑”
+                还没有选中任何构建 —— 在上面写一句你要做的东西，就会开始
               </p>
             </div>
           )}

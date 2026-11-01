@@ -1826,10 +1826,10 @@ async function main() {
 
     cleanupVerifyRun(runningRun);
 
-    // 19.3 没有选中运行：回到六根并列
-    // 不带 run 时 rootCard 不传，画布要和以前一模一样。
-    // 没有运行就连“这次运行”都还没有，凭空多画一层总规划是在描述不存在的东西。
-    await cdp.send("Page.navigate", { url: `${BASE}/canvas` });
+    // 19.3 没有选中运行：画布上什么都不画，只留开工入口
+    // 六道工序属于“这次运行”，还没有运行就没有它们 —— 连骨架也不留，
+    // 否则看着像已经开始了。
+    await cdp.send("Page.navigate", { url: `${BASE}/canvas?new=1` });
     await sleep(3500);
 
     const noRun = await readTree3();
@@ -1843,9 +1843,34 @@ async function main() {
       `没有运行却画出了 ${noRun.rootCount} 个根节点 —— 那描述的是一个不存在的东西`,
     );
     check(
-      noRun.stageCount === 6,
-      "没有选中运行时仍然是六道工序并列（rootCard 不传 = 旧样子）",
-      `工序卡有 ${noRun.stageCount} 个 —— 不传 rootCard 时画布该和以前一模一样`,
+      noRun.stageCount === 0,
+      "没有选中运行时画布上一个工序卡也不画（初始画布是空的）",
+      `画出了 ${noRun.stageCount} 张工序卡 —— 没有运行就没有“这次的六道工序”`,
+    );
+
+    // 空画布必须自己给出下一步，否则用户面对一片空网格不知道该干什么。
+    const emptyProbeRes = await cdp.send("Runtime.evaluate", {
+      expression: `(() => JSON.stringify({
+        cta: !!document.querySelector('[data-new-project]'),
+        textarea: !!document.querySelector('[data-new-project] textarea'),
+        canvas: !!document.querySelector('[data-canvas-stage]'),
+      }))()`,
+      returnByValue: true,
+    });
+    const emptyProbe = JSON.parse(emptyProbeRes.result!.value!) as {
+      cta: boolean;
+      textarea: boolean;
+      canvas: boolean;
+    };
+    check(
+      emptyProbe.cta && emptyProbe.textarea,
+      "空画布上有开工入口，能直接写一句开始",
+      "空画布上没有开工入口 —— 用户面对空网格无从下手",
+    );
+    check(
+      emptyProbe.canvas,
+      "空画布仍然占住版面（画布元素在，四分版面不塌）",
+      "空画布时画布元素消失了 —— 版面会塌成两列",
     );
 
     // 视口策略两件事：“看全”要忽略 0.45 下限把整棵树装进视口；
