@@ -157,6 +157,23 @@ export function ProcessBlocks({
                     {block.id === currentBlockId ? " · 全文在右侧“这一步的内容”" : ""}
                   </p>
                 </>
+              ) : (block.traces?.length ?? 0) > 0 ? (
+                /*
+                  只有执行痕迹、没有正文：全栈模式的"起容器 / 验收"就是这种块。
+                  逐行列出，绿=通过、红=失败 —— 别让人去别处找结果。
+                */
+                <ul data-process-block-traces className="mt-1.5 space-y-0.5">
+                  {block.traces!.map((trace, index) => (
+                    <li
+                      key={`${trace.kind}-${index}`}
+                      className="font-mono text-[10.5px] leading-relaxed"
+                      style={{ color: trace.ok ? "#6ee7a8" : "#f87171" }}
+                    >
+                      {trace.kind === "verdict" ? "验收 · " : ""}
+                      {trace.text}
+                    </li>
+                  ))}
+                </ul>
               ) : (
                 /*
                 空块：这一步确实开跑了，只是什么都没输出。
@@ -166,7 +183,7 @@ export function ProcessBlocks({
                   data-process-block-empty
                   className="mt-1 text-[10.5px] text-slate-600"
                 >
-                  这一步没有任何输出（只有阶段事件，没有正文也没有思考）。
+                  这一步没有任何输出（只有阶段事件，没有正文、思考或执行痕迹）。
                 </p>
               )}
             </section>

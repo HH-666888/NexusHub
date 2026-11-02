@@ -14,6 +14,13 @@ export const START_BLOCK_TITLE = "开始";
 /** 一条 phase 没带 label 时的兜底标题。宁可说"没命名"，也不要编一个名字 */
 const UNNAMED_STEP_TITLE = "（未命名步骤）";
 
+/** 一行执行痕迹。界面不区分来源，只按 ok 上色 */
+export interface StepTrace {
+  kind: "tool" | "verdict";
+  text: string;
+  ok: boolean;
+}
+
 export interface StepBlock {
   /**
    * 用起始事件的 seq 拼出来（`step-<seq>`），稳定且唯一。
@@ -33,6 +40,11 @@ export interface StepBlock {
   text: string;
   /** 本块的检查项。**没收到过 check 事件时是 null**（不是空数组） */
   checks: { name: string; pass: boolean; detail: string }[] | null;
+  /**
+   * 本块的执行痕迹：工具调用与验收结果各一行。
+   * 全栈模式才发这两类事件；单文件流程下恒为 null，界面据此整块不渲染。
+   */
+  traces: StepTrace[] | null;
   /**
    * 本块的用量与花费，没收到过 usage 事件时是 null（不是 0）；块内多条时求和。
    */
@@ -125,6 +137,29 @@ export function toStepBlocks(
         current.usage.costCny += asNumber(payload?.costCny);
         break;
       }
+      case "tool": {
+        current.traces ??= [];
+        const name = asText(payload?.name) || "工具";
+        const result = asText(payload?.result);
+        current.traces.push({
+          kind: "tool",
+          text: result ? `${name}：${result}` : name,
+          ok: payload?.ok !== false,
+        });
+        break;
+      }
+      case "verdict": {
+        current.traces ??= [];
+        const layer = asText(payload?.layer) || "验收";
+        const passed = asNumber(payload?.passed);
+        const total = asNumber(payload?.total);
+        current.traces.push({
+          kind: "verdict",
+          text: `${layer} ${passed}/${total}`,
+          ok: total > 0 && passed === total,
+        });
+        break;
+      }
       case "error":
         current.sawError = true;
         break;
@@ -147,6 +182,7 @@ export function toStepBlocks(
     text: d.text,
     checks: d.checks,
     usage: d.usage,
+    traces: d.traces,
   }));
 }
 
@@ -160,7 +196,8 @@ export function toStepBlocks(
 export function blockHasContent(block: StepBlock): boolean {
   if (block.reasoning.trim().length > 0) return true;
   if (block.text.trim().length > 0) return true;
-  return (block.checks?.length ?? 0) > 0;
+  if ((block.checks?.length ?? 0) > 0) return true;
+  return (block.traces?.length ?? 0) > 0;
 }
 
 /**
@@ -207,6 +244,7 @@ function openBlock(drafts: Draft[], seq: number, title: string): Draft {
     text: "",
     checks: null,
     usage: null,
+    traces: null,
     sawError: false,
     sawDone: false,
   };

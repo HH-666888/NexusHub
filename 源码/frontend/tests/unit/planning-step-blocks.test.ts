@@ -500,3 +500,47 @@ describe("步骤块 · 面板默认停在哪一块", () => {
     expect(blocks).toEqual(before);
   });
 });
+describe("执行痕迹（全栈模式）", () => {
+  it("tool 与 verdict 各记一行，按 ok 定性", () => {
+    const blocks = toStepBlocks([
+      {
+        seq: 0,
+        payload: { kind: "phase", phase: "building", label: "正在写后端接口" },
+      },
+      {
+        seq: 1,
+        payload: {
+          kind: "tool",
+          name: "api.routes",
+          ok: true,
+          result: "GET /health、GET /api/todos",
+          latencyMs: 12,
+        },
+      },
+      { seq: 2, payload: { kind: "verdict", layer: "api", passed: 1, total: 2 } },
+    ]);
+
+    expect(blocks[0].traces).toEqual([
+      { kind: "tool", text: "api.routes：GET /health、GET /api/todos", ok: true },
+      { kind: "verdict", text: "api 1/2", ok: false },
+    ]);
+  });
+
+  it("单文件流程里没有这两类事件，traces 保持 null", () => {
+    const blocks = toStepBlocks([
+      { seq: 0, payload: { kind: "phase", phase: "spec", label: "规格化" } },
+      { seq: 1, payload: { kind: "text", delta: "正文" } },
+    ]);
+
+    expect(blocks[0].traces).toBeNull();
+  });
+
+  it("只有执行痕迹的块也算有内容（不该被判成空块）", () => {
+    const blocks = toStepBlocks([
+      { seq: 0, payload: { kind: "phase", phase: "building", label: "起容器" } },
+      { seq: 1, payload: { kind: "verdict", layer: "ui", passed: 2, total: 2 } },
+    ]);
+
+    expect(blockHasContent(blocks[0])).toBe(true);
+  });
+});
