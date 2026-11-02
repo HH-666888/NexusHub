@@ -92,32 +92,74 @@ def test_container_endpoints_require_token(client: TestClient) -> None:
 
 
 @pytest.mark.skipif(not HAS_DOCKER, reason="需要 docker")
-def test_start_and_stop_real_container(client: TestClient) -> None:
-    """真的起一次容器：/health 200，然后停掉。"""
+def test_full_chain_with_real_container(client: TestClient) -> None:
+    """没有模型也要能证明的完整链路：建库 → 建表 → 起容器 → 三层验证 → 回收。
+
+    这是全项目唯一需要 docker 的测试；本机没装时自动跳过，
+    装好之后它就是"环境能不能跑全栈"的那一个判据。
+    """
     assert docker.docker_available()
     workspace = Path(get_settings().runtime_workspace_dir).resolve()
-    run_id = "r_container_0001"
-    api_dir = workspace / run_id / "api"
-    api_dir.mkdir(parents=True, exist_ok=True)
-    (api_dir / "main.py").write_text(
-        "from fastapi import FastAPI\napp = FastAPI()\n\n@app.get('/health')\ndef health():\n"
-        "    return {'ok': True}\n",
+    run_id = "r_chain_0001"
+    run_dir = workspace / run_id
+    (run_dir / "db").mkdir(parents=True, exist_ok=True)
+    (run_dir / "api").mkdir(parents=True, exist_ok=True)
+    (run_dir / "web").mkdir(parents=True, exist_ok=True)
+
+    (run_dir / "db" / "schema.sql").write_text(
+        "CREATE TABLE IF NOT EXISTS items ("
+        "id BIGINT PRIMARY KEY AUTO_INCREMENT, title VARCHAR(64));",
+        encoding="utf-8",
+    )
+    (run_dir / "db" / "seed.sql").write_text(
+        "INSERT INTO items (title) VALUES ('买牛奶');", encoding="utf-8"
+    )
+    # 产物后端：/health + /api/items + 根路径给一段调接口的 HTML
+    (run_dir / "api" / "main.py").write_text(
+        "\n".join(
+            [
+                "import os",
+                "from fastapi import FastAPI",
+                "from fastapi.responses import HTMLResponse",
+                "from sqlalchemy import create_engine, text",
+                "",
+                "app = FastAPI()",
+                "engine = create_engine(os.environ['DATABASE_URL'])",
+                "",
+                "@app.get('/health')",
+                "def health():",
+                "    return {'ok': True}",
+                "",
+                "@app.get('/api/items')",
+                "def items():",
+                "    with engine.connect() as conn:",
+                "        rows = conn.execute(text('SELECT id, title FROM items')).all()",
+                "    return {'items': [{'id': r[0], 'title': r[1]} for r in rows]}",
+                "",
+                "@app.get('/', response_class=HTMLResponse)",
+                "def index():",
+                "    return '<html><body><script>fetch(\"/api/items\")</script></body></html>'",
+                "",
+            ]
+        ),
         encoding="utf-8",
     )
 
     started = client.post(
-        "/api/v1/runtime/" + run_id + "/start",
-        json={"filesDir": str(workspace / run_id)},
+        f"/api/v1/runtime/{run_id}/start",
+        json={"filesDir": str(run_dir)},
         headers=headers(),
     )
     assert started.status_code == 201, started.text
-    body = started.json()
-    assert body["status"] == "running"
-
-    status = client.get(f"/api/v1/runtime/{run_id}/status", headers=headers())
-    assert status.json()["status"] == "running"
-
-    stop = client.post(f"/api/v1/runtime/{run_id}/stop", headers=headers())
-    assert stop.status_code == 204
-    drop = client.delete(f"/api/v1/runtime/databases/{run_id}", headers=headers())
-    assert drop.status_code == 204
+    try:
+        verdict = client.post(f"/api/v1/runtime/{run_id}/verify", headers=headers())
+        assert verdict.status_code == 200, verdict.text
+        body = verdict.json()
+        assert body["passed"] == body["total"], body
+        layers = {layer["layer"]: layer for layer in body["layers"]}
+        assert layers["db"]["passed"] == layers["db"]["total"]
+        assert layers["api"]["passed"] == layers["api"]["total"]
+        assert layers["ui"]["passed"] == layers["ui"]["total"]
+    finally:
+        client.post(f"/api/v1/runtime/{run_id}/stop", headers=headers())
+        client.delete(f"/api/v1/runtime/databases/{run_id}", headers=headers())
