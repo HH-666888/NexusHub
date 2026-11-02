@@ -10,6 +10,7 @@ import type { ModelPort } from "../ports/model";
 import type { Workspace } from "../ports/workspace";
 import type { AppSpec } from "../domain/spec";
 import type { Verdict } from "@/adapters/runtime/client";
+import type { GenerateEvent } from "./service";
 import {
   runApiDirection,
   runDbDirection,
@@ -105,4 +106,38 @@ export async function* runFullstack(
     };
   }
   yield { kind: "done", verdict };
+}
+
+/**
+ * 全栈事件 → 通用 GenerateEvent。
+ *
+ * 界面只认一套事件；这里把"全栈特有的形状"翻译成它认识的那几种。
+ * 不新增渲染分支，先用既有卡片承载（后续 G 阶段再加专属卡片）。
+ */
+export function toGenerateEvent(event: FullstackEvent): GenerateEvent {
+  switch (event.kind) {
+    case "phase":
+    case "error":
+    case "tool":
+    case "verdict":
+    case "preview":
+      return event;
+    case "files":
+      return {
+        kind: "phase",
+        phase: "building",
+        label: `已写出 ${event.files.length} 个文件：${event.files.map((f) => f.path).join("、")}`,
+      };
+    case "done": {
+      const { verdict } = event;
+      return {
+        kind: "phase",
+        phase: verdict.passed === verdict.total ? "done" : "failed",
+        label:
+          verdict.passed === verdict.total
+            ? `三层验证全部通过（${verdict.total} 项）`
+            : `验收有未通过项：${verdict.passed}/${verdict.total}`,
+      };
+    }
+  }
 }

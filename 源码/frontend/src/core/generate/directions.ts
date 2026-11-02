@@ -31,7 +31,6 @@ import type { AppSpec } from "../domain/spec";
 /** 三个方向共用的事件：与既有 stage 事件同构，界面不用新增一套渲染 */
 export type DirectionEvent =
   | { kind: "phase"; phase: "building"; label: string }
-  | { kind: "usage"; costCny: number; latencyMs: number; model: string }
   | { kind: "tool"; name: string; ok: boolean; result: string; latencyMs: number }
   | { kind: "error"; message: string; hint?: string }
   | { kind: "files"; files: WrittenFile[] };

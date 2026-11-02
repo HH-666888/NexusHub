@@ -29,6 +29,10 @@ import {
   type ModuleArtifactState,
   type ModuleResumePlan,
 } from "@/core/generate/resume";
+import { runFullstack, toGenerateEvent } from "@/core/generate/fullstack";
+import path from "node:path";
+import { startRuntime, stopRuntime, verifyRuntime } from "@/adapters/runtime/client";
+import { fsWorkspace } from "@/adapters/store/workspace";
 import { runSpecStage, SPEC_ARTIFACT_NAME } from "@/core/generate/spec-stage";
 import { runArchStage, ARCH_ARTIFACT_NAME } from "@/core/generate/arch-stage";
 import { runUiStage, UI_ARTIFACT_NAME } from "@/core/generate/ui-stage";
@@ -492,6 +496,40 @@ export async function GET(
                 yield e as GenerateEvent;
               }
             }
+          }
+
+          /*
+            全栈模式：架构定完就切到"三方向开发 + 真跑 + 验证"。
+            单文件那套（界面设计 / 并行构建 / 装配）整体跳过 —— 两套流程不混着跑，
+            否则产物一半在库里一半在磁盘上，没人说得清哪个才是真的。
+            开关默认关闭，所以这段对既有流程没有影响。
+          */
+          if (env.runtime.fullstackMode) {
+            if (!specFromStage || !archFromStage) {
+              yield {
+                kind: "error",
+                message: "全栈模式需要规格与架构先就绪",
+                hint: "前两道工序失败了，修好再重试",
+              };
+              return;
+            }
+            const filesDir = path.resolve(env.paths.workspaceRoot, runId);
+            for await (const e of runFullstack(
+              {
+                model: ports.model,
+                workspace: fsWorkspace,
+                costs: ports.costs,
+                runtime: {
+                  start: startRuntime,
+                  verify: verifyRuntime,
+                  stop: stopRuntime,
+                },
+              },
+              { runId, prompt: runPrompt, spec: specFromStage, filesDir },
+            )) {
+              yield toGenerateEvent(e);
+            }
+            return;
           }
 
           // 第三道：界面设计。必须在并行构建之前定变量表，也不得早于架构：
