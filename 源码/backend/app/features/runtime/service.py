@@ -27,7 +27,7 @@ from app.features.runtime.schemas import Verdict
 from app.shared.errors import AppError
 
 # run_id 进 SQL 之前只允许这些字符；与前端 isSafePathSegment 的口径一致
-RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,26}$")
+RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 _engine: Engine | None = None
 

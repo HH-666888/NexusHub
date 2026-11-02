@@ -76,3 +76,26 @@ def test_allocate_port_raises_when_range_exhausted() -> None:
             allocate_port(start=busy, end=busy)
     finally:
         holder.close()
+
+
+def test_database_name_accepts_real_uuid_run_id() -> None:
+    """真实 runId 是 36 位 UUID —— 之前按 26 位卡，会把它判成非法。"""
+    from app.features.runtime.service import database_name
+
+    name = database_name("3fdbe593-a095-4549-b48d-b5b7954d7aed")
+
+    assert name.startswith("nexus_run_")
+    assert len(name) == len("nexus_run_") + 8
+
+
+def test_database_name_rejects_overlong_or_illegal() -> None:
+    from app.features.runtime.service import database_name
+    from app.shared.errors import AppError
+
+    for bad in ("x" * 65, "has space", "../etc", "中文"):
+        try:
+            database_name(bad)
+        except AppError as err:
+            assert err.code == "BAD_REQUEST"
+        else:
+            raise AssertionError(f"{bad!r} 本该被拒")

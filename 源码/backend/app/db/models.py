@@ -185,7 +185,7 @@ class RunDatabase(Base):
 
     __tablename__ = "run_databases"
 
-    run_id: Mapped[str] = mapped_column(VARCHAR(26, **ASCII_KW), primary_key=True)
+    run_id: Mapped[str] = mapped_column(VARCHAR(64, **ASCII_KW), primary_key=True)
     db_name: Mapped[str] = mapped_column(String(64), unique=True)
     db_user: Mapped[str] = mapped_column(String(64))
     db_password: Mapped[str] = mapped_column(String(128))
@@ -198,7 +198,7 @@ class RunRuntime(Base):
 
     __tablename__ = "run_runtimes"
 
-    run_id: Mapped[str] = mapped_column(VARCHAR(26, **ASCII_KW), primary_key=True)
+    run_id: Mapped[str] = mapped_column(VARCHAR(64, **ASCII_KW), primary_key=True)
     container_id: Mapped[str] = mapped_column(String(64))
     host_port: Mapped[int] = mapped_column(Integer)
     preview_url: Mapped[str] = mapped_column(String(255))

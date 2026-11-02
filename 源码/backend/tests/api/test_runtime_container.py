@@ -22,6 +22,8 @@ HAS_DOCKER = shutil.which("docker") is not None
 @pytest.fixture(autouse=True)
 def _env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("INTERNAL_TOKEN", TOKEN)
+    # 这条文件测的是容器路径：显式钉住 docker，避免本地 .env 里的 process 把结论改掉
+    monkeypatch.setenv("RUNTIME_RUNNER", "docker")
     get_settings.cache_clear()
     service.reset_engine()
     yield
