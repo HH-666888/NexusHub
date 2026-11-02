@@ -8,9 +8,15 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from app.deps import get_db, require_internal_token
-from app.features.runtime import service
+from app.features.runtime import docker, service
 from app.features.runtime.repo import SqlRuntimeRepo
-from app.features.runtime.schemas import CreateDatabaseRequest, DatabaseInfo
+from app.features.runtime.schemas import (
+    CreateDatabaseRequest,
+    DatabaseInfo,
+    RuntimeInfo,
+    RuntimeStatus,
+    StartRequest,
+)
 from app.shared.time import now_ms
 
 router = APIRouter(
@@ -34,3 +40,40 @@ def delete_database(run_id: str, db: Session = Depends(get_db)) -> Response:
     service.drop_database(SqlRuntimeRepo(db), run_id=run_id, now=now_ms())
     db.commit()
     return Response(status_code=204)
+
+
+@router.post("/{run_id}/start", status_code=201, response_model=RuntimeInfo)
+def start_runtime(run_id: str, payload: StartRequest, db: Session = Depends(get_db)) -> RuntimeInfo:
+    """起产物容器。同一 run 已在跑就直接返回同一条记录（幂等）。"""
+    record = service.start_runtime(
+        SqlRuntimeRepo(db),
+        run_id=run_id,
+        files_dir=payload.files_dir,
+        now=now_ms(),
+    )
+    db.commit()
+    return RuntimeInfo(
+        container_id=record.container_id,
+        host_port=record.host_port,
+        preview_url=record.preview_url,
+        status=record.status,
+    )
+
+
+@router.post("/{run_id}/stop", status_code=204)
+def stop_runtime(run_id: str, db: Session = Depends(get_db)) -> Response:
+    service.stop_runtime(SqlRuntimeRepo(db), run_id=run_id, now=now_ms())
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.get("/{run_id}/status", response_model=RuntimeStatus)
+def runtime_status(run_id: str, db: Session = Depends(get_db)) -> RuntimeStatus:
+    """状态以数据库记录为准；容器可能已经因为 --rm 消失，这时报 exited。"""
+    record = SqlRuntimeRepo(db).find_runtime(run_id)
+    if record is None:
+        return RuntimeStatus(status="none")
+    status = record.status
+    if status == "running":
+        status = docker.container_status(record.container_id)
+    return RuntimeStatus(status=status, preview_url=record.preview_url, exit_code=None)

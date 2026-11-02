@@ -166,10 +166,14 @@ def start_runtime(repo: SqlRuntimeRepo, *, run_id: str, files_dir: str, now: int
     if existing is not None and existing.status == "running":
         return existing
 
+    # 先校验入参：坏路径是 400，不该因为"本机没 docker"而变成 503
+    checked_dir = _checked_files_dir(files_dir)
+
+    # 顺手回收过期运行：上一个演示跑完没人管时，这里把它清掉
+    reap_stale(repo, now=now)
+
     if not docker.docker_available():
         raise AppError("RUNTIME_UNAVAILABLE", "本机没有可用的 docker", 503)
-
-    checked_dir = _checked_files_dir(files_dir)
     database = ensure_database(repo, run_id=run_id, now=now)
     port = allocate_port()
     spec = RunSpec(
@@ -220,3 +224,25 @@ def stop_runtime(repo: SqlRuntimeRepo, *, run_id: str, now: int) -> None:
     docker.stop_container(record.container_id)
     docker.remove_network(run_id)
     repo.mark_runtime_stopped(run_id, status="exited", now=now)
+
+
+# 一次产物最多跑这么久：到点回收容器与库（比赛演示够用，也不做后台线程）
+RUNTIME_TTL_MS = 30 * 60 * 1000
+
+
+def reap_stale(repo: SqlRuntimeRepo, *, now: int) -> int:
+    """回收过期运行：先停容器，再删库。
+
+    在 start_runtime 开头顺手调用一次 —— 10 个用户的规模不需要后台守护线程，
+    但可能"上一个演示跑完没人管"，这一下就把它清掉。
+    """
+    reaped = 0
+    for record in repo.list_running():
+        if now - record.started_at < RUNTIME_TTL_MS:
+            continue
+        docker.stop_container(record.container_id)
+        docker.remove_network(record.run_id)
+        repo.mark_runtime_stopped(record.run_id, status="killed", now=now)
+        drop_database(repo, run_id=record.run_id, now=now)
+        reaped += 1
+    return reaped
