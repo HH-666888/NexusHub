@@ -85,8 +85,10 @@ def test_verify_writes_verdict_json(client: TestClient, preview_url: str, tmp_pa
     ).json()
     product = create_engine(info["dbUrl"].replace("host.docker.internal", "127.0.0.1"))
     with product.begin() as conn:
-        conn.execute(text("CREATE TABLE items (id INT PRIMARY KEY, title VARCHAR(64))"))
-        conn.execute(text("INSERT INTO items VALUES (1, '买牛奶')"))
+        conn.execute(
+            text("CREATE TABLE IF NOT EXISTS items (id INT PRIMARY KEY, title VARCHAR(64))")
+        )
+        conn.execute(text("INSERT IGNORE INTO items VALUES (1, '买牛奶')"))
     product.dispose()
 
     # 2) 假装容器已经在跑：直接写一条 running 记录

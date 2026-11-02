@@ -45,6 +45,8 @@ def index():
     return '<html><body><script>fetch("/api/items")</script></body></html>'
 """
 
+PAGE = "<html><body><h1>记账</h1><script>fetch('/api/items')</script></body></html>"
+
 SCHEMA = (
     "CREATE TABLE IF NOT EXISTS items ("
     "id BIGINT PRIMARY KEY AUTO_INCREMENT, title VARCHAR(64) NOT NULL);"
@@ -72,9 +74,12 @@ def _write_run(tmp_path: Path) -> Path:
     run_dir = tmp_path / "r_proc_0001"
     (run_dir / "db").mkdir(parents=True)
     (run_dir / "api").mkdir(parents=True)
+    (run_dir / "web").mkdir(parents=True)
     (run_dir / "db" / "schema.sql").write_text(SCHEMA, encoding="utf-8")
     (run_dir / "db" / "seed.sql").write_text(SEED, encoding="utf-8")
     (run_dir / "api" / "main.py").write_text(APP, encoding="utf-8")
+    # 产物页面也必须有：入口包装在根路径上发的就是它
+    (run_dir / "web" / "index.html").write_text(PAGE, encoding="utf-8")
     return run_dir
 
 

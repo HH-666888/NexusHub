@@ -44,7 +44,7 @@ def start(files_dir: str, host_port: int, database_url: str) -> str:
                 sys.executable,
                 "-m",
                 "uvicorn",
-                "api.main:app",
+                "_runtime_app:app",
                 "--host",
                 "127.0.0.1",
                 "--port",

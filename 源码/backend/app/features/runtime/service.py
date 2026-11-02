@@ -184,6 +184,7 @@ def start_runtime(repo: SqlRuntimeRepo, *, run_id: str, files_dir: str, now: int
     apply_schema(
         checked_dir, product_url(database.db_name).replace("host.docker.internal", "127.0.0.1")
     )
+    write_runtime_entry(checked_dir)
     port = allocate_port()
     spec = RunSpec(
         run_id=run_id,
@@ -279,7 +280,11 @@ def verify_run(repo: SqlRuntimeRepo, *, run_id: str) -> Verdict:
 
     # 产物库在宿主上验证：容器里的 host.docker.internal 在这里要换回本机
     db_url = product_url(database.db_name).replace("host.docker.internal", "127.0.0.1")
-    verdict = verify_module.verify_all(preview_url=runtime.preview_url, db_url=db_url)
+    verdict = verify_module.verify_all(
+        preview_url=runtime.preview_url,
+        db_url=db_url,
+        files_dir=_run_files_dir(run_id),
+    )
 
     workspace = pathlib.Path(get_settings().runtime_workspace_dir).resolve() / run_id
     workspace.mkdir(parents=True, exist_ok=True)
@@ -329,3 +334,17 @@ def apply_schema(files_dir: str, db_url: str) -> int:
 def _run_files_dir(run_id: str) -> str:
     """某个 run 的工作区绝对路径。停进程与看日志都要它。"""
     return str(pathlib.Path(get_settings().runtime_workspace_dir).resolve() / run_id)
+
+
+# 运行入口模板：与镜像里那份同一个文件，进程版与容器版都用它
+RUNTIME_ENTRY = pathlib.Path(__file__).parents[3] / "docker" / "runtime-python" / "runtime_app.py"
+
+
+def write_runtime_entry(files_dir: str) -> None:
+    """把入口包装拷进产物目录。
+
+    容器把工作区只读挂载，所以必须在起容器之前写好；
+    进程版也读同一个位置，两边行为一致。
+    """
+    target = pathlib.Path(files_dir) / "_runtime_app.py"
+    target.write_text(RUNTIME_ENTRY.read_text(encoding="utf-8"), encoding="utf-8")

@@ -8,6 +8,8 @@
 """
 
 import json
+import pathlib
+import re
 from http.client import HTTPConnection
 from urllib.parse import urlparse
 
@@ -106,7 +108,7 @@ def _count_rows(db_url: str, table: str) -> int | None:
         engine.dispose()
 
 
-def verify_api(preview_url: str) -> LayerResult:
+def verify_api(preview_url: str, files_dir: str | None = None) -> LayerResult:
     """/health 通不通，以及 OpenAPI 里登记的每个只读端点能不能 200。"""
     items: list[Check] = []
     base = preview_url.rstrip("/")
@@ -120,19 +122,35 @@ def verify_api(preview_url: str) -> LayerResult:
         )
     )
 
-    status, body, _ = _http_get(f"{base}/openapi.json")
+    # 产物常把文档挪到 /api 底下（FastAPI(openapi_url="/api/openapi.json")），
+    # 所以两条路径都试；都拿不到就从源码里读 @app.get，别把"文档关了"当成"没接口"。
     paths: list[str] = []
-    if status == 200:
+    tried: list[str] = []
+    for candidate in ("/openapi.json", "/api/openapi.json"):
+        status, body, _ = _http_get(f"{base}{candidate}")
+        tried.append(f"{candidate} {status}")
+        if status != 200:
+            continue
         try:
             spec = json.loads(body)
-            paths = [p for p in spec.get("paths", {}) if "{" not in p]
         except json.JSONDecodeError:
-            paths = []
+            continue
+        paths = [p for p in spec.get("paths", {}) if "{" not in p]
+        if paths:
+            break
+
+    source_hint = ""
+    if not paths:
+        paths = _paths_from_source(files_dir)
+        source_hint = "（文档接口不可用，改从源码读）"
+
     items.append(
         Check(
             name="有接口清单",
             pass_=len(paths) > 0,
-            detail=f"{len(paths)} 个路径" if paths else f"HTTP {status}",
+            detail=(
+                f"{len(paths)} 个路径{source_hint}" if paths else "；".join(tried) or "HTTP 无响应"
+            ),
         )
     )
 
@@ -184,12 +202,28 @@ def check_page(status: int, content_type: str, body: str) -> list[Check]:
     return items
 
 
-def verify_all(*, preview_url: str, db_url: str) -> Verdict:
+def verify_all(*, preview_url: str, db_url: str, files_dir: str | None = None) -> Verdict:
     """三层跑完，汇总成一份 Verdict（与落盘的 verdict.json 同一份结构）。"""
-    layers = [verify_database(db_url), verify_api(preview_url), verify_ui(preview_url)]
+    layers = [
+        verify_database(db_url),
+        verify_api(preview_url, files_dir),
+        verify_ui(preview_url),
+    ]
     return Verdict(
         layers=layers,
         passed=sum(layer.passed for layer in layers),
         total=sum(layer.total for layer in layers),
         screenshots=[],
     )
+
+
+def _paths_from_source(files_dir: str | None) -> list[str]:
+    """从产物源码里读 @app.get 路径。文档接口被关掉时用。"""
+    if not files_dir:
+        return []
+    source = pathlib.Path(files_dir) / "api" / "main.py"
+    if not source.exists():
+        return []
+    text = source.read_text(encoding="utf-8", errors="replace")
+    found = re.findall(r"@app\.(?:get)\(\s*[\"']([^\"']+)[\"']", text)
+    return [p for p in dict.fromkeys(found) if "{" not in p and p != "/health"]

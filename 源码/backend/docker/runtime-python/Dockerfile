@@ -32,4 +32,4 @@ ENV PORT=8000
 EXPOSE 8000
 
 # 产物目录里可能还没有 api/main.py（生成中途），这时给出明确错误而不是静默退出
-CMD ["sh", "-c", "test -f /app/api/main.py || { echo 'missing /app/api/main.py'; exit 1; }; exec uvicorn api.main:app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "test -f /app/_runtime_app.py || { echo 'missing /app/_runtime_app.py'; exit 1; }; exec uvicorn _runtime_app:app --host 0.0.0.0 --port ${PORT}"]
