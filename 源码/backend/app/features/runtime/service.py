@@ -12,13 +12,17 @@
 """
 
 import hashlib
+import pathlib
 import re
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from app.config import get_settings
-from app.features.runtime.repo import DatabaseRecord, SqlRuntimeRepo
+from app.features.runtime import docker
+from app.features.runtime.docker import RunSpec
+from app.features.runtime.ports import allocate_port
+from app.features.runtime.repo import DatabaseRecord, RuntimeRecord, SqlRuntimeRepo
 from app.shared.errors import AppError
 
 # run_id 进 SQL 之前只允许这些字符；与前端 isSafePathSegment 的口径一致
@@ -136,3 +140,83 @@ def _run_ddl(engine: Engine, statements: list[str]) -> None:
         connection.commit()
     finally:
         connection.close()
+
+
+def _checked_files_dir(files_dir: str) -> str:
+    """只允许挂载工作区里的目录。
+
+    这是安全边界：filesDir 由调用方给，若不校验，请求方就能让容器挂载
+    /etc、/root 之类的宿主目录（只读也够糟）。所以这里必须做前缀校验。
+    """
+    root = pathlib.Path(get_settings().runtime_workspace_dir).resolve()
+    target = pathlib.Path(files_dir).resolve()
+    if root != target and root not in target.parents:
+        raise AppError("BAD_REQUEST", f"filesDir 不在工作区内：{files_dir}", 400)
+    if not target.is_dir():
+        raise AppError("BAD_REQUEST", f"filesDir 不存在：{files_dir}", 400)
+    return str(target)
+
+
+def start_runtime(repo: SqlRuntimeRepo, *, run_id: str, files_dir: str, now: int) -> RuntimeRecord:
+    """起产物容器：确保库 → 分端口 → 起容器 → 等 /health → 记账。
+
+    幂等：同一个 run 已经在跑就直接返回既有记录，不再起第二个容器。
+    """
+    existing = repo.find_runtime(run_id)
+    if existing is not None and existing.status == "running":
+        return existing
+
+    if not docker.docker_available():
+        raise AppError("RUNTIME_UNAVAILABLE", "本机没有可用的 docker", 503)
+
+    checked_dir = _checked_files_dir(files_dir)
+    database = ensure_database(repo, run_id=run_id, now=now)
+    port = allocate_port()
+    spec = RunSpec(
+        run_id=run_id,
+        files_dir=checked_dir,
+        host_port=port,
+        database_url=product_url(database.db_name),
+    )
+
+    try:
+        container_id = docker.run_container(spec)
+    except Exception as exc:  # noqa: BLE001
+        raise AppError("RUNTIME_UNAVAILABLE", f"容器启动失败：{exc}", 500) from exc
+
+    # 先落一条 creating：容器起来了但还没通过 /health 时，界面也能看到"正在启动"
+    repo.upsert_runtime(
+        run_id=run_id,
+        container_id=container_id,
+        host_port=port,
+        preview_url=f"http://127.0.0.1:{port}",
+        status="creating",
+        now=now,
+    )
+
+    if not docker.wait_healthy(port):
+        logs = docker.container_logs(container_id)
+        docker.stop_container(container_id)
+        docker.remove_network(run_id)
+        repo.mark_runtime_stopped(run_id, status="exited", now=now, error=logs[-500:])
+        raise AppError("RUNTIME_TIMEOUT", f"容器 60 秒内没通过 /health：{logs[-300:]}", 504)
+
+    return repo.upsert_runtime(
+        run_id=run_id,
+        container_id=container_id,
+        host_port=port,
+        preview_url=f"http://127.0.0.1:{port}",
+        status="running",
+        now=now,
+    )
+
+
+def stop_runtime(repo: SqlRuntimeRepo, *, run_id: str, now: int) -> None:
+    """停容器并清理网络。没起过、或已经停过，都算成功（幂等）。"""
+    record = repo.find_runtime(run_id)
+    if record is None or record.status != "running":
+        return
+
+    docker.stop_container(record.container_id)
+    docker.remove_network(run_id)
+    repo.mark_runtime_stopped(run_id, status="exited", now=now)
