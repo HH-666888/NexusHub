@@ -62,6 +62,17 @@ export const env = {
      */
     specGate: parseGateOverride(str("SPEC_GATE", "declared")),
   },
+  /**
+   * 全栈模式：off 时走原有单文件流程；on 时走 数据库→后端→前端 三道生成。
+   * 默认 off —— 开关的意义是任何时刻旧流程都能跑。
+   */
+  runtime: {
+    fullstackMode: str("FULLSTACK_MODE", "off") === "on",
+    /** 后端运行时服务地址，只在服务端使用 */
+    baseUrl: str("RUNTIME_URL", "http://127.0.0.1:8000"),
+    /** 内部调用口令；后端缺它就 401 */
+    internalToken: str("INTERNAL_TOKEN", ""),
+  },
   paths: {
     database: str("DATABASE_PATH", "./data/nexus.db"),
     workspaceRoot: str("WORKSPACE_ROOT", "./data/workspace"),
