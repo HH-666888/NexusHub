@@ -68,6 +68,16 @@ export async function* runFullstack(
     if (!ok) return;
   }
 
+  /*
+    起之前先停：续跑会重写 api/web，旧进程跑的是上一版代码。
+    不停就会出现"新代码 + 旧进程"的组合，验证结果与源码对不上，比失败更难查。
+  */
+  try {
+    await deps.runtime.stop(input.runId);
+  } catch {
+    // 本来就没在跑
+  }
+
   let started: { previewUrl: string; status: string };
   try {
     started = await deps.runtime.start(input.runId, input.filesDir);
