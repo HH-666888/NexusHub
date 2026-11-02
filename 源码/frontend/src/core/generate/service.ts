@@ -104,6 +104,28 @@ export type GenerateEvent =
     }
   | { kind: "check"; results: CheckResult[]; summary: CheckSummary }
   | { kind: "artifact"; artifact: Artifact }
+  /**
+   * 全栈模式专用（契约 §7 已登记）：
+   * tool 是"执行了一次工具"（起容器、跑验证），exec 是容器状态，
+   * sql 是建表动作，verdict 是某一层的验收结果，preview 是预览地址就绪。
+   * 它们不参与单文件流程，但事件表与回放用同一套结构，所以放在这里。
+   */
+  | {
+      kind: "tool";
+      name: string;
+      ok: boolean;
+      result: string;
+      latencyMs: number;
+    }
+  | { kind: "sql"; statement: string; ok: boolean; rowsAffected?: number; error?: string }
+  | {
+      kind: "exec";
+      containerId: string;
+      phase: "creating" | "running" | "exited" | "killed";
+      exitCode?: number;
+    }
+  | { kind: "verdict"; layer: "db" | "api" | "ui"; passed: number; total: number }
+  | { kind: "preview"; url: string; ready: boolean }
   | { kind: "error"; message: string; hint?: string };
 
 export interface GenerateDeps {
