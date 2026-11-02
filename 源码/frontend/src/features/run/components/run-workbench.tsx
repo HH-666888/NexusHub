@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { StepBlock } from "@/core/planning/step-blocks";
+import { FileTree, type FileEntry } from "./file-tree";
 import { GenerationConsole } from "./generation-console";
 
 /**
@@ -40,11 +41,13 @@ export function RunWorkbench({
    */
   const [open, setOpen] = useState(!hasArtifact);
   /** 有成品时默认停在“成品”，点进来最想看的通常是做出来的东西 */
-  const [tab, setTab] = useState<"generate" | "artifact" | "source">(
+  const [tab, setTab] = useState<"generate" | "artifact" | "source" | "files">(
     hasArtifact ? "artifact" : "generate",
   );
   const [source, setSource] = useState<string | null>(null);
   const [loadingSource, setLoadingSource] = useState(false);
+  /** 产物文件清单：只有全栈模式才会有；为空则不显示"文件"标签 */
+  const [files, setFiles] = useState<FileEntry[]>([]);
 
   const openSource = useCallback(async () => {
     setTab("source");
@@ -60,6 +63,23 @@ export function RunWorkbench({
       setLoadingSource(false);
     }
   }, [runId, source, loadingSource]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/runs/${runId}/files`);
+        if (!res.ok) return;
+        const body = (await res.json()) as { files?: FileEntry[] };
+        if (!cancelled) setFiles(body.files ?? []);
+      } catch {
+        // 取不到就当没有文件：单文件模式下本来就没有，不该让界面报错
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [runId]);
 
   /** 生成结束：刷新服务端数据，并让缓存的源码作废 */
   const onSettled = useCallback(() => {
@@ -80,7 +100,7 @@ export function RunWorkbench({
 
   /** 点标签：展开（如果收着）并切过去 */
   const pick = useCallback(
-    (key: "generate" | "artifact" | "source") => {
+    (key: "generate" | "artifact" | "source" | "files") => {
       if (key === "source") {
         void openSource();
         return;
@@ -103,6 +123,7 @@ export function RunWorkbench({
             ["generate", "生成过程"],
             ["artifact", "成品"],
             ["source", "源码"],
+            ...(files.length > 0 ? ([["files", "文件"]] as const) : []),
           ] as const
         ).map(([key, label]) => (
           <button
@@ -184,6 +205,10 @@ export function RunWorkbench({
                 action={{ label: "去生成", onClick: () => pick("generate") }}
               />
             ))}
+
+          {tab === "files" && files.length > 0 && (
+            <FileTree runId={runId} files={files} />
+          )}
 
           {tab === "source" && (
             <div className="scroll-hint h-full overflow-auto">
