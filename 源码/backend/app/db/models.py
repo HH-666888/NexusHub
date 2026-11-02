@@ -174,3 +174,33 @@ class IdempotencyKey(Base):
     run_id: Mapped[str | None] = mapped_column(VARCHAR(26, **ASCII_KW), nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger)
     expires_at: Mapped[int] = mapped_column(BigInteger, index=True)
+class RunDatabase(Base):
+    """每个 run 的产物库与专属账号（契约 §5.9）。
+
+    password 必须存：容器启动要注入它，服务重启后也要能重建连接。
+    dropped_at 非空表示已经回收，行保留是为了查"这个 run 曾经用过哪个库"。
+    """
+
+    __tablename__ = "run_databases"
+
+    run_id: Mapped[str] = mapped_column(VARCHAR(26, **ASCII_KW), primary_key=True)
+    db_name: Mapped[str] = mapped_column(String(64), unique=True)
+    db_user: Mapped[str] = mapped_column(String(64))
+    db_password: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[int] = mapped_column(BigInteger)
+    dropped_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class RunRuntime(Base):
+    """每个 run 的产物容器。status 取值：creating / running / exited / killed。"""
+
+    __tablename__ = "run_runtimes"
+
+    run_id: Mapped[str] = mapped_column(VARCHAR(26, **ASCII_KW), primary_key=True)
+    container_id: Mapped[str] = mapped_column(String(64))
+    host_port: Mapped[int] = mapped_column(Integer)
+    preview_url: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    started_at: Mapped[int] = mapped_column(BigInteger)
+    stopped_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
