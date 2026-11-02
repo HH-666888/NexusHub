@@ -17,6 +17,7 @@ from app.features.artifacts.router import router as artifacts_router
 from app.features.auth.router import router as auth_router
 from app.features.gate.router import router as gate_router
 from app.features.runs.router import router as runs_router
+from app.features.runtime.router import router as runtime_router
 from app.features.settings.router import router as settings_router
 from app.features.stream.router import router as stream_router
 from app.shared.errors import (
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
         stream_router,
         artifacts_router,
         settings_router,
+        runtime_router,
     ):
         app.include_router(router, prefix=API_PREFIX)
 
