@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     mysql_product_url: str = ""
     # 内部调用的口令：Next 侧带 x-internal-token 才能进；两侧必须一致
     internal_token: str = ""
+    # 运行器：docker（默认，有隔离）或 process（开发机没有 docker 时的退路，无隔离）
+    runtime_runner: str = "docker"
+
     # 产物工作区：与前端 WORKSPACE_ROOT 指向同一个目录（容器把它只读挂载进去）
     runtime_workspace_dir: str = "./data/workspace"
 

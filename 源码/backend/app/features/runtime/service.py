@@ -19,7 +19,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from app.config import get_settings
-from app.features.runtime import docker
+from app.features.runtime import docker, runner
 from app.features.runtime.docker import RunSpec
 from app.features.runtime.ports import allocate_port
 from app.features.runtime.repo import DatabaseRecord, RuntimeRecord, SqlRuntimeRepo
@@ -173,8 +173,12 @@ def start_runtime(repo: SqlRuntimeRepo, *, run_id: str, files_dir: str, now: int
     # 顺手回收过期运行：上一个演示跑完没人管时，这里把它清掉
     reap_stale(repo, now=now)
 
-    if not docker.docker_available():
-        raise AppError("RUNTIME_UNAVAILABLE", "本机没有可用的 docker", 503)
+    if not runner.available():
+        raise AppError(
+            "RUNTIME_UNAVAILABLE",
+            "本机没有可用的 docker；开发机可设 RUNTIME_RUNNER=process 用进程版顶一下",
+            503,
+        )
     database = ensure_database(repo, run_id=run_id, now=now)
     # 先建表再起容器：接口启动时表就该在那儿，否则 /health 过了、列表接口照样 500
     apply_schema(
@@ -189,7 +193,7 @@ def start_runtime(repo: SqlRuntimeRepo, *, run_id: str, files_dir: str, now: int
     )
 
     try:
-        container_id = docker.run_container(spec)
+        container_id = runner.start(checked_dir, port, spec.database_url)
     except Exception as exc:  # noqa: BLE001
         raise AppError("RUNTIME_UNAVAILABLE", f"容器启动失败：{exc}", 500) from exc
 
@@ -204,9 +208,10 @@ def start_runtime(repo: SqlRuntimeRepo, *, run_id: str, files_dir: str, now: int
     )
 
     if not docker.wait_healthy(port):
-        logs = docker.container_logs(container_id)
-        docker.stop_container(container_id)
-        docker.remove_network(run_id)
+        logs = runner.logs(container_id, checked_dir)
+        runner.stop(container_id, checked_dir)
+        if docker.docker_available():
+            docker.remove_network(run_id)
         repo.mark_runtime_stopped(run_id, status="exited", now=now, error=logs[-500:])
         raise AppError("RUNTIME_TIMEOUT", f"容器 60 秒内没通过 /health：{logs[-300:]}", 504)
 
@@ -226,8 +231,9 @@ def stop_runtime(repo: SqlRuntimeRepo, *, run_id: str, now: int) -> None:
     if record is None or record.status != "running":
         return
 
-    docker.stop_container(record.container_id)
-    docker.remove_network(run_id)
+    runner.stop(record.container_id, _run_files_dir(run_id))
+    if docker.docker_available():
+        docker.remove_network(run_id)
     repo.mark_runtime_stopped(run_id, status="exited", now=now)
 
 
@@ -245,8 +251,10 @@ def reap_stale(repo: SqlRuntimeRepo, *, now: int) -> int:
     for record in repo.list_running():
         if now - record.started_at < RUNTIME_TTL_MS:
             continue
-        docker.stop_container(record.container_id)
-        docker.remove_network(record.run_id)
+        files_dir = _run_files_dir(record.run_id)
+        runner.stop(record.container_id, files_dir)
+        if docker.docker_available():
+            docker.remove_network(record.run_id)
         repo.mark_runtime_stopped(record.run_id, status="killed", now=now)
         drop_database(repo, run_id=record.run_id, now=now)
         reaped += 1
@@ -316,3 +324,8 @@ def apply_schema(files_dir: str, db_url: str) -> int:
     finally:
         engine.dispose()
     return executed
+
+
+def _run_files_dir(run_id: str) -> str:
+    """某个 run 的工作区绝对路径。停进程与看日志都要它。"""
+    return str(pathlib.Path(get_settings().runtime_workspace_dir).resolve() / run_id)
