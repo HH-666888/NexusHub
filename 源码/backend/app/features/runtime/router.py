@@ -16,6 +16,7 @@ from app.features.runtime.schemas import (
     RuntimeInfo,
     RuntimeStatus,
     StartRequest,
+    Verdict,
 )
 from app.shared.time import now_ms
 
@@ -77,3 +78,10 @@ def runtime_status(run_id: str, db: Session = Depends(get_db)) -> RuntimeStatus:
     if status == "running":
         status = docker.container_status(record.container_id)
     return RuntimeStatus(status=status, preview_url=record.preview_url, exit_code=None)
+
+
+@router.post("/{run_id}/verify", response_model=Verdict)
+def verify_run(run_id: str, db: Session = Depends(get_db)) -> Verdict:
+    """三层验证。跑完有失败项也返回 200：让调用方拿到完整报告而不是一个错误码。"""
+    verdict = service.verify_run(SqlRuntimeRepo(db), run_id=run_id)
+    return verdict

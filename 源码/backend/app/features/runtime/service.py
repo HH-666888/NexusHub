@@ -23,6 +23,7 @@ from app.features.runtime import docker
 from app.features.runtime.docker import RunSpec
 from app.features.runtime.ports import allocate_port
 from app.features.runtime.repo import DatabaseRecord, RuntimeRecord, SqlRuntimeRepo
+from app.features.runtime.schemas import Verdict
 from app.shared.errors import AppError
 
 # run_id 进 SQL 之前只允许这些字符；与前端 isSafePathSegment 的口径一致
@@ -246,3 +247,31 @@ def reap_stale(repo: SqlRuntimeRepo, *, now: int) -> int:
         drop_database(repo, run_id=record.run_id, now=now)
         reaped += 1
     return reaped
+
+
+def verify_run(repo: SqlRuntimeRepo, *, run_id: str) -> Verdict:
+    """跑三层验证并把 verdict.json 写进这个 run 的工作区。
+
+    数据库与预览地址都从数据库记录里取，不让调用方传 —— 传进来的东西一旦对不上，
+    验证的就是另一个东西了。
+    """
+    from app.features.runtime import verify as verify_module
+
+    runtime = repo.find_runtime(run_id)
+    if runtime is None or runtime.status != "running":
+        raise AppError("RUNTIME_UNAVAILABLE", "这个运行还没有跑起来", 409)
+
+    database = repo.find_database(run_id)
+    if database is None or database.dropped_at is not None:
+        raise AppError("RUNTIME_UNAVAILABLE", "这个运行没有可用的数据库", 409)
+
+    # 产物库在宿主上验证：容器里的 host.docker.internal 在这里要换回本机
+    db_url = product_url(database.db_name).replace("host.docker.internal", "127.0.0.1")
+    verdict = verify_module.verify_all(preview_url=runtime.preview_url, db_url=db_url)
+
+    workspace = pathlib.Path(get_settings().runtime_workspace_dir).resolve() / run_id
+    workspace.mkdir(parents=True, exist_ok=True)
+    (workspace / "verdict.json").write_text(
+        verdict.model_dump_json(by_alias=True, indent=2) + "\n", encoding="utf-8"
+    )
+    return verdict
