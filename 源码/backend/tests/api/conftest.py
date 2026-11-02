@@ -26,6 +26,8 @@ from app.main import create_app  # noqa: E402
 
 # 外键先删引用方
 TABLES_IN_DELETE_ORDER = (
+    "run_runtimes",
+    "run_databases",
     "idempotency_keys",
     "rag_chunks",
     "rag_documents",
