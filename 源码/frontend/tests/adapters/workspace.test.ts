@@ -10,10 +10,12 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   listRunFiles,
+  readManifest,
   readRunFile,
   removeRunDir,
   runDir,
   safeRelativePath,
+  writeManifest,
   writeRunFile,
 } from "@/adapters/store/workspace";
 
@@ -100,5 +102,38 @@ describe("文件读写", () => {
     await removeRunDir(RUN);
     await expect(readRunFile(RUN, "web/index.html")).rejects.toThrow();
     await expect(removeRunDir(RUN)).resolves.toBeUndefined();
+  });
+});
+
+describe("产物清单", () => {
+  it("写入后能读回，且按路径排序", async () => {
+    const a = await writeRunFile(RUN, "web/index.html", "<div>");
+    const b = await writeRunFile(RUN, "db/schema.sql", "create table t");
+
+    const manifest = await writeManifest(RUN, [a, b], 1_793_600_000_000);
+
+    expect(manifest.files.map((f) => f.path)).toEqual([
+      "db/schema.sql",
+      "web/index.html",
+    ]);
+    const read = await readManifest(RUN);
+    expect(read).toEqual({
+      runId: RUN,
+      generatedAt: 1_793_600_000_000,
+      files: manifest.files,
+    });
+  });
+
+  it("清单本身不在 files 里（否则每次写都改变自己）", async () => {
+    const a = await writeRunFile(RUN, "web/index.html", "<div>");
+    const manifest = await writeManifest(RUN, [a], 1);
+
+    expect(manifest.files.some((f) => f.path === "manifest.json")).toBe(false);
+    const listed = await listRunFiles(RUN);
+    expect(listed.map((f) => f.path)).toContain("manifest.json");
+  });
+
+  it("没有清单时返回 null", async () => {
+    await expect(readManifest("r_no_manifest")).resolves.toBeNull();
   });
 });

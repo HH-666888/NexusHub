@@ -94,3 +94,48 @@ export async function listRunFiles(runId: string): Promise<RunFile[]> {
 export async function removeRunDir(runId: string): Promise<void> {
   await fs.rm(runDir(runId), { recursive: true, force: true });
 }
+
+export const MANIFEST_NAME = "manifest.json";
+
+export interface ManifestEntry {
+  path: string;
+  bytes: number;
+  sha256: string;
+}
+
+export interface RunManifest {
+  runId: string;
+  /** 生成时刻（epoch ms）；同一目录重新生成时会被覆盖 */
+  generatedAt: number;
+  files: ManifestEntry[];
+}
+
+/**
+ * 写产物清单。清单自己不进 files 列表 —— 否则每次写都会改变自己，哈希永远对不上。
+ */
+export async function writeManifest(
+  runId: string,
+  files: ManifestEntry[],
+  generatedAt: number,
+): Promise<RunManifest> {
+  const manifest: RunManifest = {
+    runId,
+    generatedAt,
+    files: [...files].sort((a, b) => a.path.localeCompare(b.path)),
+  };
+  const absolute = path.join(runDir(runId), MANIFEST_NAME);
+  await ensureDir(path.dirname(absolute));
+  await fs.writeFile(absolute, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  return manifest;
+}
+
+/** 读清单；没有就返回 null（调用方据此判断"这是不是全栈产物"）。 */
+export async function readManifest(runId: string): Promise<RunManifest | null> {
+  try {
+    const raw = await fs.readFile(path.join(runDir(runId), MANIFEST_NAME), "utf8");
+    return JSON.parse(raw) as RunManifest;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
