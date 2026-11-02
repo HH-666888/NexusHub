@@ -176,6 +176,10 @@ def start_runtime(repo: SqlRuntimeRepo, *, run_id: str, files_dir: str, now: int
     if not docker.docker_available():
         raise AppError("RUNTIME_UNAVAILABLE", "本机没有可用的 docker", 503)
     database = ensure_database(repo, run_id=run_id, now=now)
+    # 先建表再起容器：接口启动时表就该在那儿，否则 /health 过了、列表接口照样 500
+    apply_schema(
+        checked_dir, product_url(database.db_name).replace("host.docker.internal", "127.0.0.1")
+    )
     port = allocate_port()
     spec = RunSpec(
         run_id=run_id,
@@ -275,3 +279,40 @@ def verify_run(repo: SqlRuntimeRepo, *, run_id: str) -> Verdict:
         verdict.model_dump_json(by_alias=True, indent=2) + "\n", encoding="utf-8"
     )
     return verdict
+
+
+def apply_schema(files_dir: str, db_url: str) -> int:
+    """把产物里的建表脚本与种子数据执行到 run 自己的库上。
+
+    为什么在这里做、而不是在容器里做：产物后端只管跑接口，不该有建表权限；
+    而"表没建"是链路里最容易漏的一环 —— 漏了就会表现成接口 500，
+    排查时还以为是模型写错了代码。
+
+    返回执行成功的语句条数。
+    """
+    root = pathlib.Path(files_dir)
+    statements: list[str] = []
+    for name in ("db/schema.sql", "db/seed.sql"):
+        file = root / name
+        if not file.exists():
+            continue
+        for raw in file.read_text(encoding="utf-8").split(";"):
+            statement = raw.strip()
+            if statement:
+                statements.append(statement)
+
+    if not statements:
+        raise AppError("DB_PROVISION_FAILED", "产物里没有可执行的建表脚本", 400)
+
+    engine = create_engine(db_url)
+    executed = 0
+    try:
+        with engine.begin() as conn:
+            for statement in statements:
+                conn.exec_driver_sql(statement)
+                executed += 1
+    except Exception as exc:  # noqa: BLE001
+        raise AppError("DB_PROVISION_FAILED", f"执行建表脚本失败：{exc}", 400) from exc
+    finally:
+        engine.dispose()
+    return executed
