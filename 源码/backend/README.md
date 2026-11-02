@@ -10,6 +10,14 @@ FastAPI + MySQL 后端。目录与依赖方向见 [`docs/04-目录结构.md`](..
 ## 本地起服
 
 ```bash
+# 0) 建库与专用账号（只需一次；root 密码按你本机实际的来）
+mysql -u root -p -e "
+  CREATE DATABASE IF NOT EXISTS nexus DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+  CREATE DATABASE IF NOT EXISTS nexus_test DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+  CREATE USER IF NOT EXISTS 'nexus'@'127.0.0.1' IDENTIFIED BY 'nexus';
+  GRANT ALL PRIVILEGES ON nexus.* TO 'nexus'@'127.0.0.1';
+  GRANT ALL PRIVILEGES ON nexus_test.* TO 'nexus'@'127.0.0.1';"
+
 # 1) 依赖（建议虚拟环境）
 python -m venv .venv
 .venv/Scripts/activate          # Windows；Linux/macOS 用 source .venv/bin/activate
@@ -25,14 +33,18 @@ alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```
 
-打开 <http://127.0.0.1:8000/api/v1/docs> 看接口文档，<http://127.0.0.1:8000/api/v1/health> 看健康状态。
+打开 <http://127.0.0.1:8000/api/v1/docs> 看接口文档，<http://127.0.0.1:8000/api/v1/health> 看健康状态
+（`db` 为 `"ok"` 才算真的连上库）。
+
+> `nexus_test` 只给集成测试用：测试会清空它的表，**别把它指到开发库上**。
 
 ## 验证
 
 ```bash
-pytest                    # 26 个用例：健康检查、错误信封、共享内核、领域模型
-ruff check .
-lint-imports              # 依赖方向 D1–D5（见目录契约 §4）
+pytest -m "not integration"   # 不需要数据库：领域模型、事件、共享内核、认证业务规则
+pytest -m integration         # 需要 MySQL：走真实 repo 与 HTTP 端点
+ruff check . && ruff format --check .
+lint-imports                  # 依赖方向 D1–D5（见目录契约 §4）
 ```
 
 ## 目录速查
