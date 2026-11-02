@@ -117,7 +117,13 @@ export type GenerateEvent =
       result: string;
       latencyMs: number;
     }
-  | { kind: "sql"; statement: string; ok: boolean; rowsAffected?: number; error?: string }
+  | {
+      kind: "sql";
+      statement: string;
+      ok: boolean;
+      rowsAffected?: number;
+      error?: string;
+    }
   | {
       kind: "exec";
       containerId: string;
