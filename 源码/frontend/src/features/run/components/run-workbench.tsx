@@ -49,6 +49,8 @@ export function RunWorkbench({
   const [loadingSource, setLoadingSource] = useState(false);
   /** 产物文件清单：只有全栈模式才会有；为空则不显示"文件"标签 */
   const [files, setFiles] = useState<FileEntry[]>([]);
+  /** 全栈模式下容器在跑时的预览地址；单文件流程永远是 null */
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const openSource = useCallback(async () => {
     setTab("source");
@@ -75,6 +77,18 @@ export function RunWorkbench({
         if (!cancelled) setFiles(body.files ?? []);
       } catch {
         // 取不到就当没有文件：单文件模式下本来就没有，不该让界面报错
+      }
+    })();
+    void (async () => {
+      try {
+        const res = await fetch(`/api/runs/${runId}/runtime`);
+        if (!res.ok) return;
+        const body = (await res.json()) as { status?: string; previewUrl?: string };
+        if (!cancelled && body.status === "running" && body.previewUrl) {
+          setPreviewUrl(body.previewUrl);
+        }
+      } catch {
+        // 后端没起来就当没在跑：不该让界面报错
       }
     })();
     return () => {
@@ -149,6 +163,17 @@ export function RunWorkbench({
             <span className="tabular-nums">
               成品 {(artifactBytes / 1024).toFixed(1)} KB
             </span>
+          )}
+          {previewUrl && (
+            <a
+              href={previewUrl}
+              target="_blank"
+              rel="noreferrer"
+              data-runtime-preview
+              className="text-emerald-400 transition-colors duration-150 hover:text-emerald-300"
+            >
+              运行中预览
+            </a>
           )}
           {hasArtifact && (
             <>
