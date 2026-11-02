@@ -8,11 +8,13 @@ from collections.abc import Iterator
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.db.session import SessionLocal
 from app.domain.user import User
 from app.features.auth import service as auth_service
 from app.features.auth.repo import SqlAuthStore
 from app.shared.cookies import SESSION_COOKIE
+from app.shared.errors import AppError, unauthorized
 from app.shared.time import now_ms
 
 
@@ -45,3 +47,16 @@ def get_current_user(
         token=request.cookies.get(SESSION_COOKIE),
         now=now_ms(),
     )
+
+
+def require_internal_token(request: Request) -> None:
+    """内部端点（/runtime/*）的准入。
+
+    这些接口能建库、能起容器，绝不能暴露给浏览器：只认 Next 侧带来的口令。
+    没配口令时一律 503 —— 宁可不可用，也不留一个"空口令即放行"的后门。
+    """
+    expected = get_settings().internal_token
+    if not expected:
+        raise AppError("RUNTIME_UNAVAILABLE", "未配置 INTERNAL_TOKEN", 503)
+    if request.headers.get("x-internal-token") != expected:
+        raise unauthorized("内部令牌不正确")

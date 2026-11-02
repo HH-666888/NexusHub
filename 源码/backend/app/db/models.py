@@ -174,6 +174,8 @@ class IdempotencyKey(Base):
     run_id: Mapped[str | None] = mapped_column(VARCHAR(26, **ASCII_KW), nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger)
     expires_at: Mapped[int] = mapped_column(BigInteger, index=True)
+
+
 class RunDatabase(Base):
     """每个 run 的产物库与专属账号（契约 §5.9）。
 
