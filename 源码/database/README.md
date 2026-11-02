@@ -44,3 +44,17 @@ alembic upgrade head     # 0001 初始迁移直接执行这份 SQL
 
 - `002_seed.sql`：演示账号与默认配置的种子数据（也可以由 `python -m app.seed` 完成，二者选一，不要都写）
 - 新增表或字段时，文件名按 `00N_<动词>_<对象>.sql`，例如 `002_add_run_events_index.sql`
+## 全栈运行时：供给账号（一次性）
+
+产物的数据库要能建库建表，但不能碰 `nexus` 主库。所以单独一个账号，
+权限只够"建库、建用户、给那个库授权"：
+
+```bash
+# 1. 把 002_provisioner.sql 里的 __PASSWORD__ 换成随机密码
+# 2. 用 root 执行
+mysql -u root -p < database/schema/002_provisioner.sql
+# 3. 把这个密码写进 backend/.env 的 MYSQL_PROVISIONER_URL
+```
+
+`002_runtime.sql` 是运行时自己的两张表（`run_databases` / `run_runtimes`），
+由 `alembic upgrade head` 建，不要手工执行。
