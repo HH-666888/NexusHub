@@ -16,8 +16,8 @@ class CreateDatabaseRequest(ApiModel):
 
 class DatabaseInfo(ApiModel):
     db_name: str
-    db_user: str
-    db_password: str
+    # 容器里直接可用的连接串：主机是 host.docker.internal，不是 127.0.0.1
+    db_url: str
 
 
 class StartRequest(ApiModel):

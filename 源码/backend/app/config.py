@@ -36,6 +36,18 @@ class Settings(BaseSettings):
     # 同源部署时留空；本地两端不同端口调试才需要
     allowed_origin: str = ""
 
+    # ---- 全栈运行时（契约 §5.9）----
+
+    # 建库建用户用的供给账号；留空则供给接口直接 503
+    mysql_provisioner_url: str = ""
+    # 产物代码用的账号（只对 nexus_run_% 有权限）；主机在这里写死 127.0.0.1，
+    # 注入给容器时会换成 host.docker.internal
+    mysql_product_url: str = ""
+    # 内部调用的口令：Next 侧带 x-internal-token 才能进；两侧必须一致
+    internal_token: str = ""
+    # 产物工作区：与前端 WORKSPACE_ROOT 指向同一个目录（容器把它只读挂载进去）
+    runtime_workspace_dir: str = "./data/workspace"
+
 
 @lru_cache
 def get_settings() -> Settings:
