@@ -190,3 +190,59 @@ describe("runFullstack", () => {
     expect(runtime.start).not.toHaveBeenCalled();
   });
 });
+describe("方向校验失败会重试一次", () => {
+  it("第一次前端不给 /api/ 请求，第二次给了 → 用第二次并落盘", async () => {
+    let webCalls = 0;
+    const counts = { db: 0, api: 0, web: 0 };
+    const BAD = "<html><body>只有文字，没有请求</body></html>";
+
+    const model = {
+      complete: async ({
+        messages,
+      }: {
+        messages: Array<{ role: string; content: string }>;
+      }) => {
+        const system = messages.find((m) => m.role === "system")?.content ?? "";
+        // 与真实提示词对应的判据：后端看"可运行的"，前端看"自包含"，其余按数据库处理
+        let text: string;
+        if (system.includes("可运行的")) {
+          counts.api += 1;
+          text = PY;
+        } else if (system.includes("自包含")) {
+          counts.web += 1;
+          webCalls += 1;
+          text = webCalls === 1 ? BAD : HTML;
+        } else {
+          counts.db += 1;
+          text = SQL;
+        }
+        return {
+          text,
+          model: "fake",
+          usage: { inputTokens: 1, outputTokens: 1, reasoningTokens: 0 },
+          costCny: 0.001,
+          priceTier: "offPeak" as const,
+          latencyMs: 10,
+          truncated: false,
+          reasoning: "",
+        };
+      },
+    };
+    const workspace = fakeWorkspace();
+    const runtime = {
+      start: async () => ({ previewUrl: "http://127.0.0.1:1", status: "running" }),
+      verify: async () => ({ layers: [], passed: 0, total: 0, screenshots: [] }),
+      stop: async () => undefined,
+    };
+
+    const events = await collect(
+      runFullstack({ model: model as never, workspace, costs, runtime }, INPUT),
+    );
+
+    // 前端调了两次（第二次是重试），其余各一次
+    expect(counts.web).toBe(2);
+    expect(counts.api).toBe(1);
+    expect(workspace.files.get("web/index.html")).toContain("/api/todos");
+    expect(events.some((e) => e.kind === "error")).toBe(false);
+  });
+});

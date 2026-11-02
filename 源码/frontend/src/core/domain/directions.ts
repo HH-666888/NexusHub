@@ -43,7 +43,8 @@ export const API_SYSTEM_PROMPT = `你是一位 Python 后端工程师。下面�
 1. 只输出 Python 代码，不要解释、不要代码块围栏。
 2. 用 FastAPI + SQLAlchemy 2.x + pymysql；数据库地址从环境变量 DATABASE_URL 读（形如 mysql+pymysql://user:pass@host:3306/db?charset=utf8mb4）。
 3. 必须提供 GET /health 返回 {"ok": true}，状态码 200。
-4. 每张表至少给两个端点：列表（GET）与新增（POST），路径与表名对应，例如 /items。
+4. 每张表至少给两个端点：列表（GET）与新增（POST）。**业务端点一律挂在 /api 前缀下**，
+   例如 /api/items；只有 /health 在根路径。这样部署时一条 /api/* 的反向代理规则就能接上。
    入参用 pydantic 模型；返回 JSON 字段用 camelCase。
 5. 启动时不要建表（表由 SQL 脚本建好），也不要在 import 时连库。
 6. 不要读环境变量以外的配置，不要写日志文件，不要任何鉴权。`;
@@ -91,18 +92,49 @@ export function checkPython(raw: string): DirectionCheck {
   if (!/\/health/.test(code)) return { ok: false, reason: "没有 /health 端点" };
   if (!/DATABASE_URL/.test(code))
     return { ok: false, reason: "没有从 DATABASE_URL 读配置" };
-  if (/mysql\+pymysql:\/\/[^"']*:[^"']*@/i.test(code)) {
+  /*
+    只在"代码行"上判硬编码：模型常在注释里写连接串格式示例（如 # DATABASE_URL=mysql+pymysql://user:pass@host），
+    那是文档不是配置，判成违规会把它完全正确的代码否掉。
+  */
+  const codeOnly = code
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("#"))
+    .map((line) => line.replace(/(^|\s)#.*$/, ""))
+    .join("\n");
+  if (/mysql\+pymysql:\/\/[^"'\s]*:[^"'\s]*@/i.test(codeOnly)) {
     return { ok: false, reason: "写死了数据库连接串" };
   }
   return { ok: true };
 }
 
+/**
+ * 从模型输出里捞出 HTML 文档本体。
+ *
+ * 实测模型会在前面加一句"这是你要的页面："，再给完整的 <!DOCTYPE html>。
+ * 直接判 `<html` 会把这种完全可用的产物判死，所以先定位文档起点再截。
+ */
+export function extractHtmlDocument(raw: string): string {
+  const text = stripFence(raw);
+  const start = text.search(/<!doctype\s+html|<html[\s>]/i);
+  return start > 0 ? text.slice(start) : text;
+}
+
 /** 前端方向：必须调自己的后端、不许外链 */
 export function checkHtml(raw: string): DirectionCheck {
-  const html = stripFence(raw);
+  const html = extractHtmlDocument(raw);
   if (!/<html[\s>]/i.test(html)) return { ok: false, reason: "不是完整的 HTML 文档" };
-  if (!/fetch\(\s*['"]\/api\//.test(html))
+  /*
+    只认"真的在发请求"：fetch('/api/x') 或包一层 api('/api/x') 都算。
+    光看有没有 /api/ 字样不行 —— 说明文字里写一句 API 路径也会命中，那是假通过。
+  */
+  /*
+    判据是"代码里有以 /api/ 开头的字符串"，不认具体函数名：
+    模型有时直接 fetch('/api/x')，有时包一层 requestJSON('/api/x')，两种都对。
+    只认引号里的路径：说明文字里用反引号写的 `/api/x` 不算（否则假通过）。
+  */
+  if (!/['"]\/api\//.test(html)) {
     return { ok: false, reason: "没有调用 /api/ 接口" };
+  }
   if (/https?:\/\/(?!localhost|127\.0\.0\.1)/i.test(html)) {
     return { ok: false, reason: "引用了外部资源" };
   }

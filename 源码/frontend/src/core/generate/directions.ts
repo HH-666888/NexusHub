@@ -18,6 +18,7 @@ import {
   checkSql,
   DB_FILE,
   DB_SYSTEM_PROMPT,
+  extractHtmlDocument,
   SEED_FILE,
   SEED_SYSTEM_PROMPT,
   stripFence,
@@ -47,7 +48,9 @@ export interface DirectionInput {
   spec: AppSpec;
 }
 
-const MAX_OUTPUT_TOKENS = 8000;
+const MAX_OUTPUT_TOKENS = 32768;
+/** 三个方向是"翻译"不是"设计"：低思考档位够用，也不会把预算全烧在思考上 */
+const EFFORT = "low" as const;
 
 /** 调用一次模型并记账；失败时抛错，由上层决定降级还是中止 */
 async function callModel(
@@ -55,16 +58,69 @@ async function callModel(
   input: DirectionInput,
   opts: { stage: string; system: string; user: string; purpose: string },
 ): Promise<string> {
+  const messages = [
+    { role: "system" as const, content: opts.system },
+    { role: "user" as const, content: opts.user },
+  ];
+
   const result = await deps.model.complete({
     tier: "execute",
-    messages: [
-      { role: "system", content: opts.system },
-      { role: "user", content: opts.user },
-    ],
+    messages,
+    effort: EFFORT,
     maxOutputTokens: MAX_OUTPUT_TOKENS,
   });
+  await recordCost(deps, input, opts, result);
 
-  // 先记账：钱已经花了，后面校验成不成功都要记
+  if (result.text.trim().length > 0) return result.text;
+
+  /*
+    正文为空通常是"思考把输出预算吃光了"（实测 8000 token 全记成 reasoning）。
+    再要一次，这次明说不要思考 —— 比直接报错让用户重跑一次便宜得多。
+  */
+  const retry = await deps.model.complete({
+    tier: "execute",
+    messages: [
+      ...messages,
+      { role: "user", content: "直接输出最终内容本身，不要解释，也不要思考过程。" },
+    ],
+    effort: "none",
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
+  });
+  await recordCost(deps, input, opts, retry);
+  return retry.text;
+}
+
+/**
+ * 调用 + 校验，不合格就把原因塞回去重试一次。
+ *
+ * 一次性写对的概率没那么高（实测前端方向三次里垮两次），但"告诉它哪儿不对"之后
+ * 通常一次就过。只重试一次：再不行就是真不合适，继续烧钱没有意义。
+ */
+async function callWithRetry(
+  deps: DirectionDeps,
+  input: DirectionInput,
+  opts: { stage: string; system: string; user: string; purpose: string },
+  check: (raw: string) => { ok: boolean; reason?: string },
+): Promise<{ raw: string; check: { ok: boolean; reason?: string } }> {
+  const first = await callModel(deps, input, opts);
+  const firstCheck = check(first);
+  if (firstCheck.ok) return { raw: first, check: firstCheck };
+
+  const second = await callModel(deps, input, {
+    ...opts,
+    purpose: `${opts.purpose}（重试）`,
+    user: `${opts.user}\n\n────────── 上一次的输出被拒绝 ──────────\n原因：${firstCheck.reason ?? "不合格"}。这次务必满足上面全部要求。`,
+  });
+  return { raw: second, check: check(second) };
+}
+
+/** 记账：钱已经花了，解析成不成功都要记 */
+async function recordCost(
+  deps: DirectionDeps,
+  input: DirectionInput,
+  opts: { stage: string; purpose: string },
+  result: Awaited<ReturnType<DirectionDeps["model"]["complete"]>>,
+): Promise<void> {
   try {
     await deps.costs.record({
       runId: input.runId,
@@ -81,8 +137,6 @@ async function callModel(
   } catch {
     // 记账失败不阻塞主流程
   }
-
-  return result.text;
 }
 
 /** 数据库方向：schema.sql + seed.sql */
@@ -94,13 +148,21 @@ export async function* runDbDirection(
 
   const startedAt = Date.now();
   let raw: string;
+  let check;
   try {
-    raw = await callModel(deps, input, {
-      stage: "db",
-      system: DB_SYSTEM_PROMPT,
-      user: buildUserPrompt(input),
-      purpose: "生成建表脚本",
-    });
+    const result = await callWithRetry(
+      deps,
+      input,
+      {
+        stage: "db",
+        system: DB_SYSTEM_PROMPT,
+        user: buildUserPrompt(input),
+        purpose: "生成建表脚本",
+      },
+      checkSql,
+    );
+    raw = result.raw;
+    check = result.check;
   } catch (err) {
     yield {
       kind: "error",
@@ -110,7 +172,6 @@ export async function* runDbDirection(
     return;
   }
 
-  const check = checkSql(raw);
   if (!check.ok) {
     yield { kind: "error", message: `建表脚本不合格：${check.reason}` };
     return;
@@ -170,20 +231,28 @@ export async function* runApiDirection(
 
   const startedAt = Date.now();
   let raw: string;
+  let check;
   try {
-    raw = await callModel(deps, input, {
-      stage: "api",
-      system: API_SYSTEM_PROMPT,
-      user: [
-        buildUserPrompt(input),
-        "",
-        "────────── 建表脚本（表结构与列名以它为准）──────────",
-        sql,
-        "",
-        `表清单：${extractTables(sql).join("、") || "（未识别）"}`,
-      ].join("\n"),
-      purpose: "生成后端接口",
-    });
+    const result = await callWithRetry(
+      deps,
+      input,
+      {
+        stage: "api",
+        system: API_SYSTEM_PROMPT,
+        user: [
+          buildUserPrompt(input),
+          "",
+          "────────── 建表脚本（表结构与列名以它为准）──────────",
+          sql,
+          "",
+          `表清单：${extractTables(sql).join("、") || "（未识别）"}`,
+        ].join("\n"),
+        purpose: "生成后端接口",
+      },
+      checkPython,
+    );
+    raw = result.raw;
+    check = result.check;
   } catch (err) {
     yield {
       kind: "error",
@@ -192,7 +261,6 @@ export async function* runApiDirection(
     return;
   }
 
-  const check = checkPython(raw);
   if (!check.ok) {
     yield { kind: "error", message: `后端代码不合格：${check.reason}` };
     return;
@@ -231,18 +299,26 @@ export async function* runWebDirection(
   }
 
   let raw: string;
+  let check;
   try {
-    raw = await callModel(deps, input, {
-      stage: "web",
-      system: WEB_SYSTEM_PROMPT,
-      user: [
-        buildUserPrompt(input),
-        "",
-        "────────── 后端接口清单 ──────────",
-        extractRoutes(api).join("\n") || "（后端没有可识别的路由）",
-      ].join("\n"),
-      purpose: "生成前端页面",
-    });
+    const result = await callWithRetry(
+      deps,
+      input,
+      {
+        stage: "web",
+        system: WEB_SYSTEM_PROMPT,
+        user: [
+          buildUserPrompt(input),
+          "",
+          "────────── 后端接口清单 ──────────",
+          extractRoutes(api).join("\n") || "（后端没有可识别的路由）",
+        ].join("\n"),
+        purpose: "生成前端页面",
+      },
+      checkHtml,
+    );
+    raw = result.raw;
+    check = result.check;
   } catch (err) {
     yield {
       kind: "error",
@@ -251,13 +327,22 @@ export async function* runWebDirection(
     return;
   }
 
-  const check = checkHtml(raw);
   if (!check.ok) {
-    yield { kind: "error", message: `前端页面不合格：${check.reason}` };
+    // 原文留下：不合格的产物也值得看一眼，否则只能重跑一遍再猜为什么
+    await deps.workspace.write(
+      input.runId,
+      `${WEB_FILE}.raw.txt`,
+      `${stripFence(raw)}\n`,
+    );
+    yield {
+      kind: "error",
+      message: `前端页面不合格：${check.reason}`,
+      hint: "原始输出已存为 web/index.html.raw.txt",
+    };
     return;
   }
 
-  const html = stripFence(raw);
+  const html = extractHtmlDocument(raw);
   const file = await deps.workspace.write(input.runId, WEB_FILE, `${html}\n`);
 
   yield { kind: "files", files: [file] };
