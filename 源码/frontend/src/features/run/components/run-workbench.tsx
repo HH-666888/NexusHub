@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import type { StepBlock } from "@/core/planning/step-blocks";
 import { FileTree, type FileEntry } from "./file-tree";
+import { VerdictList } from "./verdict-list";
 import { GenerationConsole } from "./generation-console";
 
 /**
@@ -41,9 +42,9 @@ export function RunWorkbench({
    */
   const [open, setOpen] = useState(!hasArtifact);
   /** 有成品时默认停在“成品”，点进来最想看的通常是做出来的东西 */
-  const [tab, setTab] = useState<"generate" | "artifact" | "source" | "files">(
-    hasArtifact ? "artifact" : "generate",
-  );
+  const [tab, setTab] = useState<
+    "generate" | "artifact" | "source" | "files" | "verdict"
+  >(hasArtifact ? "artifact" : "generate");
   const [source, setSource] = useState<string | null>(null);
   const [loadingSource, setLoadingSource] = useState(false);
   /** 产物文件清单：只有全栈模式才会有；为空则不显示"文件"标签 */
@@ -100,7 +101,7 @@ export function RunWorkbench({
 
   /** 点标签：展开（如果收着）并切过去 */
   const pick = useCallback(
-    (key: "generate" | "artifact" | "source" | "files") => {
+    (key: "generate" | "artifact" | "source" | "files" | "verdict") => {
       if (key === "source") {
         void openSource();
         return;
@@ -124,6 +125,9 @@ export function RunWorkbench({
             ["artifact", "成品"],
             ["source", "源码"],
             ...(files.length > 0 ? ([["files", "文件"]] as const) : []),
+            ...(files.some((f) => f.path === "verdict.json")
+              ? ([["verdict", "验收"]] as const)
+              : []),
           ] as const
         ).map(([key, label]) => (
           <button
@@ -209,6 +213,8 @@ export function RunWorkbench({
           {tab === "files" && files.length > 0 && (
             <FileTree runId={runId} files={files} />
           )}
+
+          {tab === "verdict" && <VerdictList runId={runId} />}
 
           {tab === "source" && (
             <div className="scroll-hint h-full overflow-auto">

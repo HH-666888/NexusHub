@@ -97,6 +97,17 @@ export function verifyRuntime(runId: string): Promise<Verdict> {
   return call<Verdict>(`/${encodeURIComponent(runId)}/verify`, { method: "POST" });
 }
 
+export interface RuntimeStatusInfo {
+  status: string;
+  previewUrl?: string;
+  exitCode?: number;
+}
+
+/** 当前状态以数据库记录为准；容器可能已退出，这时 status 是 exited */
+export function runtimeStatus(runId: string): Promise<RuntimeStatusInfo> {
+  return call<RuntimeStatusInfo>(`/${encodeURIComponent(runId)}/status`);
+}
+
 export function stopRuntime(runId: string): Promise<void> {
   return call<void>(`/${encodeURIComponent(runId)}/stop`, { method: "POST" });
 }
