@@ -262,6 +262,13 @@ export async function* runWebDirection(
 
   yield { kind: "files", files: [file] };
   yield {
+    kind: "tool",
+    name: "web.page",
+    ok: true,
+    result: `${Math.round(html.length / 1024)} KB`,
+    latencyMs: 0,
+  };
+  yield {
     kind: "phase",
     phase: "building",
     label: `前端页面已就绪（${Math.round(html.length / 1024)} KB）`,

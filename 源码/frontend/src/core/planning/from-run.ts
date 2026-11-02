@@ -89,6 +89,8 @@ const PRODUCT_STAGE: Record<string, string> = {
   /* modules 是并行构建的产出，归 build，并让 build:<模块id> 那批点长出来 */
   modules: BUILD_STAGE_ID,
   check: VERIFY_STAGE_ID,
+  /* 全栈模式下三方向各发一条 tool，归构建工序：一个二级工序 + 三个三级子任务 */
+  tool: BUILD_STAGE_ID,
 };
 
 // 载荷收窄：payload 是 unknown（从库里的 JSON 还原），只收窄不猜，猜错会一路错到画布上
@@ -484,15 +486,17 @@ export function planningFromRun(src: PlanningSource): PlanningEvent[] {
       硬凑成一个万能函数只会让每条规则都难读难改。
     */
     const born =
-      event.kind === "check"
-        ? checkPoints(payload, event.seq)
-        : event.kind === "arch"
-          ? archPoints(payload, event.seq)
-          : event.kind === "ui"
-            ? uiPoints(payload, event.seq)
-            : event.kind === "modules"
-              ? modulePoints(payload, event.seq, archModuleNames)
-              : specPoints(payload, event.seq);
+      event.kind === "tool"
+        ? directionPoints(payload, event.seq)
+        : event.kind === "check"
+          ? checkPoints(payload, event.seq)
+          : event.kind === "arch"
+            ? archPoints(payload, event.seq)
+            : event.kind === "ui"
+              ? uiPoints(payload, event.seq)
+              : event.kind === "modules"
+                ? modulePoints(payload, event.seq, archModuleNames)
+                : specPoints(payload, event.seq);
     for (const point of born) {
       log = appendBorn(log, point);
     }
@@ -562,4 +566,36 @@ export function planningFromRun(src: PlanningSource): PlanningEvent[] {
   );
 
   return log;
+}
+/**
+ * 三方向任务点：全栈模式在构建工序下发的三条 tool 事件。
+ *
+ * 为什么挂在 build 下面：它是一个二级工序（"三方向开发"）的三个三级子任务，
+ * 而不是三道新的主工序 —— 主流程始终是六道。
+ */
+const DIRECTION_TOOLS: Record<string, string> = {
+  "db.schema": "数据库",
+  "api.routes": "后端",
+  "web.page": "前端",
+};
+
+function directionPoints(
+  payload: Record<string, unknown> | null,
+  seq: number,
+): TaskPoint[] {
+  const name = asString(payload?.name);
+  const title = DIRECTION_TOOLS[name];
+  if (!title) return [];
+  return [
+    {
+      // 用工具名做 id：同一个 run 里每个方向只会成功一次，重跑会覆盖同一条
+      id: `build:direction:${name}`,
+      parentId: BUILD_STAGE_ID,
+      depth: 2,
+      kind: "exec",
+      title,
+      status: payload?.ok === false ? "failed" : "done",
+      bornAtSeq: seq,
+    },
+  ];
 }

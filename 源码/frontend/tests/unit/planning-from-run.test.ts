@@ -1374,3 +1374,79 @@ describe("串一遍 projectAt → toOutline：清单里 build 那道自己长出
     expect(statusEventsFor(log, "build")).toHaveLength(0);
   });
 });
+describe("三方向任务点（全栈模式）", () => {
+  const toolEvents = [
+    {
+      seq: 10,
+      at: 10,
+      kind: "tool",
+      payload: {
+        kind: "tool",
+        name: "db.schema",
+        ok: true,
+        result: "1 张表：todos",
+        latencyMs: 3,
+      },
+    },
+    {
+      seq: 11,
+      at: 11,
+      kind: "tool",
+      payload: {
+        kind: "tool",
+        name: "api.routes",
+        ok: true,
+        result: "GET /health",
+        latencyMs: 4,
+      },
+    },
+    {
+      seq: 12,
+      at: 12,
+      kind: "tool",
+      payload: {
+        kind: "tool",
+        name: "web.page",
+        ok: true,
+        result: "2 KB",
+        latencyMs: 0,
+      },
+    },
+  ];
+
+  it("三条 tool 事件在构建工序下生成三个子任务点", () => {
+    const log = planningFromRun(src(toolEvents as never));
+    const points = projectAt(log, 12);
+
+    const directions = points.filter((p) => p.id.startsWith("build:direction:"));
+    expect(directions.map((p) => p.title)).toEqual(["数据库", "后端", "前端"]);
+    for (const point of directions) {
+      expect(point.parentId).toBe("build");
+      expect(point.depth).toBe(2);
+      expect(point.status).toBe("done");
+    }
+  });
+
+  it("不认识的工具名不造点（别把普通工具混进三方向）", () => {
+    const log = planningFromRun(
+      src([
+        {
+          seq: 5,
+          at: 5,
+          kind: "tool",
+          payload: {
+            kind: "tool",
+            name: "fs.read",
+            ok: true,
+            result: "",
+            latencyMs: 1,
+          },
+        },
+      ] as never),
+    );
+
+    expect(projectAt(log, 5).some((p) => p.id.startsWith("build:direction:"))).toBe(
+      false,
+    );
+  });
+});
