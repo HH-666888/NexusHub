@@ -22,7 +22,8 @@
 | 错误信封 | 部分（见下） | ✅ AppError + 框架异常统一 |
 | 领域模型 | `core/domain`（TS） | ✅ `app/domain`（Pydantic，含 14 种事件） |
 | 认证 | ✅ 在用（Server Action） | ✅ 4 个端点 + MySQL repo + 10 条集成测试 |
-| 运行 / 工序 / 产物 | ✅ 全部 | ⏳ 空模块，等刀 3–5 |
+| 运行 / 工序 / 产物 | ✅ 单文件全流程 | ⏳ 编排仍在 Next（明确的过渡债） |
+| **全栈模式**（`FULLSTACK_MODE=on`） | ✅ 生成 db/api/web 三份产物 + 起容器 + 三层验证 | ✅ 建库 / 起容器 / 验证 / 回收 |
 
 三份契约先于代码存在，就是为了让这个替换过程不返工：
 
@@ -75,6 +76,40 @@ cd frontend && npm run verify:types   # 生成物必须与提交一致
 
 前端发请求只走 `src/api/client.ts`（错误信封在那里解析一次），
 事件流只走 `src/api/sse.ts`（未知 kind 统一忽略）。
+
+## 全栈模式怎么开
+
+默认关闭，关闭时行为与老版本完全一致。打开需要三样东西：
+
+1. **Docker**（产物容器要它；本机没装时运行时接口会返回 503）
+2. 按 `database/README.md` 建好 `nexus_provisioner` 与 `nexus_product` 两个 MySQL 账号
+3. 两端 `.env` 里把工作区指向**同一个绝对目录**：
+
+```bash
+# backend/.env
+INTERNAL_TOKEN=<任意一串>
+MYSQL_PROVISIONER_URL=mysql+pymysql://nexus_provisioner:<密码>@127.0.0.1:3306/?charset=utf8mb4
+MYSQL_PRODUCT_URL=mysql+pymysql://nexus_product:<密码>@host.docker.internal:3306
+RUNTIME_WORKSPACE_DIR=<与前端 WORKSPACE_ROOT 相同的绝对路径>
+
+# frontend/.env.local
+FULLSTACK_MODE=on
+RUNTIME_URL=http://127.0.0.1:8000
+INTERNAL_TOKEN=<与后端一致>
+WORKSPACE_ROOT=<同一个绝对路径>
+```
+
+打开后一次生成会产出 `db/schema.sql`、`api/main.py`、`web/index.html`，然后：
+
+```
+建库 → 执行建表脚本 → 起容器 → 等 /health → 三层验证（数据库 / 接口 / 界面）
+```
+
+界面上：工作台多出「文件」与「验收」两个标签，清单里构建工序下多出
+「数据库 / 后端 / 前端」三个子任务。
+
+> 未装 Docker 时，全栈模式会在"起容器"这一步停下并说明原因；
+> 前面三段生成照常落盘，产物仍可下载。
 
 ## 验证
 
