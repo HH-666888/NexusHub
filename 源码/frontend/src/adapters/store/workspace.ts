@@ -139,3 +139,9 @@ export async function readManifest(runId: string): Promise<RunManifest | null> {
     throw error;
   }
 }
+
+/** 给 core 用的实现：读写都限定在这个 run 的目录里 */
+export const fsWorkspace = {
+  write: writeRunFile,
+  read: readRunFile,
+};
