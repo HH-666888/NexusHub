@@ -66,3 +66,8 @@ name = "pipeline 不依赖 HTTP 层"
 type = "forbidden"
 source_modules = ["app.pipeline"]
 forbidden_modules = ["app.features"]
+[[tool.importlinter.contracts]]
+name = "runtime 只管执行，不反向依赖编排"
+type = "forbidden"
+source_modules = ["app.features.runtime"]
+forbidden_modules = ["app.pipeline", "app.ai"]
