@@ -11,7 +11,8 @@ import { listRunFiles, readRunFile, runDir } from "@/adapters/store/workspace";
 export interface ZippedRun {
   /** 顶层目录名，解压后是一层 `<runId>/`，避免文件撒一地 */
   folder: string;
-  bytes: Uint8Array;
+  /** ArrayBuffer 而不是 Uint8Array：Response 的 body 只收前者 */
+  bytes: ArrayBuffer;
   fileCount: number;
 }
 
@@ -25,9 +26,14 @@ export async function zipRun(runId: string): Promise<ZippedRun> {
     entries[`${runId}/${file.path}`] = encoder.encode(content);
   }
 
+  const zipped = zipSync(entries, { level: 6 });
+  // 复制到独立 ArrayBuffer：fflate 返回的可能带有额外容量，直接给 Response 会错位
+  const buffer = new ArrayBuffer(zipped.byteLength);
+  new Uint8Array(buffer).set(zipped);
+
   return {
     folder: runId,
-    bytes: zipSync(entries, { level: 6 }),
+    bytes: buffer,
     fileCount: files.length,
   };
 }

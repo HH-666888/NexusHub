@@ -15,7 +15,7 @@ describe("zipRun", () => {
     await writeRunFile(RUN, "web/index.html", "<h1>hi</h1>");
 
     const zipped = await zipRun(RUN);
-    const entries = unzipSync(zipped.bytes);
+    const entries = unzipSync(new Uint8Array(zipped.bytes));
     const names = Object.keys(entries).sort();
 
     expect(zipped.fileCount).toBe(2);
@@ -29,6 +29,6 @@ describe("zipRun", () => {
     const zipped = await zipRun(RUN);
 
     expect(zipped.fileCount).toBe(0);
-    expect(Object.keys(unzipSync(zipped.bytes))).toEqual([]);
+    expect(Object.keys(unzipSync(new Uint8Array(zipped.bytes)))).toEqual([]);
   });
 });
