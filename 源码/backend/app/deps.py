@@ -5,9 +5,15 @@
 
 from collections.abc import Iterator
 
+from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
+from app.domain.user import User
+from app.features.auth import service as auth_service
+from app.features.auth.repo import SqlAuthStore
+from app.shared.cookies import SESSION_COOKIE
+from app.shared.time import now_ms
 
 
 def get_db() -> Iterator[Session]:
@@ -23,3 +29,19 @@ def get_db() -> Iterator[Session]:
         raise
     finally:
         db.close()
+
+
+def get_auth_store(db: Session = Depends(get_db)) -> SqlAuthStore:
+    return SqlAuthStore(db)
+
+
+def get_current_user(
+    request: Request,
+    store: SqlAuthStore = Depends(get_auth_store),
+) -> User:
+    """从 cookie 取 token 并校验。失败直接 401（错误信封由全局处理器包装）。"""
+    return auth_service.authenticate(
+        store,
+        token=request.cookies.get(SESSION_COOKIE),
+        now=now_ms(),
+    )

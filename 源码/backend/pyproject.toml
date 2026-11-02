@@ -43,6 +43,8 @@ ignore = ["B008"]  # FastAPI 的 Depends() 就是要写在默认参数里
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# 单元测试不碰数据库，集成测试跑在 nexus_test 库上；两组分开跑（见 README）
+markers = ["integration: 需要真实 MySQL 的用例"]
 
 [tool.importlinter]
 root_packages = ["app"]

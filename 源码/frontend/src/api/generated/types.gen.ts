@@ -5,6 +5,16 @@ export type ClientOptions = {
 };
 
 /**
+ * HTTPValidationError
+ */
+export type HttpValidationError = {
+  /**
+   * Detail
+   */
+  detail?: Array<ValidationError>;
+};
+
+/**
  * HealthStatus
  */
 export type HealthStatus = {
@@ -21,6 +31,185 @@ export type HealthStatus = {
    */
   version: string;
 };
+
+/**
+ * LoginRequest
+ */
+export type LoginRequest = {
+  /**
+   * Password
+   */
+  password: string;
+  /**
+   * Username
+   */
+  username: string;
+};
+
+/**
+ * RegisterRequest
+ */
+export type RegisterRequest = {
+  /**
+   * Confirmpassword
+   */
+  confirmPassword: string;
+  /**
+   * Password
+   */
+  password: string;
+  /**
+   * Username
+   */
+  username: string;
+};
+
+/**
+ * User
+ *
+ * 对外形状：**不含密码哈希**。哈希只在 repo 与 service 之间流动。
+ */
+export type User = {
+  /**
+   * Createdat
+   */
+  createdAt: number;
+  /**
+   * Displayname
+   */
+  displayName: string;
+  /**
+   * Id
+   */
+  id: number;
+  /**
+   * Username
+   */
+  username: string;
+};
+
+/**
+ * UserResponse
+ */
+export type UserResponse = {
+  user: User;
+};
+
+/**
+ * ValidationError
+ */
+export type ValidationError = {
+  /**
+   * Context
+   */
+  ctx?: {
+    [key: string]: unknown;
+  };
+  /**
+   * Input
+   */
+  input?: unknown;
+  /**
+   * Location
+   */
+  loc: Array<string | number>;
+  /**
+   * Message
+   */
+  msg: string;
+  /**
+   * Error Type
+   */
+  type: string;
+};
+
+export type LoginApiV1AuthLoginPostData = {
+  body: LoginRequest;
+  path?: never;
+  query?: never;
+  url: "/api/v1/auth/login";
+};
+
+export type LoginApiV1AuthLoginPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError;
+};
+
+export type LoginApiV1AuthLoginPostError =
+  LoginApiV1AuthLoginPostErrors[keyof LoginApiV1AuthLoginPostErrors];
+
+export type LoginApiV1AuthLoginPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: UserResponse;
+};
+
+export type LoginApiV1AuthLoginPostResponse =
+  LoginApiV1AuthLoginPostResponses[keyof LoginApiV1AuthLoginPostResponses];
+
+export type LogoutApiV1AuthLogoutPostData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/v1/auth/logout";
+};
+
+export type LogoutApiV1AuthLogoutPostResponses = {
+  /**
+   * Successful Response
+   */
+  204: void;
+};
+
+export type LogoutApiV1AuthLogoutPostResponse =
+  LogoutApiV1AuthLogoutPostResponses[keyof LogoutApiV1AuthLogoutPostResponses];
+
+export type MeApiV1AuthMeGetData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/v1/auth/me";
+};
+
+export type MeApiV1AuthMeGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: UserResponse;
+};
+
+export type MeApiV1AuthMeGetResponse =
+  MeApiV1AuthMeGetResponses[keyof MeApiV1AuthMeGetResponses];
+
+export type RegisterApiV1AuthRegisterPostData = {
+  body: RegisterRequest;
+  path?: never;
+  query?: never;
+  url: "/api/v1/auth/register";
+};
+
+export type RegisterApiV1AuthRegisterPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError;
+};
+
+export type RegisterApiV1AuthRegisterPostError =
+  RegisterApiV1AuthRegisterPostErrors[keyof RegisterApiV1AuthRegisterPostErrors];
+
+export type RegisterApiV1AuthRegisterPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: UserResponse;
+};
+
+export type RegisterApiV1AuthRegisterPostResponse =
+  RegisterApiV1AuthRegisterPostResponses[keyof RegisterApiV1AuthRegisterPostResponses];
 
 export type HealthApiV1HealthGetData = {
   body?: never;

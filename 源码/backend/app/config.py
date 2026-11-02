@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # 语料目录（相对 backend/ 根）
     playbook_dir: str = "content/playbook"
 
+    # cookie 的 Secure 标记：本地 http 打开会让浏览器不回传 cookie（表现为登录后又变未登录）
+    cookie_secure: bool = False
+
     # 同源部署时留空；本地两端不同端口调试才需要
     allowed_origin: str = ""
 
