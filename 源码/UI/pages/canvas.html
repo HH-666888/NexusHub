@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Nexus · 番茄钟（运行中）</title>
     <link rel="stylesheet" href="../system/app.css" />
+    <link rel="stylesheet" href="../system/glass.css" />
     <style>
       body { overflow: hidden; }
 
@@ -260,6 +261,7 @@ GET  /api/items/count  200</pre>
       (function () {
         const param = new URLSearchParams(location.search).get("theme");
         document.documentElement.dataset.theme = param || localStorage.getItem("nexus-theme") || "light";
+        document.documentElement.dataset.style = new URLSearchParams(location.search).get("style") || "";
         document.addEventListener("click", function (event) {
           if (!event.target.closest("#theme-toggle")) return;
           const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";

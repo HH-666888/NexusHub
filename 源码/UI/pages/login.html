@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Nexus · 登录</title>
     <link rel="stylesheet" href="../system/app.css" />
+    <link rel="stylesheet" href="../system/glass.css" />
     <style>
       .auth-wrap {
         position: relative;
@@ -126,5 +127,12 @@
         <p class="auth-legal">继续即表示同意《服务条款》与《隐私政策》</p>
       </div>
     </div>
+    <script>
+      (function () {
+        const query = new URLSearchParams(location.search);
+        document.documentElement.dataset.theme = query.get("theme") || localStorage.getItem("nexus-theme") || "light";
+        document.documentElement.dataset.style = query.get("style") || "";
+      })();
+    </script>
   </body>
 </html>
