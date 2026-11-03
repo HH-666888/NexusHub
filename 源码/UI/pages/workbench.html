@@ -272,7 +272,8 @@
       .code-line { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 6px; padding: 0 12px; }
       .code-line:hover { background: rgba(37, 99, 235, 0.05); }
       .code-line .ln { color: var(--text-3); text-align: right; user-select: none; font-size: 10.5px; }
-      .code-line pre { margin: 0; white-space: pre-wrap; word-break: break-word; color: var(--text-2); }
+      /* grid 子项的 min-width 默认是 auto，长行会把列撑宽，必须显式归零才会折行 */
+      .code-line pre { min-width: 0; width: 100%; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; color: var(--text-2); }
       .code-line.add { background: rgba(22, 163, 74, 0.08); }
       .code-line.add .ln { color: var(--ok); }
       .code-line.add pre { color: #14532d; }
@@ -373,6 +374,76 @@
       .focus-bar button {
         font: inherit; font-size: 11px; color: var(--primary);
         background: none; border: none; text-decoration: underline; cursor: pointer; padding: 0;
+      }
+      /* ───────── 代码面板：文件页签与回看 ───────── */
+
+      .file-tabs {
+        display: flex;
+        gap: 6px;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--line);
+        overflow-x: auto;
+      }
+      .file-tabs button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex: none;
+        font: inherit;
+        font-family: var(--mono);
+        font-size: 11px;
+        padding: 4px 9px;
+        border-radius: 7px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.6);
+        color: var(--text-3);
+        cursor: pointer;
+      }
+      .file-tabs button i {
+        font-style: normal;
+        font-size: 9.5px;
+        padding: 0 4px;
+        border-radius: 999px;
+        background: var(--card-3);
+        color: var(--text-3);
+      }
+      .file-tabs button.is-on { border-color: var(--primary-line); background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+      .file-tabs button.done i { background: var(--ok-soft); color: var(--ok); }
+      .file-tabs button.live i { background: var(--primary); color: #fff; }
+
+      .review-bar {
+        display: none;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 12px;
+        border-bottom: 1px solid var(--line);
+        background: var(--warn-soft);
+        color: var(--warn);
+        font-size: 11.5px;
+      }
+      .review-bar.is-on { display: flex; }
+      .review-bar button {
+        font: inherit;
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 6px;
+        border: 1px solid currentColor;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      .review-bar .spacer { flex: 1; }
+
+      /* 换文件时闪一下边框，说明"同一个框在刷新"，而不是换了一个框 */
+      .code-pane.flash { animation: pane-flash 0.6s ease; }
+      @keyframes pane-flash {
+        0% { box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.5); }
+        100% { box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0); }
+      }
+      .code-body.swap { animation: body-swap 0.28s ease; }
+      @keyframes body-swap {
+        0% { opacity: 0; transform: translateY(4px); }
+        100% { opacity: 1; transform: none; }
       }
       /* 深色下把"加的代码行"调成深绿 */
       [data-theme="dark"] .code-line.add { background: rgba(74, 222, 128, 0.08); }
@@ -481,7 +552,7 @@
         </div>
       </main>
 
-      <!-- ───────── 右：实时代码流（可隐藏） ───────── -->
+      <!-- ───────── 右：实时代码流（可隐藏 / 可回看） ───────── -->
       <aside class="code-pane" id="code-pane">
         <div class="code-head">
           <div class="tabs">
@@ -495,11 +566,20 @@
           </button>
         </div>
 
+        <!-- 已生成过的文件：面板只换内容，不消失，随时可以点回去看 -->
+        <div class="file-tabs" id="file-tabs" role="tablist" aria-label="已生成的文件"></div>
+
         <div class="code-file">
-          <span class="dot"></span>
-          web/index.html
+          <span class="dot" id="file-dot"></span>
+          <span id="file-name">web/index.html</span>
           <span class="grow"></span>
-          <span class="stream">流式写入 · <b id="line-count">0</b> 行</span>
+          <span class="stream" id="stream-state">流式写入 · <b id="line-count">0</b> 行</span>
+        </div>
+
+        <div class="review-bar" id="review-bar">
+          <span id="review-text">回看 · 这个文件已经写完了</span>
+          <button type="button" id="replay-file">重播这次生成</button>
+          <button type="button" id="back-live">回到实时</button>
         </div>
 
         <div class="code-body" id="code-body"></div>
@@ -847,70 +927,281 @@
       });
       /* ───────────────── 右侧：代码流 ───────────────── */
 
-      const CODE = [
-        ["import", " os"],
-        ["from", " fastapi "],
-        ["app", " = FastAPI()"],
-        ["", ""],
-        ["@app.get", "('/health')"],
-        ["def", " health():"],
-        ["    return", " {'ok': True}"],
-        ["", ""],
-        ["@app.get", "('/api/items')"],
-        ["def", " list_items():"],
-        ["    with", " engine.connect() as conn:"],
-        ["        rows", " = conn.execute(text('SELECT id, title FROM items'))"],
-        ["    return", " {'items': [dict(r._mapping) for r in rows]}"],
-        ["", ""],
-        ["@app.post", "('/api/items')"],
-        ["def", " add_item(payload: ItemIn):"],
-        ["    with", " engine.begin() as conn:"],
-        ["        conn.execute", "(text('INSERT INTO items (title) VALUES (:t)'), {'t': payload.title})"],
-        ["    return", " {'ok': True}"],
-        ["", ""],
-        ["@app.get", "('/api/items/count')"],
-        ["def", " count_items():"],
-        ["    with", " engine.connect() as conn:"],
-        ["        n", " = conn.execute(text('SELECT COUNT(*) FROM items')).scalar_one()"],
-        ["    return", " {'count': n}"],
+      /* ───────────────── 右侧：多文件流式代码 + 回看 ─────────────────
+         面板只有一个：换文件时只换内容与标题，框不消失；
+         生成过的文件留在页签里，随时点回去看，也能重播它那一次的生成过程。 */
+
+      const FILES = [
+        {
+          path: "db/schema.sql",
+          lang: "sql",
+          state: "done",
+          lines: [
+            "-- 番茄钟：一个会话一张表就够了",
+            "CREATE TABLE IF NOT EXISTS sessions (",
+            "  id          BIGINT PRIMARY KEY AUTO_INCREMENT,",
+            "  started_at  BIGINT NOT NULL,",
+            "  planned_sec INT NOT NULL DEFAULT 1500,",
+            "  ended_at    BIGINT NULL,",
+            "  created_at  BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)",
+            ");",
+            "",
+            "CREATE INDEX idx_sessions_started ON sessions (started_at);",
+          ],
+        },
+        {
+          path: "api/main.py",
+          lang: "python",
+          state: "done",
+          lines: [
+            "import os",
+            "from fastapi import FastAPI",
+            "from fastapi.responses import HTMLResponse",
+            "from sqlalchemy import create_engine, text",
+            "",
+            "app = FastAPI()",
+            "engine = create_engine(os.environ['DATABASE_URL'])",
+            "",
+            "@app.get('/health')",
+            "def health():",
+            "    return {'ok': True}",
+            "",
+            "@app.get('/api/sessions')",
+            "def list_sessions():",
+            "    with engine.connect() as conn:",
+            "        rows = conn.execute(text('SELECT * FROM sessions')).all()",
+            "    return {'items': [dict(r._mapping) for r in rows]}",
+            "",
+            "@app.post('/api/sessions')",
+            "def add_session(payload: dict):",
+            "    with engine.begin() as conn:",
+            "        conn.execute(text('INSERT INTO sessions (started_at) VALUES (:s)'), {'s': payload['started_at']})",
+            "    return {'ok': True}",
+          ],
+        },
+        {
+          path: "web/index.html",
+          lang: "html",
+          state: "live",
+          lines: [
+            "<!doctype html>",
+            '<html lang="zh-CN">',
+            "<head>",
+            '  <meta charset="utf-8" />',
+            "  <title>番茄钟</title>",
+            "  <style>",
+            "    .dial { width: 220px; height: 220px; border-radius: 50%;",
+            "            background: conic-gradient(#ef4444 var(--p), #f3f4f6 0); }",
+            "    .row { display: flex; gap: 12px; justify-content: center; }",
+            "  </style>",
+            "</head>",
+            "<body>",
+            "  <div class=\"dial\" id=\"dial\"></div>",
+            "  <div class=\"row\">",
+            "    <button id=\"start\">开始</button>",
+            "    <button id=\"reset\">重置</button>",
+            "  </div>",
+            "  <script>",
+            "    let left = 1500, timer = null;",
+            "    function paint() {",
+            "      dial.style.setProperty('--p', (1 - left / 1500) * 100 + '%');",
+            "    }",
+            "    start.onclick = () => {",
+            "      timer = setInterval(() => { left--; paint(); }, 1000);",
+            "    };",
+            "    reset.onclick = () => { clearInterval(timer); left = 1500; paint(); };",
+            "    paint();",
+            "  <\/script>",
+            "</body>",
+            "</html>",
+          ],
+        },
       ];
 
+      const codePane = document.getElementById("code-pane");
       const codeBody = document.getElementById("code-body");
-      const lineCount = document.getElementById("line-count");
-      let codeTimer = null;
+      const fileName = document.getElementById("file-name");
+      const fileDot = document.getElementById("file-dot");
+      const streamState = document.getElementById("stream-state");
+      let lineCount = document.getElementById("line-count");
+      const fileTabs = document.getElementById("file-tabs");
+      const reviewBar = document.getElementById("review-bar");
+      const reviewText = document.getElementById("review-text");
 
-      function renderCodeLines() {
-        codeBody.innerHTML = "";
-        lineCount.textContent = "0";
-        if (codeTimer) clearInterval(codeTimer);
+      /** 当前在看哪个文件；live 是正在流式写入的那个 */
+      const codeView = { current: "db/schema.sql", live: null };
+      let streamTimer = null;
+      let streamedLines = 0;
 
-        let i = 0;
-        codeTimer = setInterval(function () {
-          if (i >= CODE.length) {
-            clearInterval(codeTimer);
-            codeBody.insertAdjacentHTML("beforeend", '<div class="code-line"><span class="ln"></span><pre><span class="caret"></span></pre></div>');
-            return;
-          }
-          const [head, tail] = CODE[i];
-          const line = document.createElement("div");
-          line.className = "code-line" + (i < 4 ? " add" : "");
-          line.innerHTML = `<span class="ln">${i + 1}</span><pre><span class="k">${escapeHtml(head || "")}</span>${escapeHtml(tail)}</pre>`;
-          codeBody.appendChild(line);
-          codeBody.scrollTop = codeBody.scrollHeight;
-          lineCount.textContent = String(i + 1);
-          i += 1;
-        }, 70);
-      }
-
-      function escapeHtml(text) {
+      function esc(text) {
         return String(text).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
       }
+
+      /** 极简高亮：注释 / 字符串 / 关键字 / 数字 / HTML 标签 */
+      function hl(text) {
+        const re = /(#[^\n]*|--[^\n]*|\/\/[^\n]*)|('[^']*'|"[^"]*")|(<\/?[a-zA-Z][^>]*>)|(\b(?:import|from|def|return|with|as|class|function|const|let|if|else|for|while|async|await|new|true|false|null|CREATE|TABLE|IF|NOT|EXISTS|PRIMARY|KEY|INDEX|ON|NULL|DEFAULT)\b)|(\b\d+\.?\d*\b)/g;
+        let out = "";
+        let last = 0;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          out += esc(text.slice(last, m.index));
+          if (m[1]) out += `<span class="c">${esc(m[1])}</span>`;
+          else if (m[2]) out += `<span class="s">${esc(m[2])}</span>`;
+          else if (m[3]) out += `<span class="t">${esc(m[3])}</span>`;
+          else if (m[4]) out += `<span class="k">${esc(m[4])}</span>`;
+          else out += `<span class="n">${esc(m[5])}</span>`;
+          last = m.index + m[0].length;
+        }
+        out += esc(text.slice(last));
+        return out;
+      }
+
+      function fileOf(path) {
+        return FILES.find((f) => f.path === path);
+      }
+
+      function renderTabs() {
+        fileTabs.innerHTML = FILES.map((f) => {
+          const live = codeView.live === f.path;
+          const on = codeView.current === f.path;
+          const cls = [on ? "is-on" : "", f.state === "done" ? "done" : "", live ? "live" : ""].join(" ").trim();
+          const mark = live ? "写入中" : f.state === "done" ? "✓" : "待生成";
+          return `<button type="button" class="${cls}" data-path="${f.path}">${f.path.split("/").pop()}<i>${mark}</i></button>`;
+        }).join("");
+      }
+
+      function addLine(index, text) {
+        const line = document.createElement("div");
+        line.className = "code-line";
+        line.innerHTML = `<span class="ln">${index + 1}</span><pre>${hl(text)}</pre>`;
+        codeBody.appendChild(line);
+        codeBody.scrollTop = codeBody.scrollHeight;
+        lineCount.textContent = String(index + 1);
+      }
+
+      /** 切到某个文件：面板不消失，只换内容；生成过的进回看态，正在写的接着写 */
+      function showFile(path, options = {}) {
+        const file = fileOf(path);
+        if (!file) return;
+        codeView.current = path;
+
+        if (streamTimer) {
+          clearInterval(streamTimer);
+          streamTimer = null;
+        }
+
+        const streaming = codeView.live === path && !options.review;
+        fileName.textContent = path;
+        fileDot.style.background = streaming ? "var(--warn)" : "var(--ok)";
+        // 两种状态都要保留 #line-count 节点：addLine 每次都要写它，缺了会在第 2 行抛错
+        streamState.innerHTML = streaming
+          ? `流式写入 · <b id="line-count">0</b> 行`
+          : `已生成 · <b id="line-count">${file.lines.length}</b> 行`;
+        lineCount = document.getElementById("line-count");
+
+        codeBody.innerHTML = "";
+        codeBody.classList.remove("swap");
+        void codeBody.offsetWidth;
+        codeBody.classList.add("swap");
+
+        reviewBar.classList.toggle("is-on", !streaming);
+        reviewText.textContent = streaming ? "正在写这个文件" : `回看 · ${path} 已生成完毕`;
+
+        codePane.classList.remove("flash");
+        void codePane.offsetWidth;
+        codePane.classList.add("flash");
+
+        renderTabs();
+
+        if (streaming) {
+          // 已经写过的行先补齐，再接着往后写 —— 切走再切回不会丢进度
+          for (let i = 0; i < file.written; i += 1) addLine(i, file.lines[i]);
+          streamLines(path);
+        } else {
+          file.lines.forEach((text, i) => addLine(i, text));
+        }
+      }
+
+      /** 流式写入：进度记在 file.written 上，切到别的文件也不会中断 */
+      function streamLines(path) {
+        const file = fileOf(path);
+        if (streamTimer) clearInterval(streamTimer);
+        streamTimer = setInterval(function () {
+          if (file.written >= file.lines.length) {
+            clearInterval(streamTimer);
+            streamTimer = null;
+            file.state = "done";
+            if (codeView.live === path) codeView.live = null;
+            renderTabs();
+            if (codeView.current === path) {
+              streamState.innerHTML = `已生成 · <b id="line-count">${file.lines.length}</b> 行`;
+              lineCount = document.getElementById("line-count");
+              reviewBar.classList.add("is-on");
+              reviewText.textContent = `回看 · ${path} 已生成完毕`;
+              codeBody.insertAdjacentHTML(
+                "beforeend",
+                '<div class="code-line"><span class="ln"></span><pre><span class="caret"></span></pre></div>',
+              );
+            }
+            return;
+          }
+          if (codeView.current === path) addLine(file.written, file.lines[file.written]);
+          file.written += 1;
+        }, 45);
+      }
+
+      /** 开始生成一个新文件：标成 live、清零进度、切过去 */
+      function startFile(path) {
+        const file = fileOf(path);
+        if (!file) return;
+        file.state = "live";
+        file.written = 0;
+        codeView.live = path;
+        showFile(path);
+      }
+      fileTabs.addEventListener("click", function (event) {
+        const btn = event.target.closest("button[data-path]");
+        if (!btn) return;
+        showFile(btn.dataset.path);
+      });
+
+      document.getElementById("replay-file").addEventListener("click", function () {
+        const path = codeView.current;
+        const file = fileOf(path);
+        if (!file) return;
+        codeView.live = null;
+        showFile(path, { review: true });
+        // 用回看的方式再放一遍（不改变文件状态）
+        let i = 0;
+        codeBody.innerHTML = "";
+        streamedLines = 0;
+        if (streamTimer) clearInterval(streamTimer);
+        streamTimer = setInterval(function () {
+          if (codeView.current !== path) return;
+          if (i >= file.lines.length) {
+            clearInterval(streamTimer);
+            streamTimer = null;
+            return;
+          }
+          addLine(i, file.lines[i]);
+          i += 1;
+        }, 45);
+      });
+
+      document.getElementById("back-live").addEventListener("click", function () {
+        const live = codeView.live;
+        if (live) showFile(live);
+        else {
+          const last = FILES[FILES.length - 1];
+          showFile(last.path);
+        }
+      });
 
       /* ───────────────── 交互 ───────────────── */
 
       document.getElementById("toggle-code").addEventListener("click", function () {
         work.classList.toggle("no-code");
-        if (!work.classList.contains("no-code") && codeBody.children.length === 0) renderCodeLines();
+        if (!work.classList.contains("no-code") && !codeView.current) showFile("db/schema.sql");
         setTimeout(render, 60);
       });
       document.getElementById("hide-code").addEventListener("click", function () {
@@ -919,13 +1210,13 @@
       });
       document.getElementById("show-code").addEventListener("click", function () {
         work.classList.remove("no-code");
-        if (codeBody.children.length === 0) renderCodeLines();
+        if (!codeView.current) showFile("db/schema.sql");
         setTimeout(render, 60);
       });
 
       document.getElementById("replay").addEventListener("click", function () {
         render();
-        renderCodeLines();
+        runTimeline();
       });
 
       window.addEventListener("resize", function () {
@@ -947,6 +1238,31 @@
         eventLine.textContent = EVENTS[ev];
       }, 2600);
 
+      /* ── 演示时间线：先给一个"已经写完的"看回看，再依次流式写两个新文件 ── */
+      let timelineTimers = [];
+
+      function runTimeline() {
+        timelineTimers.forEach(clearTimeout);
+        timelineTimers = [];
+        const q = new URLSearchParams(location.search);
+        FILES.forEach((f, i) => {
+          f.state = i === FILES.length - 1 ? "live" : "done";
+          f.written = 0;
+        });
+        codeView.live = null;
+
+        // ?review=1：直接停在"回看已写完的文件"，不自动往下演
+        if (q.get("review") === "1") {
+          FILES.forEach((f) => (f.state = "done"));
+          showFile(q.get("file") || "db/schema.sql");
+          return;
+        }
+
+        const fast = q.get("fast") === "1";
+        showFile("db/schema.sql"); // 一开始就能看到回看条
+        timelineTimers.push(setTimeout(() => startFile("api/main.py"), fast ? 260 : 1600));
+        timelineTimers.push(setTimeout(() => startFile("web/index.html"), fast ? 2200 : 5400));
+      }
       // ?focus=3 直接进"聚焦第 3 道"（1 起算），方便演示与截图
       const focusParam = Number(new URLSearchParams(location.search).get("focus"));
       if (focusParam >= 1 && focusParam <= STAGES.length) {
@@ -969,7 +1285,7 @@
 
       // 首屏：先树，再代码流
       render();
-      later(renderCodeLines, 900);
+      runTimeline();
       window.__treeDone = true;
     </script>
   </body>
