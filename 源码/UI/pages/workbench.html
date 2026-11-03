@@ -460,6 +460,19 @@
         0% { opacity: 0; transform: translateY(4px); }
         100% { opacity: 1; transform: none; }
       }
+      /* 密集分支：卡片压矮，只留标题与进度；行距由布局算出来的空间保证不挤 */
+      .node-task.dense { padding: 7px 10px; gap: 4px; }
+      .node-task.dense b { font-size: 11px; }
+
+      /* "还有 N 个分支"：与任务卡同尺寸的虚线卡，可点 */
+      .node-task.chip {
+        cursor: pointer;
+        border-style: dashed;
+        color: var(--text-2);
+        background: rgba(255, 255, 255, 0.55);
+      }
+      .node-task.chip:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+      .node-task.chip b { font-size: 11.5px; }
       /* 深色下把"加的代码行"调成深绿 */
       [data-theme="dark"] .code-line.add { background: rgba(74, 222, 128, 0.08); }
       [data-theme="dark"] .code-line.add pre { color: #86efac; }
@@ -632,11 +645,12 @@
         });
       })();
 
-      /* ───────────────── 树的布局与动画 ─────────────────
-         两种排布共用一套"先算坐标、再画节点、最后画线"的流程：
-         - lr：左右树（根在左，六道竖排，三级再往右）
-         - td：上下树（根在上，六道横排，三级在下面一行）
-         聚焦只影响"渲染哪些节点"，不改布局算法。 */
+/* ───────────────── 树的布局与动画 ─────────────────
+         核心：行距不固定，按"这一道工序的子树有多大"单独算。
+         谁的分支多，它和下一道之间的空隙就自动变长；别的间距不受影响。
+         - lr：根在左，六道竖排，子树在右边向下铺
+         - td：根在上，六道横排，子树在下面向右铺
+         分支过多时先折叠，点"还有 N 个"再展开（展开后行距继续撑开）。 */
 
       const STAGES = [
         { no: "01", name: "需求拆解", short: "需求", note: "5 条验收标准", state: "done", icon: "M6 4h9l3 3v13H6z M9 11h6 M9 15h4" },
@@ -647,19 +661,55 @@
         { no: "06", name: "交付", short: "交付", note: "等待上游", state: "wait", icon: "M12 3l8 4.5v9L12 21l-8-4.5v-9z M9 12l2 2 4-4" },
       ];
 
-      // 三级：同一道工序下同时跑的分支（并行），各自带进度
+      /* 三级：同一道工序下可以有很多分支（几个到几十个都算正常）。
+         这里用 TASKS 作为"第 3 道"的子节点；?branches=N 可模拟几十个分支。 */
       const TASKS = [
         { title: "数据库", file: "db/schema.sql", state: "done", progress: 100 },
         { title: "后端接口", file: "api/main.py", state: "live", progress: 72, parallel: true },
         { title: "前端页面", file: "web/index.html", state: "live", progress: 38, parallel: true },
       ];
 
+      // 演示用：按 ?branches=N 造出 N 个同级分支，看行距怎么被撑开
+      function seedBranches(count) {
+        if (!count || count <= TASKS.length) return;
+        const names = ["数据库", "后端接口", "前端页面", "静态资源", "接口测试", "数据迁移", "权限校验", "部署脚本"];
+        for (let i = TASKS.length; i < count; i += 1) {
+          const title = names[i % names.length] + " " + (i + 1);
+          TASKS.push({
+            title,
+            file: `modules/${String(i + 1).padStart(2, "0")}/index.js`,
+            state: i % 3 === 0 ? "done" : "live",
+            progress: 20 + ((i * 17) % 70),
+            parallel: i % 3 !== 0,
+          });
+        }
+      }
+
       const inner = document.getElementById("canvas-inner");
       const svg = document.getElementById("tree-svg");
       const work = document.getElementById("work");
 
-      /** 视图状态：排布 + 聚焦哪一道（null = 全局） */
-      const view = { layout: "lr", focus: null };
+      /** 视图状态：排布 + 聚焦哪一道 + 哪些分支被折叠（展开过的记在 expanded 里） */
+      const view = { layout: "lr", focus: null, expanded: new Set() };
+
+      /* 折叠规则：超过 5 个就先折叠，只画 5 个 + 一枚"还有 N 个" */
+      const COLLAPSE_AT = 5;
+
+      function childrenOf(stageIndex, limit = COLLAPSE_AT) {
+        if (stageIndex !== 2) return [];
+        const expanded = view.expanded.has(stageIndex);
+        if (expanded || TASKS.length <= limit) return TASKS.slice();
+        return TASKS.slice(0, limit);
+      }
+
+      /** 子树占多高：分支多、卡多，占用就大；这是"行距自动拉长"的依据 */
+      function childMetrics(list) {
+        const n = list.length;
+        const dense = n > 6;                       // 分支多时把卡片压矮，别让树长得没边
+        const h = dense ? 40 : 52;
+        const gap = dense ? 8 : 10;
+        return { n, h, gap, stackH: n * h + Math.max(0, n - 1) * gap, dense };
+      }
 
       let timers = [];
       const later = (fn, ms) => timers.push(setTimeout(fn, ms));
@@ -680,167 +730,218 @@
         }, delay);
       }
 
-      /* ── 布局：返回 { nodes, paths, width, height }，节点只描述坐标与内容 ── */
+      /* ───────── 左右树：行距按子树高度单独算 ───────── */
 
       function layoutLR(width) {
         const nodes = [];
         const paths = [];
-        const root = { kind: "root", x: 20, y: 14, w: 200, h: 58, title: "主控 Agent", note: "拆需求 · 派活 · 收口" };
-        nodes.push(root);
+        const ROOT = { x: 20, y: 14, w: 200, h: 58 };
+        const STAGE_X = 268;
+        const STAGE_W = 200;
+        const STAGE_H = 56;
+        const GAP = 18;            // 行与行之间的最小缝隙
+        const TASK_X = 512;
+        const TASK_W = 150;
+        const BUS_X = STAGE_X - 26;
+        const TASK_BUS_X = STAGE_X + STAGE_W + 20;
 
-        const stageX = root.x + root.w + 48;
-        const stageW = 200;
-        const stageH = 56;
-        const step = 74;
+        nodes.push({ kind: "root", ...ROOT, title: "主控 Agent", note: "拆需求 · 派活 · 收口" });
+
         const stages = view.focus === null ? STAGES : [STAGES[view.focus]];
-        const stageTop = 18;
-        const busX = stageX - 26;
 
-        const centers = stages.map((s, i) => stageTop + i * step + stageH / 2);
-        const rootCy = root.y + root.h / 2;
-
-        // 主干：根右侧 → 竖总线
-        paths.push(`M ${root.x + root.w} ${rootCy} H ${busX}`);
-        if (centers.length > 1) {
-          paths.push(`M ${busX} ${centers[0]} V ${centers[centers.length - 1]}`);
-        }
-
-        stages.forEach((stage, i) => {
-          const y = stageTop + i * step;
-          nodes.push({
-            kind: "stage",
-            x: stageX,
-            y,
-            w: stageW,
-            h: stageH,
-            stageIndex: view.focus === null ? i : view.focus,
-            data: stage,
-          });
-          if (view.focus !== null || i === 1 || i === 5) {
-            // 聚焦时每个节点都接线；全局时只在首尾与邻居之间留线，避免视觉噪音
-          }
-          paths.push(`M ${busX} ${centers[i]} H ${stageX}`);
+        // 先算出每一道"自己那一行要占多高"：max(最小行高, 子树高度 + 上下留白)
+        const rows = stages.map((stage, i) => {
+          const index = view.focus === null ? i : view.focus;
+          const kids = childrenOf(index);
+          const m = childMetrics(kids);
+          return { stage, index, kids, m, rowH: Math.max(STAGE_H + GAP, m.stackH + 32) };
         });
 
-        // 三级：挂在"三方向生成"右边，竖排（并行分支一排排下去）
-        const liveLocal = stages.findIndex((s) => s.state === "live");
-        if (liveLocal >= 0) {
-          const activeCy = centers[liveLocal];
-          const taskX = stageX + stageW + 44;
-          const taskW = 150;
-          const taskH = 52;
-          const gap = 10;
-          const stackH = TASKS.length * taskH + (TASKS.length - 1) * gap;
-          const firstTop = activeCy - stackH / 2;
-          const taskBusX = stageX + stageW + 20;
+        let cursor = 18;
+        rows.forEach((row) => {
+          row.y = cursor;
+          row.center = cursor + STAGE_H / 2;
+          cursor += row.rowH;                      // ← 这里就是"拉长"的地方
+        });
 
-          TASKS.forEach((task, i) => {
-            const top = firstTop + i * (taskH + gap);
-            nodes.push({ kind: "task", x: taskX, y: top, w: taskW, h: taskH, data: task });
-            paths.push(`M ${stageX + stageW} ${activeCy} H ${taskBusX} V ${top + taskH / 2} H ${taskX}`);
+        // 主干：只到最后一个中心
+        const lastCenter = rows[rows.length - 1].center;
+        paths.push(`M ${ROOT.x + ROOT.w} ${ROOT.y + ROOT.h / 2} H ${BUS_X}`);
+        paths.push(`M ${BUS_X} ${rows[0].center} V ${lastCenter}`);
+
+        rows.forEach((row) => {
+          nodes.push({
+            kind: "stage",
+            x: STAGE_X,
+            y: row.y,
+            w: STAGE_W,
+            h: STAGE_H,
+            stageIndex: row.index,
+            data: row.stage,
+          });
+          paths.push(`M ${BUS_X} ${row.center} H ${STAGE_X}`);
+
+          // 子树：小堆以父卡为轴居中，大堆从父卡上沿往下排（不许越到上一道的地盘里）
+          const firstTop = Math.max(row.center - row.m.stackH / 2, row.y);
+          row.kids.forEach((task, k) => {
+            const top = firstTop + k * (row.m.h + row.m.gap);
+            nodes.push({
+              kind: "task",
+              x: TASK_X,
+              y: top,
+              w: TASK_W,
+              h: row.m.h,
+              dense: row.m.dense,
+              data: task,
+            });
+            paths.push(`M ${STAGE_X + STAGE_W} ${row.center} H ${TASK_BUS_X} V ${top + row.m.h / 2} H ${TASK_X}`);
           });
 
-          // 其余工序在聚焦时被折起来，用一枚占位说明它们没停
-          if (view.focus !== null) {
-            const focused = nodes.find((n) => n.kind === "stage");
+          // 折叠时在末尾补一枚"还有 N 个"
+          const hidden = TASKS.length - row.kids.length;
+          if (row.index === 2 && hidden > 0) {
+            const top = firstTop + row.kids.length * (row.m.h + row.m.gap);
             nodes.push({
-              kind: "other",
-              x: focused.x,
-              y: focused.y + focused.h + 18,
-              w: stageW,
-              h: 44,
-              title: `其余 ${STAGES.length - 1} 道工序在后台继续`,
-              note: "聚焦不打断执行",
+              kind: "chip",
+              x: TASK_X,
+              y: top,
+              w: TASK_W,
+              h: row.m.h,
+              stageIndex: row.index,
+              title: `还有 ${hidden} 个分支`,
+              note: "点开展开",
             });
+            paths.push(`M ${STAGE_X + STAGE_W} ${row.center} H ${TASK_BUS_X} V ${top + row.m.h / 2} H ${TASK_X}`);
           }
+        });
+
+        if (view.focus !== null && rows.length) {
+          nodes.push({
+            kind: "other",
+            x: STAGE_X,
+            y: rows[0].y + STAGE_H + 18,
+            w: STAGE_W,
+            h: 44,
+            title: `其余 ${STAGES.length - 1} 道工序在后台继续`,
+            note: "聚焦不打断执行",
+          });
         }
 
-        const height = Math.max(
-          stageTop + stages.length * step + 40,
-          (liveLocal >= 0 ? centers[liveLocal] : 0) + 170,
-        );
+        const height = Math.max(cursor + 40, ROOT.y + ROOT.h + 40);
         return { nodes, paths, width, height };
       }
+
+      /* ───────── 上下树：列宽按子树宽度单独算 ───────── */
 
       function layoutTD(width) {
         const nodes = [];
         const paths = [];
-        const rootW = 240;
-        const rootH = 60;
-        const rootX = Math.max(12, (width - rootW) / 2);
-        const root = { kind: "root", x: rootX, y: 14, w: rootW, h: rootH, title: "主控 Agent", note: "拆需求 · 派活 · 收口" };
-        nodes.push(root);
+        const ROOT_W = 240;
+        const ROOT_H = 60;
+        const ROOT_X = Math.max(12, (width - ROOT_W) / 2);
+        const STAGE_H = 64;
+        const GAP = 16;
+
+        nodes.push({ kind: "root", x: ROOT_X, y: 14, w: ROOT_W, h: ROOT_H, title: "主控 Agent", note: "拆需求 · 派活 · 收口" });
 
         const stages = view.focus === null ? STAGES : [STAGES[view.focus]];
-        const wide = width >= 900;                    // 宽屏就别再用短名凑合
+        const wide = width >= 900;
         const stageW = wide ? 138 : 104;
-        const stageH = 64;
-        const gap = wide ? 16 : 12;
-        const totalW = stages.length * stageW + (stages.length - 1) * gap;
-        const x0 = Math.max(10, (width - totalW) / 2);
+        const taskW = wide ? 132 : 118;
+        const taskH = 52;
+        const taskGap = 12;
+
+        // 每一列的宽度 = max(自己的卡宽, 它的子树总宽) ← 列与列之间由此被撑开
+        // 横向空间比纵向紧张：先按 4 个排，放不下就 3 个、2 个 —— 保证六道都留在屏内
+        const measure = (limit) => stages.map((stage, i) => {
+          const index = view.focus === null ? i : view.focus;
+          const kids = childrenOf(index, limit);
+          const hidden = index === 2 ? TASKS.length - kids.length : 0;
+          const slots = kids.length + (hidden > 0 ? 1 : 0);
+          const kidsW = slots ? slots * taskW + (slots - 1) * taskGap : 0;
+          return { stage, index, kids, hidden, kidsW, colW: Math.max(stageW, kidsW) };
+        });
+        const fits = (list) =>
+          list.reduce((sum, c) => sum + c.colW, 0) + (list.length - 1) * GAP <= width - 20;
+
+        let cols = measure(4);
+        if (!fits(cols)) cols = measure(3);
+        if (!fits(cols)) cols = measure(2);
+
+        const totalW = cols.reduce((sum, c) => sum + c.colW, 0) + (cols.length - 1) * GAP;
+        let x = Math.max(10, (width - totalW) / 2);
+        cols.forEach((col) => {
+          col.x = x;
+          col.center = x + col.colW / 2;   // 卡片与子树共用这条中心线
+          x += col.colW + GAP;
+        });
+
         const stageY = 138;
         const busY = stageY - 28;
-        const rootCx = root.x + root.w / 2;
+        const rootCx = ROOT_X + ROOT_W / 2;
+        paths.push(`M ${rootCx} ${14 + ROOT_H} V ${busY}`);
+        paths.push(`M ${cols[0].center} ${busY} H ${cols[cols.length - 1].center}`);
 
-        const centers = stages.map((s, i) => x0 + i * (stageW + gap) + stageW / 2);
-
-        paths.push(`M ${rootCx} ${root.y + root.h} V ${busY}`);
-        if (centers.length > 1) {
-          paths.push(`M ${centers[0]} ${busY} H ${centers[centers.length - 1]}`);
-        }
-
-        stages.forEach((stage, i) => {
+        cols.forEach((col) => {
           nodes.push({
             kind: "stage",
             compact: true,
-            x: x0 + i * (stageW + gap),
+            x: col.center - stageW / 2,
             y: stageY,
             w: stageW,
-            h: stageH,
-            stageIndex: view.focus === null ? i : view.focus,
-            data: stage,
+            h: STAGE_H,
+            stageIndex: col.index,
+            data: col.stage,
           });
-          paths.push(`M ${centers[i]} ${busY} V ${stageY}`);
+          paths.push(`M ${col.center} ${busY} V ${stageY}`);
         });
 
-        // 三级：在下面一行，横排（并行的分支并排看更直观）
-        const liveLocal = stages.findIndex((s) => s.state === "live");
-        if (liveLocal >= 0) {
-          const taskY = stageY + stageH + 52;
-          const taskW = 132;
-          const taskH = 52;
-          const tgap = 12;
-          const totalTasks = TASKS.length * taskW + (TASKS.length - 1) * tgap;
-          const tx0 = Math.max(10, Math.min(width - totalTasks - 10, centers[liveLocal] - totalTasks / 2));
-          const taskBusY = taskY - 24;
-
-          paths.push(`M ${centers[liveLocal]} ${stageY + stageH} V ${taskBusY}`);
-          paths.push(`M ${tx0 + taskW / 2} ${taskBusY} H ${tx0 + totalTasks - taskW / 2}`);
-
-          TASKS.forEach((task, i) => {
-            const x = tx0 + i * (taskW + tgap);
-            nodes.push({ kind: "task", x, y: taskY, w: taskW, h: taskH, data: task });
-            paths.push(`M ${x + taskW / 2} ${taskBusY} V ${taskY}`);
+        const taskY = stageY + STAGE_H + 52;
+        const taskBusY = taskY - 24;
+        cols.forEach((col) => {
+          if (!col.kids.length) return;
+          const kidsW = col.kids.length * taskW + (col.kids.length - 1) * taskGap;
+          const kx0 = col.center - kidsW / 2;
+          paths.push(`M ${col.center} ${stageY + STAGE_H} V ${taskBusY}`);
+          paths.push(`M ${kx0 + taskW / 2} ${taskBusY} H ${kx0 + kidsW - taskW / 2}`);
+          col.kids.forEach((task, k) => {
+            const kx = kx0 + k * (taskW + taskGap);
+            nodes.push({ kind: "task", x: kx, y: taskY, w: taskW, h: taskH, data: task });
+            paths.push(`M ${kx + taskW / 2} ${taskBusY} V ${taskY}`);
           });
-
-          if (view.focus !== null) {
+          if (col.hidden > 0) {
+            const kx = kx0 + col.kids.length * (taskW + taskGap);
             nodes.push({
-              kind: "other",
-              x: Math.max(12, centers[liveLocal] - 100),
-              y: taskY + taskH + 26,
-              w: 200,
-              h: 40,
-              title: `其余 ${STAGES.length - 1} 道工序在后台继续`,
-              note: "聚焦不打断执行",
+              kind: "chip",
+              x: kx,
+              y: taskY,
+              w: taskW,
+              h: taskH,
+              stageIndex: col.index,
+              title: `还有 ${col.hidden} 个分支`,
+              note: "点开展开",
             });
+            paths.push(`M ${kx + taskW / 2} ${taskBusY} V ${taskY}`);
           }
+        });
+
+        if (view.focus !== null) {
+          nodes.push({
+            kind: "other",
+            x: Math.max(12, cols[0].center - 100),
+            y: taskY + taskH + 26,
+            w: 200,
+            h: 40,
+            title: `其余 ${STAGES.length - 1} 道工序在后台继续`,
+            note: "聚焦不打断执行",
+          });
         }
 
-        const height = stageY + stageH + 200;
+        const height = taskY + taskH + 200;
         return { nodes, paths, width, height };
       }
 
-      /* ── 渲染：按布局结果建节点，再按顺序点亮 ── */
+      /* ───────── 渲染：按布局建节点，再按顺序点亮 ───────── */
 
       function render() {
         clearTimers();
@@ -854,68 +955,74 @@
         svg.setAttribute("viewBox", `0 0 ${width} ${plan.height}`);
         svg.setAttribute("preserveAspectRatio", "none");
 
-        const stageNodes = plan.nodes.filter((n) => n.kind === "stage");
-        const taskNodes = plan.nodes.filter((n) => n.kind === "task");
+        const stageItems = plan.nodes.filter((n) => n.kind === "stage");
+        const taskItems = plan.nodes.filter((n) => n.kind === "task");
 
         plan.nodes.forEach((item) => {
           const el = document.createElement("div");
+
           if (item.kind === "root") {
             el.className = "node-root";
             el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px`;
             el.innerHTML = `<b>${item.title}</b><small>${item.note}</small>`;
             later(() => el.classList.add("in"), 100);
           }
+
           if (item.kind === "stage") {
             el.className = `node-stage ${item.data.state}${view.focus !== null ? " focus" : ""}`;
-            el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px;${item.compact ? "min-height:" + item.h + "px;" : ""}`;
+            el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px${item.compact ? ";min-height:" + item.h + "px" : ""}`;
             el.dataset.stage = String(item.stageIndex);
-            const compactName = item.compact && inner.clientWidth < 900;
+            const compactName = item.compact && width < 900;
             el.innerHTML = item.compact
               ? `<span class="no">${item.data.no}</span><span class="txt"><b>${compactName ? item.data.short : item.data.name}</b><small>${item.data.note}</small></span>`
               : `<span class="no">${item.data.no}</span>
                  <svg viewBox="0 0 24 24"><path d="${item.data.icon}"/></svg>
                  <span class="txt"><b>${item.data.name}</b><small>${item.data.note}</small></span>`;
             if (item.compact) el.style.gridTemplateColumns = "18px minmax(0,1fr)";
-            const appearAt = 380 + stageNodes.indexOf(item) * 170;
+            const appearAt = 380 + stageItems.indexOf(item) * 170;
             later(() => el.classList.add("in"), appearAt);
           }
+
           if (item.kind === "task") {
             const t = item.data;
-            el.className = `node-task ${t.state}${t.parallel ? " parallel" : ""}`;
-            el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px`;
-            el.innerHTML = `<b>${t.title}</b><code>${t.file}</code>
+            el.className = `node-task ${t.state}${t.parallel ? " parallel" : ""}${item.dense ? " dense" : ""}`;
+            el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px;height:${item.h}px`;
+            el.innerHTML = `<b>${t.title}</b>${item.dense ? "" : `<code>${t.file}</code>`}
               <span class="mini"><i style="width:${t.progress}%"></i></span>`;
-            const appearAt = 1480 + taskNodes.indexOf(item) * 200;
+            const appearAt = 1480 + taskItems.indexOf(item) * 90;
             later(() => el.classList.add("in"), appearAt);
           }
+
+          if (item.kind === "chip") {
+            el.className = "node-task ghost chip";
+            el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px;height:${item.h}px`;
+            el.dataset.expand = String(item.stageIndex);
+            el.innerHTML = `<b>${item.title}</b><code>${item.note}</code>`;
+            later(() => el.classList.add("in"), 1480 + taskItems.length * 90 + 120);
+          }
+
           if (item.kind === "other") {
             el.className = "node-task ghost other";
             el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px`;
             el.innerHTML = `<b>${item.title}</b><code>${item.note}</code>`;
-            later(() => el.classList.add("in"), 1480 + TASKS.length * 200 + 120);
+            later(() => el.classList.add("in"), 1480 + TASKS.length * 90 + 120);
           }
+
           inner.appendChild(el);
         });
 
-        // 连线：整体延后到节点落位之后再画，顺序感更强
-        const pathGap = 34;
-        plan.paths.forEach((d, i) => {
-          addPath(d, 260 + Math.min(i * pathGap, 900));
-        });
-
+        plan.paths.forEach((d, i) => addPath(d, 260 + Math.min(i * 30, 900)));
         updateHeader();
       }
 
-      /* ── 顶部状态：并行分支数、聚焦信息 ── */
+      /* ───────── 顶部状态与聚焦条 ───────── */
 
       function updateHeader() {
         const parallel = TASKS.filter((t) => t.parallel).length;
         const pill = document.querySelector(".appbar-center .pill");
         if (pill) {
-          pill.innerHTML = `<i class="pulse-dot"></i>运行中 · 第 3 / 6 道 · ${parallel} 个分支并行`;
+          pill.innerHTML = `<i class="pulse-dot"></i>运行中 · 第 3 / 6 道 · ${TASKS.length} 个分支（${parallel} 个并行）`;
         }
-
-        const bar = document.getElementById("focus-bar");
         const name = document.getElementById("focus-name");
         if (view.focus !== null) {
           name.textContent = `${STAGES[view.focus].no} ${STAGES[view.focus].name}`;
@@ -925,7 +1032,7 @@
         }
       }
 
-      /* ── 交互：排布切换、点击聚焦、退出聚焦、重播 ── */
+      /* ───────── 交互：排布 / 聚焦 / 展开分支 / 重播 ───────── */
 
       document.querySelectorAll(".layout-switch button").forEach((btn) => {
         btn.addEventListener("click", function () {
@@ -939,6 +1046,12 @@
       });
 
       inner.addEventListener("click", function (event) {
+        const chip = event.target.closest("[data-expand]");
+        if (chip) {
+          view.expanded.add(Number(chip.dataset.expand));
+          render();                       // 展开后行距会重新计算、继续撑开
+          return;
+        }
         const stage = event.target.closest(".node-stage");
         if (!stage) return;
         const index = Number(stage.dataset.stage);
@@ -950,8 +1063,6 @@
         view.focus = null;
         render();
       });
-      /* ───────────────── 右侧：代码流 ───────────────── */
-
       /* ───────────────── 右侧：多文件流式代码 + 回看 ─────────────────
          面板只有一个：换文件时只换内容与标题，框不消失；
          生成过的文件留在页签里，随时点回去看，也能重播它那一次的生成过程。 */
@@ -1297,6 +1408,9 @@
         timelineTimers.push(setTimeout(() => startFile("api/main.py"), fast ? 260 : 1600));
         timelineTimers.push(setTimeout(() => startFile("web/index.html"), fast ? 2200 : 5400));
       }
+      // ?branches=12 模拟"分支很多"，用来看行距 / 列宽怎么被自动撑开
+      seedBranches(Number(new URLSearchParams(location.search).get("branches")) || 0);
+
       // ?focus=3 直接进"聚焦第 3 道"（1 起算），方便演示与截图
       const focusParam = Number(new URLSearchParams(location.search).get("focus"));
       if (focusParam >= 1 && focusParam <= STAGES.length) {
