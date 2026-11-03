@@ -775,6 +775,14 @@
         return `M ${x0} ${y0} C ${x0} ${y0 + dy}, ${x1} ${y1 - dy}, ${x1} ${y1}`;
       }
 
+      /**
+       * 【布局铁律】父节点永远居中于它的子节点整体范围。
+       * 之后再加层级（L4）、再加分支，都只调这一个函数，不要各写各的。
+       */
+      function centeredOn(childMin, childMax, selfSize) {
+        return (childMin + childMax) / 2 - selfSize / 2;
+      }
+
       function addPath(d, delay) {
         const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
         path.setAttribute("d", d);
@@ -803,8 +811,6 @@
         const BUS_X = STAGE_X - 26;
         const TASK_BUS_X = STAGE_X + STAGE_W + 20;
 
-        nodes.push({ kind: "root", ...ROOT, title: "主控 Agent", note: "拆需求 · 派活 · 收口" });
-
         const stages = view.focus === null ? STAGES : [STAGES[view.focus]];
 
         // 先算出每一道"自己那一行要占多高"：max(最小行高, 子树高度 + 上下留白)
@@ -820,13 +826,20 @@
         let cursor = 30;
         rows.forEach((row) => {
           row.bandH = Math.max(STAGE_H, row.m.stackH);
-          row.center = cursor + row.bandH / 2;      // ← 中心线
+          row.center = cursor + row.bandH / 2;      // ← 这一道的中心线
           row.y = row.center - STAGE_H / 2;
           cursor += row.bandH + GAP;
         });
 
-        // 主干不再单独画：每条分支从根的右边缘出发，一条连续路径走到卡片，
-        // 这样拐角是同一个 path 内部的圆角，不会出现两段线各画各的、接头处缺一块
+        // 【铁律】父节点永远居中于它的子节点：
+        // 根卡的中心 = 六道（含各自子树）整体的中心，跟 03 对它的三个分支用的是同一条规则
+        const blockTop = rows[0].center - rows[0].bandH / 2;
+        const blockBottom = rows[rows.length - 1].center + rows[rows.length - 1].bandH / 2;
+        ROOT.y = Math.max(14, centeredOn(blockTop, blockBottom, ROOT.h));
+
+        nodes.push({ kind: "root", ...ROOT, title: "主控 Agent", note: "拆需求 · 派活 · 收口" });
+
+        // 主干不再单独画：每条分支从根的右边缘出发，一条连续路径走到卡片
         const rootCy = ROOT.y + ROOT.h / 2;
 
         rows.forEach((row) => {
@@ -908,8 +921,6 @@
         const STAGE_H = 64;
         const GAP = 16;
 
-        nodes.push({ kind: "root", x: ROOT_X, y: 14, w: ROOT_W, h: ROOT_H, title: "主控 Agent", note: "拆需求 · 派活 · 收口" });
-
         const stages = view.focus === null ? STAGES : [STAGES[view.focus]];
         const wide = width >= 900;
         const stageW = wide ? 138 : 104;
@@ -953,7 +964,12 @@
 
         const stageY = 138;
         const busY = stageY - 28;
-        const rootCx = ROOT_X + ROOT_W / 2;
+        // 【铁律】同上：根卡的水平中心 = 六列整体的中心
+        const blockLeft = cols[0].center - cols[0].colW / 2;
+        const blockRight = cols[cols.length - 1].center + cols[cols.length - 1].colW / 2;
+        const rootX = centeredOn(blockLeft, blockRight, ROOT_W);
+        const rootCx = rootX + ROOT_W / 2;
+        nodes.push({ kind: "root", x: rootX, y: 14, w: ROOT_W, h: ROOT_H, title: "主控 Agent", note: "拆需求 · 派活 · 收口" });
 
         cols.forEach((col) => {
           nodes.push({

@@ -251,7 +251,37 @@ task  = (tx0 + i*(132+12), 138+64+52, 132×52)
 **为什么两套尺寸不同**：上下树一行要塞六张卡，中间栏只有约 720px，
 所以卡宽压到 104（宽屏 ≥900 时 138 并用全名）、只放"编号 + 名字 + 一句状态"；左右树宽度富余，才用完整卡（200 宽，图标+全名+说明）。
 
-### 5.2.1 动态伸缩：行距/列宽按子树大小单独算
+### 5.2.1 布局铁律：父节点永远居中于子节点
+
+**这条比"好不好看"更硬：任何一层、任何一次布局，父节点的中心线必须等于子节点整体范围的中心。**
+
+```
+parentCenter = (子节点整体上沿 + 子节点整体下沿) / 2
+parentPos    = parentCenter - 自身尺寸 / 2
+```
+
+两个方向各一份实现，但只有一条规则：
+
+```js
+function centeredOn(childMin, childMax, selfSize) {
+  return (childMin + childMax) / 2 - selfSize / 2;
+}
+
+// 左右树：根卡居中于六道（含各自子树）的整体范围
+const blockTop   = rows[0].center - rows[0].bandH / 2;
+const blockBottom = rows[rows.length - 1].center + rows[rows.length - 1].bandH / 2;
+ROOT.y = centeredOn(blockTop, blockBottom, ROOT.h);
+
+// 上下树：根卡居中于六列的整体宽度
+const blockLeft  = cols[0].center - cols[0].colW / 2;
+const blockRight = cols[cols.length - 1].center + cols[cols.length - 1].colW / 2;
+rootX = centeredOn(blockLeft, blockRight, ROOT_W);
+```
+
+第一版只对"三方向生成 → 三个分支"做了居中，根节点还是钉在左上角——于是同一张图里出现两种规则，
+看起来就是"根节点不在中间"。**新增层级（L4）、新增分支时，只调用这个函数，不要各写各的。**
+
+### 5.2.2 动态伸缩：行距/列宽按子树大小单独算
 
 固定行距在分支一多时必然挤在一起（第一版就是这样：三个分支只隔 10px）。规则改成三条：
 
