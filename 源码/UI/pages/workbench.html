@@ -60,11 +60,17 @@
         background-size: 22px 22px;
       }
       .canvas-inner { position: relative; min-height: 100%; padding: 26px 0 40px; }
-      .tree-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-      .tree-svg path { fill: none; stroke: var(--primary-line); stroke-width: 1.6; }
+      /* 高度必须和 viewBox 严格一致，否则 y 会被拉伸，连线与卡片错位 */
+      .tree-svg { position: absolute; left: 0; top: 0; width: 100%; pointer-events: none; }
+      .tree-svg path {
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        shape-rendering: geometricPrecision; fill: none; stroke: var(--primary-line); stroke-width: 1.6; }
+      /* pathLength="1" 之后，dash 用 0~1 的归一化长度，彻底躲开 getTotalLength 的取整误差 */
       .tree-svg path.draw {
-        stroke-dasharray: var(--len);
-        stroke-dashoffset: var(--len);
+        stroke-dasharray: 1;
+        stroke-dashoffset: 1;
         animation: draw 0.5s ease forwards;
       }
       @keyframes draw { to { stroke-dashoffset: 0; } }
@@ -725,11 +731,40 @@
         timers = [];
       };
 
+      /** 把折线点序列转成带圆角的路径：拐角用二次贝塞尔，半径按相邻段长度自动收敛 */
+      function roundedPath(points, radius = 10) {
+        const pts = points.filter((p, i) => {
+          if (i === 0) return true;
+          const prev = points[i - 1];
+          return Math.abs(p[0] - prev[0]) > 0.01 || Math.abs(p[1] - prev[1]) > 0.01;
+        });
+        if (pts.length < 2) return "";
+        let d = `M ${pts[0][0]} ${pts[0][1]}`;
+        for (let i = 1; i < pts.length - 1; i += 1) {
+          const [x0, y0] = pts[i - 1];
+          const [x1, y1] = pts[i];
+          const [x2, y2] = pts[i + 1];
+          const inLen = Math.hypot(x1 - x0, y1 - y0);
+          const outLen = Math.hypot(x2 - x1, y2 - y1);
+          const r = Math.min(radius, inLen / 2, outLen / 2);
+          if (r < 0.6) { d += ` L ${x1} ${y1}`; continue; }
+          const ux = (x1 - x0) / inLen;
+          const uy = (y1 - y0) / inLen;
+          const vx = (x2 - x1) / outLen;
+          const vy = (y2 - y1) / outLen;
+          d += ` L ${x1 - ux * r} ${y1 - uy * r}`;
+          d += ` Q ${x1} ${y1} ${x1 + vx * r} ${y1 + vy * r}`;
+        }
+        const last = pts[pts.length - 1];
+        d += ` L ${last[0]} ${last[1]}`;
+        return d;
+      }
+
       function addPath(d, delay) {
         const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
         path.setAttribute("d", d);
+        path.setAttribute("pathLength", "1");   // 归一化：dash 长度恒为 1，收尾不会差半像素
         svg.appendChild(path);
-        path.style.setProperty("--len", path.getTotalLength());
         path.style.opacity = "0";
         later(function () {
           path.style.opacity = "1";
@@ -764,17 +799,16 @@
           return { stage, index, kids, m, rowH: Math.max(STAGE_H + GAP, m.stackH + 32) };
         });
 
-        let cursor = 18;
+        let cursor = 30;
         rows.forEach((row) => {
           row.y = cursor;
           row.center = cursor + STAGE_H / 2;
           cursor += row.rowH;                      // ← 这里就是"拉长"的地方
         });
 
-        // 主干：只到最后一个中心
-        const lastCenter = rows[rows.length - 1].center;
-        paths.push(`M ${ROOT.x + ROOT.w} ${ROOT.y + ROOT.h / 2} H ${BUS_X}`);
-        paths.push(`M ${BUS_X} ${rows[0].center} V ${lastCenter}`);
+        // 主干不再单独画：每条分支从根的右边缘出发，一条连续路径走到卡片，
+        // 这样拐角是同一个 path 内部的圆角，不会出现两段线各画各的、接头处缺一块
+        const rootCy = ROOT.y + ROOT.h / 2;
 
         rows.forEach((row) => {
           nodes.push({
@@ -786,7 +820,7 @@
             stageIndex: row.index,
             data: row.stage,
           });
-          paths.push(`M ${BUS_X} ${row.center} H ${STAGE_X}`);
+          paths.push(roundedPath([[ROOT.x + ROOT.w - 8, rootCy], [BUS_X, rootCy], [BUS_X, row.center], [STAGE_X + 10, row.center]], 12));
 
           // 子树：小堆以父卡为轴居中，大堆从父卡上沿往下排（不许越到上一道的地盘里）
           const firstTop = Math.max(row.center - row.m.stackH / 2, row.y);
@@ -801,7 +835,7 @@
               dense: row.m.dense,
               data: task,
             });
-            paths.push(`M ${STAGE_X + STAGE_W} ${row.center} H ${TASK_BUS_X} V ${top + row.m.h / 2} H ${TASK_X}`);
+            paths.push(roundedPath([[STAGE_X + STAGE_W, row.center], [TASK_BUS_X, row.center], [TASK_BUS_X, top + row.m.h / 2], [TASK_X + 10, top + row.m.h / 2]], 10));
           });
 
           // 折叠时在末尾补一枚"还有 N 个"
@@ -818,7 +852,7 @@
               title: `还有 ${hidden} 个分支`,
               note: "点开展开",
             });
-            paths.push(`M ${STAGE_X + STAGE_W} ${row.center} H ${TASK_BUS_X} V ${top + row.m.h / 2} H ${TASK_X}`);
+            paths.push(roundedPath([[STAGE_X + STAGE_W, row.center], [TASK_BUS_X, row.center], [TASK_BUS_X, top + row.m.h / 2], [TASK_X + 10, top + row.m.h / 2]], 10));
           }
         });
 
@@ -886,8 +920,6 @@
         const stageY = 138;
         const busY = stageY - 28;
         const rootCx = ROOT_X + ROOT_W / 2;
-        paths.push(`M ${rootCx} ${14 + ROOT_H} V ${busY}`);
-        paths.push(`M ${cols[0].center} ${busY} H ${cols[cols.length - 1].center}`);
 
         cols.forEach((col) => {
           nodes.push({
@@ -900,7 +932,7 @@
             stageIndex: col.index,
             data: col.stage,
           });
-          paths.push(`M ${col.center} ${busY} V ${stageY}`);
+          paths.push(roundedPath([[rootCx, 14 + ROOT_H - 8], [rootCx, busY], [col.center, busY], [col.center, stageY + 10]], 12));
         });
 
         const taskY = stageY + STAGE_H + 52;
@@ -914,7 +946,7 @@
           col.kids.forEach((task, k) => {
             const kx = kx0 + k * (taskW + taskGap);
             nodes.push({ kind: "task", x: kx, y: taskY, w: taskW, h: taskH, data: task });
-            paths.push(`M ${kx + taskW / 2} ${taskBusY} V ${taskY}`);
+            paths.push(roundedPath([[col.center, taskBusY], [kx + taskW / 2, taskBusY], [kx + taskW / 2, taskY + 10]], 10));
           });
           if (col.hidden > 0) {
             const kx = kx0 + col.kids.length * (taskW + taskGap);
@@ -928,7 +960,7 @@
               title: `还有 ${col.hidden} 个分支`,
               note: "点开展开",
             });
-            paths.push(`M ${kx + taskW / 2} ${taskBusY} V ${taskY}`);
+            paths.push(roundedPath([[col.center, taskBusY], [kx + taskW / 2, taskBusY], [kx + taskW / 2, taskY + 10]], 10));
           }
         });
 
@@ -961,6 +993,7 @@
         inner.style.minHeight = plan.height + "px";
         svg.setAttribute("viewBox", `0 0 ${width} ${plan.height}`);
         svg.setAttribute("preserveAspectRatio", "none");
+        svg.style.height = plan.height + "px";   // 与 viewBox 1:1，避免 y 被拉伸
 
         const stageItems = plan.nodes.filter((n) => n.kind === "stage");
         const taskItems = plan.nodes.filter((n) => n.kind === "task");

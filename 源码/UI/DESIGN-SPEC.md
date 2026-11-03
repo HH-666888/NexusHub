@@ -276,26 +276,65 @@ let cursor = 18;
 rows.forEach((r) => { r.y = cursor; r.center = cursor + 28; cursor += r.rowH; });
 ```
 
-### 5.3 连线：正交折线 + 描边动画
+### 5.3 连线：一条连续路径 + 圆角 + 归一化描边
+
+第一版连线"看着有缺口"，其实是四个问题叠在一起，缺一个都修不干净：
+
+| 现象 | 原因 | 解法 |
+|---|---|---|
+| 拐角缺一块 | 主干和支线是**两条独立 `<path>`**，各自圆头收笔，接头处两个端帽对不上 | 每条分支从根出发**一条连续路径**走到卡片 |
+| 拐角生硬 | 硬 90°，1–2px 线宽下拐点像被"切"了一刀 | 拐角用二次贝塞尔过渡（`Q`），半径 10–12px，按相邻段长度自动收敛 |
+| 线尾差半像素 | `stroke-dasharray: getTotalLength()` 取整后比实际短一点，末尾留缝 | `pathLength="1"` + `stroke-dasharray: 1`，全部用归一化长度 |
+| 线头与卡片之间有一道白 | 线停在卡片左边缘，卡片的圆角与描边让接头露白 | 线**钻进卡片下方 10px**（卡片不透明且层级更高） |
+
+还有一个隐蔽的错位源：SVG 用 `inset: 0; height: 100%` 撑满的是 **padding box**，而 `viewBox` 用的是内容高度，
+`preserveAspectRatio="none"` 会把 y 坐标整体拉伸几个像素——线看着"偏下"就是这么来的。
+现在直接把 `svg.style.height` 钉成 `plan.height`，与 viewBox 严格 1:1。
 
 ```js
-// 先竖、再横、再竖（elbow），保证线只在四个方向走
-d = `M ${x1} ${y1} V ${busY} H ${x2} V ${y2}`
+/** 折线转圆角路径：拐角用二次贝塞尔，半径按相邻段长度自动收敛 */
+function roundedPath(points, radius = 10) {
+  const pts = points.filter((p, i) => i === 0 ||
+    Math.abs(p[0] - points[i-1][0]) > 0.01 || Math.abs(p[1] - points[i-1][1]) > 0.01);
+  let d = `M ${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i += 1) {
+    const [x0, y0] = pts[i-1], [x1, y1] = pts[i], [x2, y2] = pts[i+1];
+    const inLen = Math.hypot(x1-x0, y1-y0), outLen = Math.hypot(x2-x1, y2-y1);
+    const r = Math.min(radius, inLen/2, outLen/2);      // ← 关键：半径不能超过相邻段一半
+    if (r < 0.6) { d += ` L ${x1} ${y1}`; continue; }
+    const ux = (x1-x0)/inLen, uy = (y1-y0)/inLen;
+    const vx = (x2-x1)/outLen, vy = (y2-y1)/outLen;
+    d += ` L ${x1-ux*r} ${y1-uy*r} Q ${x1} ${y1} ${x1+vx*r} ${y1+vy*r}`;
+  }
+  d += ` L ${pts[pts.length-1][0]} ${pts[pts.length-1][1]}`;
+  return d;
+}
+
+// 每条分支一条路径：根 → 主干 → 拐角 → 卡片（终点多钻 10px 进卡片）
+paths.push(roundedPath([[rootRight-8, rootCy], [busX, rootCy], [busX, row.center], [stageX+10, row.center]], 12));
 ```
 
 ```css
-.tree-svg path { fill: none; stroke: var(--primary-line); stroke-width: 1.6; }
-.tree-svg path.draw {
-  stroke-dasharray: var(--len);   /* JS 用 getTotalLength() 写入 */
-  stroke-dashoffset: var(--len);
-  animation: draw 0.5s ease forwards;
+.tree-svg path {
+  fill: none;
+  stroke: #b7cbf3;          /* 比 primary-line 深一档，2px 下才"站得住" */
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  shape-rendering: geometricPrecision;
 }
+/* 归一化后 dash 长度恒为 1：动画收尾不会差半像素 */
+.tree-svg path.draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw .5s ease forwards; }
 @keyframes draw { to { stroke-dashoffset: 0; } }
 ```
 
-用 `stroke-dasharray/dashoffset` 画线，而不是 `width` 动画：后者会触发布局，前者只是合成层。
-线条颜色用 `--primary-line`（很淡的蓝），**不抢节点**。
+```js
+path.setAttribute("pathLength", "1");       // 归一化 dash
+svg.style.height = plan.height + "px";      // 与 viewBox 1:1，杜绝 y 拉伸
+```
 
+参考实现：React Flow 的 `getSmoothStepPath`（圆角直角边）、
+`pathLength` 归一化 dash（避免 `getTotalLength` 取整误差）都是业界常见做法。
 ### 5.4 生成时序（单位 ms）
 
 | 时刻 | 动作 |
