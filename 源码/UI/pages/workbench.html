@@ -19,14 +19,26 @@
 
       .work {
         display: grid;
+        /* 三列用命名区域，隐藏任意一栏都不会让其余元素流向错位 */
         grid-template-columns: 300px minmax(0, 1fr) 420px;
         grid-template-rows: minmax(0, 1fr) 46px;
+        grid-template-areas:
+          "tasks canvas code"
+          "status status status";
         height: calc(100vh - 60px);
         position: relative;
         z-index: 1;
       }
+      .tasks { grid-area: tasks; }
+      .canvas { grid-area: canvas; }
+      .code-pane { grid-area: code; }
+      .statusbar { grid-area: status; }
       .work.no-code { grid-template-columns: 300px minmax(0, 1fr) 0px; }
       .work.no-code .code-pane { display: none; }
+      /* 左侧任务清单也能收起来：树跟着变宽 */
+      .work.no-tasks { grid-template-columns: 0 minmax(0, 1fr) 420px; }
+      .work.no-tasks .tasks { display: none; }
+      .work.no-tasks.no-code { grid-template-columns: 0 minmax(0, 1fr) 0px; }
 
       /* 左：任务清单 */
       .tasks {
@@ -191,7 +203,8 @@
         box-shadow: 0 0 0 4px var(--primary-soft), 0 12px 26px -18px rgba(37, 99, 235, 0.6);
       }
       .node-stage.live svg { color: var(--primary); }
-      .node-stage.wait { opacity: 0.55; }
+      /* 注意作用域：直接写 .wait 会盖掉基类的 opacity:0，导致还没轮到的工序提前露出来 */
+      .node-stage.in.wait { opacity: 0.55; }
 
       .node-task {
         width: 136px;
@@ -294,7 +307,9 @@
 
       /* 隐藏右侧时，标题栏里多一个「显示代码」按钮 */
       .canvas-head .show-code { display: none; }
+      .canvas-head .show-tasks { display: none; }
       .work.no-code .canvas-head .show-code { display: inline-flex; }
+      .work.no-tasks .canvas-head .show-tasks { display: inline-flex; }
 
       /* ───────── 布局开关 / 并行 / 聚焦 ───────── */
 
@@ -468,6 +483,10 @@
 
       <div class="appbar-right">
         <span class="pill pill-plain" style="font-family: var(--mono); font-size: 12px;">¥1.24 / ¥2.00</span>
+        <button class="btn btn-sm btn-ghost" type="button" id="toggle-tasks">
+          <svg viewBox="0 0 24 24" aria-hidden style="width: 15px; height: 15px;"><path d="M4 6h6M4 12h6M4 18h6M14 6h6M14 12h6" /></svg>
+          清单
+        </button>
         <button class="btn btn-sm btn-ghost" type="button" id="toggle-code">
           <svg viewBox="0 0 24 24" aria-hidden style="width: 15px; height: 15px;"><path d="M4 6h16M4 12h10M4 18h13" /></svg>
           代码
@@ -533,6 +552,10 @@
             <button type="button" data-layout="lr" class="is-on">左右树</button>
             <button type="button" data-layout="td">上下树</button>
           </div>
+          <button class="btn btn-sm btn-ghost show-tasks" type="button" id="show-tasks">
+            <svg viewBox="0 0 24 24" aria-hidden style="width: 14px; height: 14px;"><path d="M4 6h16M4 12h16M4 18h10" /></svg>
+            显示清单
+          </button>
           <button class="btn btn-sm btn-ghost show-code" type="button" id="show-code">显示代码</button>
           <button class="btn btn-sm btn-ghost" type="button" id="replay">
             <svg viewBox="0 0 24 24" aria-hidden style="width: 14px; height: 14px;"><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /></svg>
@@ -749,9 +772,10 @@
         nodes.push(root);
 
         const stages = view.focus === null ? STAGES : [STAGES[view.focus]];
-        const stageW = 104;
+        const wide = width >= 900;                    // 宽屏就别再用短名凑合
+        const stageW = wide ? 138 : 104;
         const stageH = 64;
-        const gap = 12;
+        const gap = wide ? 16 : 12;
         const totalW = stages.length * stageW + (stages.length - 1) * gap;
         const x0 = Math.max(10, (width - totalW) / 2);
         const stageY = 138;
@@ -845,8 +869,9 @@
             el.className = `node-stage ${item.data.state}${view.focus !== null ? " focus" : ""}`;
             el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px;${item.compact ? "min-height:" + item.h + "px;" : ""}`;
             el.dataset.stage = String(item.stageIndex);
+            const compactName = item.compact && inner.clientWidth < 900;
             el.innerHTML = item.compact
-              ? `<span class="no">${item.data.no}</span><span class="txt"><b>${item.data.short}</b><small>${item.data.note}</small></span>`
+              ? `<span class="no">${item.data.no}</span><span class="txt"><b>${compactName ? item.data.short : item.data.name}</b><small>${item.data.note}</small></span>`
               : `<span class="no">${item.data.no}</span>
                  <svg viewBox="0 0 24 24"><path d="${item.data.icon}"/></svg>
                  <span class="txt"><b>${item.data.name}</b><small>${item.data.note}</small></span>`;
@@ -1199,6 +1224,15 @@
 
       /* ───────────────── 交互 ───────────────── */
 
+      document.getElementById("toggle-tasks").addEventListener("click", function () {
+        work.classList.toggle("no-tasks");
+        setTimeout(render, 60);
+      });
+      document.getElementById("show-tasks").addEventListener("click", function () {
+        work.classList.remove("no-tasks");
+        setTimeout(render, 60);
+      });
+
       document.getElementById("toggle-code").addEventListener("click", function () {
         work.classList.toggle("no-code");
         if (!work.classList.contains("no-code") && !codeView.current) showFile("db/schema.sql");
@@ -1276,6 +1310,11 @@
         document.querySelectorAll(".layout-switch button").forEach((b) => {
           b.classList.toggle("is-on", b.dataset.layout === view.layout);
         });
+      }
+
+      // ?tasks=off 直接收起左侧清单
+      if (new URLSearchParams(location.search).get("tasks") === "off") {
+        work.classList.add("no-tasks");
       }
 
       // ?code=off 直接进"隐藏代码"态，方便演示与截图

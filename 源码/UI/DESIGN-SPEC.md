@@ -146,7 +146,26 @@ work：grid
   └ 底：statusbar（跨三列）
 ```
 
-折叠实现：`.work.no-code { grid-template-columns: 300px minmax(0,1fr) 0 }` + `.code-pane { display:none }`。
+两栏都可收起，用 **grid 命名区域** 而不是自动流向：
+
+```css
+.work {
+  grid-template-columns: 300px minmax(0,1fr) 420px;
+  grid-template-areas: "tasks canvas code" "status status status";
+}
+.tasks { grid-area: tasks; } .canvas { grid-area: canvas; }
+.code-pane { grid-area: code; } .statusbar { grid-area: status; }
+
+.work.no-tasks { grid-template-columns: 0 minmax(0,1fr) 420px; }
+.work.no-tasks .tasks { display: none; }
+.work.no-code  { grid-template-columns: 300px minmax(0,1fr) 0; }
+.work.no-code  .code-pane { display: none; }
+.work.no-tasks.no-code { grid-template-columns: 0 minmax(0,1fr) 0; }
+```
+
+**为什么必须命名区域**：用自动流向时，`.tasks` 一旦 `display:none`，后面的 `.canvas` 会顶到第一列（0 宽），
+`.code-pane` 顶到第二列（1fr）——结果代码面板占满整屏、树消失。这是实际踩到的坑。
+
 **不用动画折叠列宽**——列宽动画会触发整页重排抖动，视觉上反而廉价。
 
 ### 3.3 断点
@@ -178,6 +197,12 @@ work：grid
 | `.node-root` | LR 200×58 / TD 240×60 | 单态 | 无 |
 | `.node-stage` | LR 200×56 / TD 104×64 | done / live / wait / focus | 点击进/出聚焦 |
 | `.node-task` | LR 150×52 / TD 132×52 | done / live / ghost / parallel | 无（未来点开文件） |
+| 顶栏「清单 / 代码」 | h32 | 打开 / 收起 | 收起对应侧栏，树自动占满 |
+
+**一个必须记住的样式陷阱**：基类写了 `.node-stage { opacity: 0 }`（等动画放行），
+如果状态类直接写 `.node-stage.wait { opacity: .55 }`，它会**盖过基类**，
+导致"还没轮到"的工序在开场就露出来。正确写法是 `.node-stage.in.wait { opacity: .55 }`——
+把状态挂在"已入场"之后，入场顺序才不会被状态样式破坏。
 | `.t-item`（任务清单） | 行高 30 | 普通 / is-live / 三级缩进 | 静态 |
 | `.statusbar` | h46 | 三个页签 | 切换（示意） |
 | `.swatch`（设置） | 92×62 | 选中 / 未选 | 选主题 |
@@ -262,7 +287,7 @@ d = `M ${x1} ${y1} V ${busY} H ${x2} V ${y2}`
 |---|---|---|
 | `done` | 图标变绿，卡面正常 | 完成是"不再吸引注意"的状态，不该高亮 |
 | `live` | 蓝色描边 + 4px 淡蓝外圈 | 全场只有 1–3 个，必须一眼看到 |
-| `wait` | 整体 `opacity: .55` | "还没轮到"，压下去 |
+| `wait` | 整体 `opacity: .55` | "还没轮到"，压下去；**必须写成 `.node-stage.in.wait`** |
 | `focus` | 蓝边 + 更强外圈 | 被聚焦的那一道 |
 
 ### 5.6 并行：同一道工序下的多分支
@@ -520,4 +545,5 @@ UI/
 | `?code=off` | 收起代码面板 |
 | `?fast=1` | 压缩演示时间线 |
 | `?review=1&file=api/main.py` | 停在回看态 |
+| `?tasks=off` | 收起左侧任务清单 |
 | `?theme=dark&style=glass` | 深色 + 玻璃 |
