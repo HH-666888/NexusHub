@@ -50,12 +50,13 @@
         rulerFill.style.height = `${(p * 100).toFixed(2)}%`;
       }
 
-      // 首屏视差：只改 transform，离开首屏就不再计算
-      if (!reduce && hero && y < hero.offsetHeight * 1.2) {
-        const title = $(".hero-copy h1", hero);
-        const composer = $(".composer", hero);
-        if (title) title.style.transform = `translateY(${(y * 0.12).toFixed(1)}px)`;
-        if (composer) composer.style.transform = `translateY(${(y * 0.22).toFixed(1)}px) scale(${Math.max(0.98, 1 - y / 12000).toFixed(3)})`;
+      // 首屏只做淡出，不做位移：位移会让输入框压住下面的文字
+      if (!reduce && hero) {
+        const copy = $(".hero-copy", hero);
+        const h = hero.offsetHeight || 1;
+        // 走过一半才开始淡出，滚一点点不会让首屏发灰
+        const passed = Math.max(0, y - h * 0.5);
+        if (copy) copy.style.opacity = String(Math.max(0, Math.min(1, 1 - passed / (h * 0.85))));
       }
 
       updateStages();
@@ -143,19 +144,21 @@
       const st = state.get(s);
       const r = s.getBoundingClientRect();
 
-      // 完全离开视口：复位，等待下一次向下经过
-      if (r.bottom < -60 || r.top > vh + 60) {
+      // 只在"整段掉到视口下方"时复位：下一轮从底部上来会重新演一遍。
+      // 从顶部离开视口时【不复位】——否则往回滚会看到空卡片。
+      if (r.top > vh + 40) {
         if (st.played || st.visible) resetStage(s);
         return;
       }
 
-      // 进入视口：先让内容上屏
-      if (!st.visible) {
+      if (!st.visible && r.bottom > 0) {
         st.visible = true;
         s.classList.add("is-visible");
+        // 往回滚时第一次看到它（之前没演过）：直接演，不要留空
+        if (!down) playStage(s);
       }
 
-      // 向下滚动、且这一段已经露出约四成：开始演出（不能等中心才演，否则卡片先空一会儿）
+      // 向下滚动、且这一段已经露出约四成：演出
       const center = r.top + r.height / 2;
       if (down && r.top < vh * 0.62) playStage(s);
 
