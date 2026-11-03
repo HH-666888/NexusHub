@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nexus · 原型索引</title>
+    <link rel="stylesheet" href="./system/app.css" />
+    <style>
+      .page { max-width: 1080px; padding-top: 56px; }
+      h1 { margin: 0 0 10px; font-size: 30px; font-weight: 800; letter-spacing: -0.02em; }
+      .sub { margin: 0 0 34px; font-size: 14px; color: var(--text-2); line-height: 1.8; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+      .item {
+        display: grid;
+        gap: 8px;
+        padding: 20px 22px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--r-lg);
+        box-shadow: var(--shadow-card);
+        text-decoration: none;
+        color: inherit;
+        transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+      }
+      .item:hover { transform: translateY(-2px); border-color: var(--primary-line); box-shadow: var(--shadow-pop); }
+      .item .no { font-family: var(--mono); font-size: 11px; color: var(--text-3); letter-spacing: 0.12em; }
+      .item b { font-size: 16px; }
+      .item p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--text-2); }
+      .item code { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); }
+      .tip {
+        margin-top: 26px;
+        padding: 14px 16px;
+        border-radius: var(--r-md);
+        border: 1px solid var(--line);
+        background: var(--card-2);
+        font-size: 12.5px;
+        line-height: 1.8;
+        color: var(--text-2);
+      }
+      .tip b { color: var(--text); }
+      .tip code { font-family: var(--mono); font-size: 11.5px; }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <h1>Nexus 原型</h1>
+      <p class="sub">
+        五个页面 + 一份设计说明。双击这个文件就能看，不需要起服务。<br />
+        想带参数看特定状态，见下面「带参数」那一行。
+      </p>
+
+      <div class="grid">
+        <a class="item" href="./pages/welcome.html">
+          <span class="no">01</span>
+          <b>首页 / 欢迎页</b>
+          <p>一句话标题、需求输入、六道工序、三条能力。</p>
+          <code>pages/welcome.html</code>
+        </a>
+
+        <a class="item" href="./pages/login.html">
+          <span class="no">02</span>
+          <b>登录</b>
+          <p>居中卡片、账号密码、第三方登录。</p>
+          <code>pages/login.html</code>
+        </a>
+
+        <a class="item" href="./pages/projects.html">
+          <span class="no">03</span>
+          <b>我的项目</b>
+          <p>新建入口 + 六种状态的项目卡。</p>
+          <code>pages/projects.html</code>
+        </a>
+
+        <a class="item" href="./pages/workbench.html">
+          <span class="no">04</span>
+          <b>工作台（重点）</b>
+          <p>树型工作流 + 左侧任务清单 + 右侧流式代码，两栏都能收起。</p>
+          <code>pages/workbench.html</code>
+        </a>
+
+        <a class="item" href="./pages/settings.html">
+          <span class="no">05</span>
+          <b>设置</b>
+          <p>模型提供商、预算、主题。</p>
+          <code>pages/settings.html</code>
+        </a>
+
+        <a class="item" href="./DESIGN-SPEC.md">
+          <span class="no">06</span>
+          <b>设计说明</b>
+          <p>色板、字号、树布局公式、动效时序、代码流实现。</p>
+          <code>DESIGN-SPEC.md</code>
+        </a>
+      </div>
+
+      <div class="tip">
+        <b>带参数看特定状态</b>（在工作台地址后面加）：<br />
+        <code>?layout=td</code> 上下树 ·
+        <code>?focus=3</code> 聚焦第 3 道 ·
+        <code>?branches=12</code> 12 个分支看行距撑开 ·
+        <code>?tasks=off&amp;code=off</code> 收起两栏 ·
+        <code>?fast=1</code> 快速演示代码流 ·
+        <code>?review=1</code> 停在回看态 ·
+        <code>?theme=dark</code> 深色<br />
+        多个参数用 <code>&amp;</code> 连起来，例如
+        <code>pages/workbench.html?branches=12&amp;layout=td</code>
+      </div>
+    </main>
+  </body>
+</html>
