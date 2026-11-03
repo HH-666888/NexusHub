@@ -567,6 +567,10 @@
           <h3>工作流树</h3>
           <span class="hint">一级主控 → 六道工序 → 按需分析出的任务</span>
           <span class="spacer"></span>
+          <div class="layout-switch" role="group" aria-label="连线样式">
+            <button type="button" data-edges="curve" class="is-on">曲线</button>
+            <button type="button" data-edges="elbow">折线</button>
+          </div>
           <div class="layout-switch" role="group" aria-label="树的排布">
             <button type="button" data-layout="lr" class="is-on">左右树</button>
             <button type="button" data-layout="td">上下树</button>
@@ -703,7 +707,7 @@
       const work = document.getElementById("work");
 
       /** 视图状态：排布 + 聚焦哪一道 + 哪些分支被折叠（展开过的记在 expanded 里） */
-      const view = { layout: "lr", focus: null, expanded: new Set() };
+      const view = { layout: "lr", edges: "curve", focus: null, expanded: new Set() };
 
       /* 折叠规则：超过 5 个就先折叠，只画 5 个 + 一枚"还有 N 个" */
       const COLLAPSE_AT = 5;
@@ -760,6 +764,17 @@
         return d;
       }
 
+      /** 横向流动的贝塞尔：控制点按水平距离给，出入角度都接近水平，看起来才"顺" */
+      function curveH(x0, y0, x1, y1) {
+        const dx = Math.max(56, Math.abs(x1 - x0) * 0.8);
+        return `M ${x0} ${y0} C ${x0 + dx} ${y0}, ${x1 - dx} ${y1}, ${x1} ${y1}`;
+      }
+      /** 纵向流动的贝塞尔（上下树用） */
+      function curveV(x0, y0, x1, y1) {
+        const dy = Math.max(44, Math.abs(y1 - y0) * 0.55);
+        return `M ${x0} ${y0} C ${x0} ${y0 + dy}, ${x1} ${y1 - dy}, ${x1} ${y1}`;
+      }
+
       function addPath(d, delay) {
         const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
         path.setAttribute("d", d);
@@ -777,12 +792,13 @@
       function layoutLR(width) {
         const nodes = [];
         const paths = [];
-        const ROOT = { x: 20, y: 14, w: 200, h: 58 };
-        const STAGE_X = 268;
-        const STAGE_W = 200;
+        const curved = view.edges === "curve";
+        const ROOT = { x: 20, y: 14, w: curved ? 168 : 200, h: 58 };
+        const STAGE_X = curved ? 316 : 268;
+        const STAGE_W = curved ? 180 : 200;
         const STAGE_H = 56;
         const GAP = 18;            // 行与行之间的最小缝隙
-        const TASK_X = 512;
+        const TASK_X = STAGE_X + STAGE_W + (curved ? 54 : 44);
         const TASK_W = 150;
         const BUS_X = STAGE_X - 26;
         const TASK_BUS_X = STAGE_X + STAGE_W + 20;
@@ -799,11 +815,14 @@
           return { stage, index, kids, m, rowH: Math.max(STAGE_H + GAP, m.stackH + 32) };
         });
 
+        // 每一道占一条"带"：带高 = max(卡高, 子树高)，父卡与子树共用带中心
+        // 于是子树永远以父卡为中心上下铺开，相邻两道按各自带高留缝，互不影响
         let cursor = 30;
         rows.forEach((row) => {
-          row.y = cursor;
-          row.center = cursor + STAGE_H / 2;
-          cursor += row.rowH;                      // ← 这里就是"拉长"的地方
+          row.bandH = Math.max(STAGE_H, row.m.stackH);
+          row.center = cursor + row.bandH / 2;      // ← 中心线
+          row.y = row.center - STAGE_H / 2;
+          cursor += row.bandH + GAP;
         });
 
         // 主干不再单独画：每条分支从根的右边缘出发，一条连续路径走到卡片，
@@ -820,10 +839,12 @@
             stageIndex: row.index,
             data: row.stage,
           });
-          paths.push(roundedPath([[ROOT.x + ROOT.w - 8, rootCy], [BUS_X, rootCy], [BUS_X, row.center], [STAGE_X + 10, row.center]], 12));
+          paths.push(view.edges === "curve"
+            ? curveH(ROOT.x + ROOT.w - 4, rootCy, STAGE_X + 6, row.center)
+            : roundedPath([[ROOT.x + ROOT.w - 8, rootCy], [BUS_X, rootCy], [BUS_X, row.center], [STAGE_X + 10, row.center]], 12));
 
           // 子树：小堆以父卡为轴居中，大堆从父卡上沿往下排（不许越到上一道的地盘里）
-          const firstTop = Math.max(row.center - row.m.stackH / 2, row.y);
+          const firstTop = row.center - row.m.stackH / 2;
           row.kids.forEach((task, k) => {
             const top = firstTop + k * (row.m.h + row.m.gap);
             nodes.push({
@@ -835,7 +856,9 @@
               dense: row.m.dense,
               data: task,
             });
-            paths.push(roundedPath([[STAGE_X + STAGE_W, row.center], [TASK_BUS_X, row.center], [TASK_BUS_X, top + row.m.h / 2], [TASK_X + 10, top + row.m.h / 2]], 10));
+            paths.push(view.edges === "curve"
+              ? curveH(STAGE_X + STAGE_W - 4, row.center, TASK_X + 6, top + row.m.h / 2)
+              : roundedPath([[STAGE_X + STAGE_W, row.center], [TASK_BUS_X, row.center], [TASK_BUS_X, top + row.m.h / 2], [TASK_X + 10, top + row.m.h / 2]], 10));
           });
 
           // 折叠时在末尾补一枚"还有 N 个"
@@ -852,7 +875,9 @@
               title: `还有 ${hidden} 个分支`,
               note: "点开展开",
             });
-            paths.push(roundedPath([[STAGE_X + STAGE_W, row.center], [TASK_BUS_X, row.center], [TASK_BUS_X, top + row.m.h / 2], [TASK_X + 10, top + row.m.h / 2]], 10));
+            paths.push(view.edges === "curve"
+              ? curveH(STAGE_X + STAGE_W - 4, row.center, TASK_X + 6, top + row.m.h / 2)
+              : roundedPath([[STAGE_X + STAGE_W, row.center], [TASK_BUS_X, row.center], [TASK_BUS_X, top + row.m.h / 2], [TASK_X + 10, top + row.m.h / 2]], 10));
           }
         });
 
@@ -894,27 +919,36 @@
 
         // 每一列的宽度 = max(自己的卡宽, 它的子树总宽) ← 列与列之间由此被撑开
         // 横向空间比纵向紧张：先按 4 个排，放不下就 3 个、2 个 —— 保证六道都留在屏内
-        const measure = (limit) => stages.map((stage, i) => {
+        // 上下树的宽度是硬约束：依次尝试"多放几个 / 少放几个 / 卡片更窄"，
+        // 取第一个能装进画布的方案，装不下才允许横向滚动
+        const measure = (limit, sw, tw, gap) => stages.map((stage, i) => {
           const index = view.focus === null ? i : view.focus;
           const kids = childrenOf(index, limit);
           const hidden = index === 2 ? TASKS.length - kids.length : 0;
           const slots = kids.length + (hidden > 0 ? 1 : 0);
-          const kidsW = slots ? slots * taskW + (slots - 1) * taskGap : 0;
-          return { stage, index, kids, hidden, kidsW, colW: Math.max(stageW, kidsW) };
+          const kidsW = slots ? slots * tw + (slots - 1) * taskGap : 0;
+          return { stage, index, kids, hidden, kidsW, colW: Math.max(sw, kidsW), sw, tw };
         });
-        const fits = (list) =>
-          list.reduce((sum, c) => sum + c.colW, 0) + (list.length - 1) * GAP <= width - 20;
+        const fits = (list, gap) =>
+          list.reduce((sum, c) => sum + c.colW, 0) + (list.length - 1) * gap <= width - 16;
 
-        let cols = measure(4);
-        if (!fits(cols)) cols = measure(3);
-        if (!fits(cols)) cols = measure(2);
+        const attempts = [ [4, stageW, taskW, GAP], [3, stageW, taskW, GAP], [2, stageW, taskW, GAP], [1, 96, 104, 10], [1, 86, 96, 8] ];
+        let cols = null;
+        let usedGap = GAP;
+        for (const [limit, sw, tw, gap] of attempts) {
+          const list = measure(limit, sw, tw, gap);
+          if (!cols) { cols = list; usedGap = gap; }
+          if (fits(list, gap)) { cols = list; usedGap = gap; break; }
+        }
+        const stageWUsed = cols[0].sw;
+        const taskWUsed = cols[0].tw;
 
-        const totalW = cols.reduce((sum, c) => sum + c.colW, 0) + (cols.length - 1) * GAP;
+        const totalW = cols.reduce((sum, c) => sum + c.colW, 0) + (cols.length - 1) * usedGap;
         let x = Math.max(10, (width - totalW) / 2);
         cols.forEach((col) => {
           col.x = x;
           col.center = x + col.colW / 2;   // 卡片与子树共用这条中心线
-          x += col.colW + GAP;
+          x += col.colW + usedGap;
         });
 
         const stageY = 138;
@@ -932,35 +966,41 @@
             stageIndex: col.index,
             data: col.stage,
           });
-          paths.push(roundedPath([[rootCx, 14 + ROOT_H - 8], [rootCx, busY], [col.center, busY], [col.center, stageY + 10]], 12));
+          paths.push(view.edges === "curve"
+            ? curveV(rootCx, 14 + ROOT_H - 4, col.center, stageY + 6)
+            : roundedPath([[rootCx, 14 + ROOT_H - 8], [rootCx, busY], [col.center, busY], [col.center, stageY + 10]], 12));
         });
 
         const taskY = stageY + STAGE_H + 52;
         const taskBusY = taskY - 24;
         cols.forEach((col) => {
           if (!col.kids.length) return;
-          const kidsW = col.kids.length * taskW + (col.kids.length - 1) * taskGap;
+          const kidsW = col.kids.length * taskWUsed + (col.kids.length - 1) * taskGap;
           const kx0 = col.center - kidsW / 2;
           paths.push(`M ${col.center} ${stageY + STAGE_H} V ${taskBusY}`);
-          paths.push(`M ${kx0 + taskW / 2} ${taskBusY} H ${kx0 + kidsW - taskW / 2}`);
+          paths.push(`M ${kx0 + taskWUsed / 2} ${taskBusY} H ${kx0 + kidsW - taskWUsed / 2}`);
           col.kids.forEach((task, k) => {
-            const kx = kx0 + k * (taskW + taskGap);
-            nodes.push({ kind: "task", x: kx, y: taskY, w: taskW, h: taskH, data: task });
-            paths.push(roundedPath([[col.center, taskBusY], [kx + taskW / 2, taskBusY], [kx + taskW / 2, taskY + 10]], 10));
+            const kx = kx0 + k * (taskWUsed + taskGap);
+            nodes.push({ kind: "task", x: kx, y: taskY, w: taskWUsed, h: taskH, data: task });
+            paths.push(view.edges === "curve"
+              ? curveV(col.center, stageY + STAGE_H - 4, kx + taskWUsed / 2, taskY + 6)
+              : roundedPath([[col.center, taskBusY], [kx + taskWUsed / 2, taskBusY], [kx + taskWUsed / 2, taskY + 10]], 10));
           });
           if (col.hidden > 0) {
-            const kx = kx0 + col.kids.length * (taskW + taskGap);
+            const kx = kx0 + col.kids.length * (taskWUsed + taskGap);
             nodes.push({
               kind: "chip",
               x: kx,
               y: taskY,
-              w: taskW,
+              w: taskWUsed,
               h: taskH,
               stageIndex: col.index,
               title: `还有 ${col.hidden} 个分支`,
               note: "点开展开",
             });
-            paths.push(roundedPath([[col.center, taskBusY], [kx + taskW / 2, taskBusY], [kx + taskW / 2, taskY + 10]], 10));
+            paths.push(view.edges === "curve"
+              ? curveV(col.center, stageY + STAGE_H - 4, kx + taskWUsed / 2, taskY + 6)
+              : roundedPath([[col.center, taskBusY], [kx + taskWUsed / 2, taskBusY], [kx + taskWUsed / 2, taskY + 10]], 10));
           }
         });
 
@@ -1080,6 +1120,17 @@
           view.layout = btn.dataset.layout;
           document.querySelectorAll(".layout-switch button").forEach((b) => {
             b.classList.toggle("is-on", b.dataset.layout === view.layout);
+          });
+          render();
+        });
+      });
+
+      document.querySelectorAll("[data-edges]").forEach((btn) => {
+        btn.addEventListener("click", function () {
+          if (view.edges === btn.dataset.edges) return;
+          view.edges = btn.dataset.edges;
+          document.querySelectorAll("[data-edges]").forEach((b) => {
+            b.classList.toggle("is-on", b.dataset.edges === view.edges);
           });
           render();
         });
@@ -1455,6 +1506,15 @@
       const focusParam = Number(new URLSearchParams(location.search).get("focus"));
       if (focusParam >= 1 && focusParam <= STAGES.length) {
         view.focus = focusParam - 1;
+      }
+
+      // ?edges=elbow 用折线（默认曲线）
+      const edgesParam = new URLSearchParams(location.search).get("edges");
+      if (edgesParam === "elbow" || edgesParam === "curve") {
+        view.edges = edgesParam;
+        document.querySelectorAll("[data-edges]").forEach((b) => {
+          b.classList.toggle("is-on", b.dataset.edges === view.edges);
+        });
       }
 
       // ?layout=td 直接进上下树
