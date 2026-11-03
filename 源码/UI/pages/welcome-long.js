@@ -111,11 +111,13 @@
   const state = new Map();
   stages.forEach((s) => state.set(s, { played: false, visible: false }));
   let lastY = window.scrollY || 0;
+  let upAccum = 0;   // 累计向上滚了多少，用来判断回看了一眼
 
   function playStage(s) {
     const st = state.get(s);
     if (!st || st.played) return;
     st.played = true;
+    cleanupArt(s);
     s.classList.remove("is-in");
     void s.offsetWidth;            // 强制重排，让过渡从 0 重新开始
     s.classList.add("is-in");
@@ -135,6 +137,7 @@
   function updateStages() {
     const y = window.scrollY || document.documentElement.scrollTop;
     const down = y > lastY;
+    upAccum = down ? 0 : upAccum + Math.abs(y - lastY);
     lastY = y;
     const vh = window.innerHeight;
     const mid = vh / 2;
@@ -158,14 +161,19 @@
         if (!down) playStage(s);
       }
 
-      // 向下滚动、且这一段已经露出约四成：演出
-      const center = r.top + r.height / 2;
-      if (down && r.top < vh * 0.62) playStage(s);
+      // 触发线：这一段顶部越过屏幕 62% 处，就演一次
+      const trigger = vh * 0.62;
+      if (down && r.top < trigger) playStage(s);
+
+      // 往回滚超过 80px 再往下：算"又经过了一次"，重新装弹。
+      // 只对该段还在屏幕上时生效 —— 已经滚出屏幕的段不需要重播。
+      if (upAccum > 80 && st.played && r.bottom > 0 && r.top < trigger) {
+        st.played = false;
+      }
 
       // 当前工序 = 屏幕 45% 线落在哪一段里（比"离中线最近"稳，长短屏都不会跳）
-      const line = vh * 0.45;
-      if (r.top <= line && r.bottom > line) nearest = nearest || { index: i, dist: 0 };
-      else if (r.top <= line) nearest = { index: i, dist: 0 };
+      const activeLine = vh * 0.45;
+      if (r.top <= activeLine) nearest = { index: i, dist: 0 };
     });
 
     if (nearest) markActive(nearest.index);
