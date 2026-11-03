@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nexus · 番茄钟（运行中）</title>
+    <link rel="stylesheet" href="../system/app.css" />
+    <style>
+      body { overflow: hidden; }
+
+      .side-title { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 6px; font-size: 12.5px; color: var(--text-3); }
+
+      /* 画布：主流程一行，子任务在下面 */
+      .stage { position: relative; padding: 8px 0 0; }
+      .layer-label {
+        display: inline-flex; align-items: center; gap: 8px;
+        margin: 0 0 16px 4px;
+        font-size: 12px; color: var(--text-3); letter-spacing: .08em;
+      }
+      .layer-label::after { content: ""; width: 40px; height: 1px; background: var(--line-2); }
+
+      .children { display: flex; gap: 10px; margin: 16px 0 0 0; padding-left: 8px; }
+      .children .child-node { width: 132px; }
+      .child-node.is-live { border-color: var(--primary); background: var(--primary-soft); }
+      .child-node small { display: flex; align-items: center; gap: 6px; justify-content: center; }
+      .mini-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+
+      /* 六个主流程节点要在一屏里排下：缩窄节点与连接线 */
+      .canvas-area { padding: 44px 24px 60px; }
+      .canvas-area .node { width: 108px; padding: 12px 8px; }
+      .canvas-area .connector { width: 22px; }
+      .canvas-area .flow { gap: 0; }
+
+      /* 底部终端：这一版先做成一条命令条 */
+      .terminal {
+        position: absolute; left: 40px; right: 40px; bottom: 24px;
+        border: 1px solid var(--line); border-radius: var(--r-md);
+        background: var(--card); box-shadow: var(--shadow-card); overflow: hidden;
+      }
+      .terminal-head { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--text-3); }
+      .terminal-dots { display: flex; gap: 5px; }
+      .terminal-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); }
+      .terminal-body { padding: 10px 14px; font-family: var(--mono); font-size: 12px; line-height: 1.9; color: var(--text-2); }
+      .terminal-body .ok { color: var(--ok); }
+      .terminal-body .cmd { color: var(--text); }
+
+      .rail-block .row-between { font-size: 12.5px; }
+      .rail-note { margin: 10px 0 0; font-size: 11.5px; color: var(--text-3); line-height: 1.6; }
+      .kv-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 12.5px; }
+      .kv-list li { display: flex; justify-content: space-between; gap: 12px; color: var(--text-2); }
+      .kv-list b { color: var(--text); font-weight: 600; }
+      .code-block {
+        margin: 0; padding: 10px 12px; border-radius: 9px;
+        background: var(--code-bg); border: 1px solid var(--line);
+        font-family: var(--mono); font-size: 11.5px; line-height: 1.8; color: var(--text-2);
+        overflow: auto; max-height: 96px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="appbar">
+      <a class="brand" href="./welcome.html">
+        <svg viewBox="0 0 24 24" aria-hidden><path class="brand-mark" d="M4 20V4h3.4l9.2 12V4H20v16h-3.4L7.4 8v12H4z" /></svg>
+        Nexus
+      </a>
+      <nav class="crumb"><span>/</span><b>极简番茄钟</b></nav>
+
+      <div class="appbar-center">
+        <span class="pill pill-live"><i class="dot dot-live" style="width: 7px; height: 7px; border-radius: 50%; background: currentColor;"></i>运行中 · 工序 03</span>
+      </div>
+
+      <div class="appbar-right">
+        <span class="pill pill-plain">
+          <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 8v8M9 11l3-3 3 3" /></svg>
+          ¥1.24 / ¥2.00
+        </span>
+        <button class="icon-btn" type="button" aria-label="暂停">
+          <svg viewBox="0 0 24 24" aria-hidden><path d="M9 5v14M15 5v14" stroke-width="2" /></svg>
+        </button>
+        <button class="icon-btn" type="button" id="theme-toggle" aria-label="切换主题">
+          <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" /></svg>
+        </button>
+        <a class="icon-btn" href="./settings.html" aria-label="设置">
+          <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
+        </a>
+      </div>
+    </header>
+
+    <div class="shell">
+      <!-- 左：运行历史 -->
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <div class="search">
+            <svg viewBox="0 0 24 24" aria-hidden><circle cx="11" cy="11" r="6" /><path d="M15.5 15.5L20 20" /></svg>
+            搜索项目或工单号
+          </div>
+        </div>
+
+        <div class="side-title"><span>运行历史</span><span>18</span></div>
+        <div class="run-list">
+          <a class="run-item is-here" href="./canvas.html">
+            <span class="run-badge">A</span>
+            <span class="run-meta">
+              <b>极简番茄钟</b>
+              <span><i class="dot dot-live" style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></i>今天 14:32 · 运行中</span>
+            </span>
+          </a>
+          <a class="run-item" href="./projects.html">
+            <span class="run-badge">B</span>
+            <span class="run-meta">
+              <b>值班排班表</b>
+              <span><i class="dot dot-ok" style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></i>今天 08:11 · 验收 6/6</span>
+            </span>
+          </a>
+          <a class="run-item" href="./projects.html">
+            <span class="run-badge">C</span>
+            <span class="run-meta">
+              <b>读书打卡</b>
+              <span><i class="dot dot-warn" style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></i>昨天 21:40 · 待你确认</span>
+            </span>
+          </a>
+          <a class="run-item" href="./projects.html">
+            <span class="run-badge">D</span>
+            <span class="run-meta">
+              <b>记账本</b>
+              <span><i class="dot dot-ok" style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></i>昨天 16:02 · 验收 4/4</span>
+            </span>
+          </a>
+          <a class="run-item" href="./projects.html">
+            <span class="run-badge">E</span>
+            <span class="run-meta">
+              <b>班级作业登记</b>
+              <span><i class="dot" style="width: 6px; height: 6px; border-radius: 50%; background: var(--fail);"></i>昨天 09:15 · 验收 4/6</span>
+            </span>
+          </a>
+        </div>
+
+        <div class="side-group" style="margin-top: auto; border-top: 1px solid var(--line);">
+          <a class="side-item" href="./projects.html">
+            <svg viewBox="0 0 24 24" aria-hidden><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M8 10h8M8 14h5" /></svg>
+            全部运行
+          </a>
+          <a class="side-item" href="./settings.html">
+            <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="3" /><path d="M4 12h2M18 12h2M12 4v2M12 18v2" /></svg>
+            设置
+          </a>
+        </div>
+      </aside>
+
+      <!-- 中：画布 -->
+      <main class="canvas-area">
+        <div class="stage">
+          <div class="layer-label">主流程</div>
+          <div class="flow">
+            <div class="node is-done">
+              <svg viewBox="0 0 24 24" aria-hidden><path d="M6 4h9l3 3v13H6z" /><path d="M9 11h6M9 15h4" /></svg>
+              <b>需求拆解</b><small>5 条验收标准</small>
+            </div>
+            <i class="connector"></i>
+            <div class="node is-done">
+              <svg viewBox="0 0 24 24" aria-hidden><rect x="4" y="5" width="16" height="5" rx="1.5" /><rect x="4" y="14" width="9" height="5" rx="1.5" /><path d="M17 14h3v5h-3z" /></svg>
+              <b>架构定型</b><small>4 个模块</small>
+            </div>
+            <i class="connector"></i>
+            <div class="node is-live">
+              <svg viewBox="0 0 24 24" aria-hidden><path d="M4 18V6l6 3 4-3 6 3v9" /><path d="M4 18h16" /></svg>
+              <b>三方向生成</b><small>数据库 ✓ 后端 ✓ 前端…</small>
+            </div>
+            <i class="connector"></i>
+            <div class="node">
+              <svg viewBox="0 0 24 24" aria-hidden><rect x="7" y="3" width="10" height="7" rx="2" /><rect x="3" y="14" width="8" height="7" rx="2" /><rect x="13" y="14" width="8" height="7" rx="2" /></svg>
+              <b>集成装配</b><small>等待上游</small>
+            </div>
+            <i class="connector"></i>
+            <div class="node">
+              <svg viewBox="0 0 24 24" aria-hidden><circle cx="11" cy="11" r="6" /><path d="M15.5 15.5L20 20" /></svg>
+              <b>自动验收</b><small>等待上游</small>
+            </div>
+            <i class="connector"></i>
+            <div class="node">
+              <svg viewBox="0 0 24 24" aria-hidden><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M9 12l2 2 4-4" /></svg>
+              <b>交付</b><small>等待上游</small>
+            </div>
+          </div>
+
+          <div class="layer-label" style="margin-top: 30px;">三方向 · 子任务</div>
+          <div class="children">
+            <div class="child-node">
+              <b>数据库</b>
+              <small><i class="mini-dot"></i>db/schema.sql</small>
+            </div>
+            <div class="child-node">
+              <b>后端接口</b>
+              <small><i class="mini-dot"></i>api/main.py</small>
+            </div>
+            <div class="child-node is-live">
+              <b>前端页面</b>
+              <small><i class="mini-dot" style="background: var(--primary);"></i>正在写 web/index.html</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="terminal">
+          <div class="terminal-head">
+            <span class="terminal-dots"><i></i><i></i><i></i></span>
+            终端 · 产物进程
+          </div>
+          <div class="terminal-body">
+            <div><span class="dim">08:19:02</span> <span class="cmd">pip install -r requirements.txt</span> <span class="ok">完成</span></div>
+            <div><span class="dim">08:19:11</span> <span class="cmd">uvicorn api.main:app --port 8000</span> <span class="ok">已监听</span></div>
+            <div><span class="dim">08:19:12</span> 建表 1 张：<b>todo_item</b> · 种子 5 行</div>
+          </div>
+        </div>
+      </main>
+
+      <!-- 右：事件流 / 预算 / 工序详情 -->
+      <aside class="rail">
+        <div class="rail-block">
+          <div class="row-between">
+            <h4 style="margin: 0;">事件流</h4>
+            <button class="icon-btn" type="button" aria-label="更多"><svg viewBox="0 0 24 24" aria-hidden><circle cx="6" cy="12" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="18" cy="12" r="1.4" /></svg></button>
+          </div>
+          <ul class="timeline">
+            <li><i></i><div><time>12:03:21</time>生成前端页面（1 次通过）</div></li>
+            <li><i></i><div><time>12:03:08</time>生成后端接口：4 条路由</div></li>
+            <li><i></i><div><time>12:02:47</time>架构已定型：4 个模块</div></li>
+            <li><i></i><div><time>12:01:10</time>需求拆解完成：5 条验收标准</div></li>
+          </ul>
+        </div>
+
+        <div class="rail-block">
+          <div class="row-between">
+            <h4 style="margin: 0;">本轮预算</h4>
+            <span class="dim" style="font-size: 12px;">¥1.24 / ¥2.00</span>
+          </div>
+          <div class="meter" style="margin-top: 12px;"><i style="width: 62%"></i></div>
+          <p class="rail-note">到上限即停。已用 62%，按当前速度预计还剩 3 分钟。</p>
+        </div>
+
+        <div class="rail-block">
+          <div class="row-between">
+            <h4 style="margin: 0;">工序详情</h4>
+            <span class="pill pill-live" style="font-size: 11.5px; padding: 2px 9px;">三方向生成</span>
+          </div>
+          <ul class="kv-list" style="margin-top: 12px;">
+            <li><span>开始时间</span><b>12:02:47</b></li>
+            <li><span>已用时长</span><b>1′34″</b></li>
+            <li><span>模型调用</span><b>4 次</b></li>
+            <li><span>产物文件</span><b>3 / 3</b></li>
+          </ul>
+          <p class="rail-note">当前写到 <b>web/index.html</b>，模型正在生成页面骨架。</p>
+          <pre class="code-block">POST /api/items        201
+GET  /api/items        200
+GET  /api/items/count  200</pre>
+        </div>
+      </aside>
+    </div>
+
+    <script>
+      (function () {
+        const param = new URLSearchParams(location.search).get("theme");
+        document.documentElement.dataset.theme = param || localStorage.getItem("nexus-theme") || "light";
+        document.addEventListener("click", function (event) {
+          if (!event.target.closest("#theme-toggle")) return;
+          const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+          document.documentElement.dataset.theme = next;
+          localStorage.setItem("nexus-theme", next);
+        });
+      })();
+    </script>
+  </body>
+</html>

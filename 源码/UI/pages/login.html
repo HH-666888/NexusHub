@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nexus · 登录</title>
+    <link rel="stylesheet" href="../system/app.css" />
+    <style>
+      .auth-wrap {
+        position: relative;
+        z-index: 1;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 40px 20px;
+      }
+      .auth-card {
+        width: 100%;
+        max-width: 420px;
+        padding: 34px 32px 28px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--r-xl);
+        box-shadow: var(--shadow-card);
+      }
+      .auth-brand {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 22px;
+      }
+      .auth-brand svg { width: 22px; height: 22px; }
+      .auth-card h1 {
+        margin: 0 0 8px;
+        text-align: center;
+        font-size: 25px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      .auth-sub {
+        margin: 0 0 26px;
+        text-align: center;
+        font-size: 13.5px;
+        color: var(--text-2);
+      }
+      .auth-field { display: grid; gap: 8px; margin-bottom: 16px; }
+      .auth-field label { font-size: 13.5px; color: var(--text); }
+      .auth-field input {
+        height: 44px;
+        padding: 0 13px;
+        border-radius: 10px;
+        border: 1px solid var(--line-2);
+        background: var(--card-2);
+        color: var(--text);
+        font: inherit;
+        font-size: 14px;
+        outline: none;
+      }
+      .auth-field input:focus { border-color: var(--primary); background: var(--card); box-shadow: 0 0 0 3px var(--primary-soft); }
+      .auth-field input::placeholder { color: var(--text-3); }
+      .row-aux { display: flex; justify-content: flex-end; margin: -6px 0 18px; font-size: 13px; }
+      .row-aux a { color: var(--primary); text-decoration: none; }
+      .auth-submit { width: 100%; height: 46px; font-size: 15px; }
+      .divider {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 12px;
+        margin: 22px 0;
+        color: var(--text-3);
+        font-size: 12.5px;
+      }
+      .divider::before, .divider::after { content: ""; height: 1px; background: var(--line); }
+      .oauth { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .oauth .btn { height: 42px; font-size: 13.5px; }
+      .auth-foot { margin: 22px 0 0; text-align: center; font-size: 13px; color: var(--text-2); }
+      .auth-foot a { color: var(--primary); font-weight: 600; text-decoration: none; }
+      .auth-legal { margin: 14px 0 0; text-align: center; font-size: 11.5px; color: var(--text-3); }
+    </style>
+  </head>
+  <body>
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <svg viewBox="0 0 24 24" aria-hidden><path class="brand-mark" d="M4 20V4h3.4l9.2 12V4H20v16h-3.4L7.4 8v12H4z" /></svg>
+          Nexus
+        </div>
+
+        <h1>欢迎回来</h1>
+        <p class="auth-sub">登录后继续构建你的软件</p>
+
+        <form onsubmit="return false">
+          <div class="auth-field">
+            <label for="account">账号</label>
+            <input id="account" type="text" placeholder="用户名，例如 demo" autocomplete="username" />
+          </div>
+
+          <div class="auth-field">
+            <label for="password">密码</label>
+            <input id="password" type="password" placeholder="至少 6 位" autocomplete="current-password" />
+          </div>
+
+          <div class="row-aux"><a href="#">忘记密码？</a></div>
+
+          <button class="btn btn-primary auth-submit" type="submit">登录</button>
+        </form>
+
+        <div class="divider">或</div>
+
+        <div class="oauth">
+          <button class="btn btn-ghost" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden><path d="M9 19c-4 1.5-4-2-6-2.5M15 21v-3.4a3 3 0 0 0-.9-2.4c3-.3 6-1.5 6-6.6a5 5 0 0 0-1.4-3.5 4.6 4.6 0 0 0-.1-3.5S17.6 1 15 2.8a12 12 0 0 0-6 0C6.4 1 5.5 1.6 5.5 1.6a4.6 4.6 0 0 0-.1 3.5A5 5 0 0 0 4 8.6c0 5 3 6.3 6 6.6a3 3 0 0 0-.9 2.3V21" /></svg>
+            使用 GitHub
+          </button>
+          <button class="btn btn-ghost" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 7v10M7.5 9.5h9M7.5 14.5h9" /></svg>
+            使用 Google
+          </button>
+        </div>
+
+        <p class="auth-foot">还没有账号？<a href="#">立即注册</a></p>
+        <p class="auth-legal">继续即表示同意《服务条款》与《隐私政策》</p>
+      </div>
+    </div>
+  </body>
+</html>
