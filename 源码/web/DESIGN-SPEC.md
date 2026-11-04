@@ -1,10 +1,10 @@
 # Nexus 原型设计说明（Design Spec）
 
-> 这份文档描述的是 `UI/` 目录下那套**纯静态原型**：它为什么看起来是这样、动效怎么做的、
+> 这份文档描述的是 `web/` 目录下那套**纯静态原型**：它为什么看起来是这样、动效怎么做的、
 > 每个数值是几、哪些坑必须避开。写它的目的是让这套东西能被复述、被复用、被改造成规范。
 >
-> 覆盖范围：`UI/pages/*.html`（欢迎、登录、项目、工作台、设置）、`UI/system/app.css`、
-> `UI/system/glass.css`。所有数值都是代码里真实存在的值，不是估算。
+> 覆盖范围：`web/pages/*.html`（欢迎、登录、项目、工作台、设置）、`web/system/app.css`、
+> `web/system/glass.css`。所有数值都是代码里真实存在的值，不是估算。
 
 ---
 
@@ -26,7 +26,7 @@
 | 项 | 说明 |
 |---|---|
 | 运行方式 | 纯 HTML + CSS + 原生 JS，**无构建、无依赖、无网络请求** |
-| 打开方式 | 静态服务：`python -m http.server 5599 --directory UI`，访问 `/pages/xxx.html` |
+| 打开方式 | 静态服务：`python -m http.server 5600 --directory web`，访问 `/pages/xxx.html` |
 | 截图工具 | `frontend/scripts/shot.mjs`（Edge CDP，可带 cookie、固定视口、等 2.5s 后截图） |
 | 兼容目标 | Chromium 内核（用到了 `backdrop-filter`、`conic-gradient`、CSS 变量与 `data-*` 主题） |
 | 字体 | 仅系统字体：`PingFang SC / Hiragino Sans GB / Microsoft YaHei / system-ui`；等宽 `JetBrains Mono → Cascadia Mono → Consolas` |
@@ -655,7 +655,7 @@ document.documentElement.dataset.style = "" | "glass";
 ## 12. 附：文件与参数索引
 
 ```
-UI/
+web/
   system/app.css      设计令牌 + 通用组件（按钮/胶囊/面板/表单/图标容器）
   system/glass.css    玻璃态外观（只覆盖表面）
   pages/welcome.html  营销页（含 welcome.css）

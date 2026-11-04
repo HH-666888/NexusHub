@@ -3,7 +3,7 @@
 只放**设计稿**：纯 HTML + CSS，浏览器直接打开，不接后端、不动 `frontend/` 一行代码。
 
 ```
-UI/
+web/
   system/app.css     设计系统：两套主题的变量 + 按钮/胶囊/面板/表单/画布节点
   system/glass.css   玻璃态外观：只覆盖表面（背景色块 / 半透卡片 / 发光按钮），`?style=glass` 启用
   pages/             六个页面（这一版的全部交付）
@@ -18,15 +18,15 @@ UI/
   home/ home-v2/     早期两个探索方向（制图纸版 / 参考版），留档对比
 ```
 
-本地静态服务：`python -m http.server 5599 --directory UI`，
-然后开 `http://127.0.0.1:5599/pages/welcome.html`（`?theme=dark` 直接看深色）。
+本地静态服务：`python -m http.server 5600 --directory web`，
+然后开 `http://127.0.0.1:5600/pages/welcome.html`（`?theme=dark` 直接看深色）。
 
 截图（固定窗口尺寸，方便逐版对比）：
 
 ```bash
 cd frontend
-node scripts/shot.mjs "http://127.0.0.1:5599/pages/welcome.html?theme=light" \
-  "../UI/shots/xx.png" "nexus_session=dummy" 960 1440
+node scripts/shot.mjs "http://127.0.0.1:5600/pages/welcome.html?theme=light" \
+  "../web/shots/xx.png" "nexus_session=dummy" 960 1440
 ```
 
 ## 设计主张
