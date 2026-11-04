@@ -23,12 +23,31 @@ body { overflow-x: hidden; }
   will-change: transform;
 }
 
+/* ───────── 页面内的品牌字标 ───────── */
+.brandmark {
+  margin: 0 auto;
+  padding: 2px 40px 0;
+  margin: 24px auto 6px;
+  max-width: 1320px;
+  text-align: center;
+  font-size: clamp(56px, 10vw, 132px);
+  line-height: 0.9;
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  background: linear-gradient(180deg, #ccd9ee 0%, #e8eefa 62%, #f6f8fc 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  user-select: none;
+  pointer-events: none;
+}
+
 /* ───────── 过渡句 ───────── */
 .bridge {
   display: grid;
   justify-items: center;
   gap: 18px;
-  padding: 30px 0 0;
+  padding: 18px 0 0;
   text-align: center;
 }
 .bridge h2 {
@@ -605,3 +624,6 @@ body { overflow-x: hidden; }
   .json-body { max-height: none !important; margin-top: 12px !important; }
   .build-bar i { width: var(--p, 60%) !important; }
 }
+
+/* 首屏留白：整体往下压一点，但不多占屏 */
+.hero { padding: 96px 0 4px; }

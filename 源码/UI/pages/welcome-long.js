@@ -191,7 +191,7 @@
         io.unobserve(entry.target);
       });
     },
-    { rootMargin: "0px 0px -18% 0px", threshold: 0.18 },
+    { rootMargin: "0px 0px -5% 0px", threshold: 0.05 },
   );
   if (bridge) io.observe(bridge);
   if (stats) io.observe(stats);
