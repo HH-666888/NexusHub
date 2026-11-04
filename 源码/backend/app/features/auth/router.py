@@ -44,6 +44,13 @@ def register(
     return UserResponse(user=user)
 
 
+@router.get("/check-username")
+def check_username(username: str, db: Session = Depends(get_db)) -> dict:
+    """注册页做即时重名校验用；不需要登录。"""
+    store = get_auth_store(db)
+    return {"exists": store.find_user_by_username(username.strip()) is not None}
+
+
 @router.post("/login", response_model=UserResponse)
 def login(
     payload: LoginRequest,
