@@ -247,5 +247,44 @@
         });
       })();
     </script>
+    <script src="../system/api.js"></script>
+    <script>
+      // 真数据：设置读写 /api/v1/settings（读回主题与预算，改动即存）
+      (async function () {
+        if (!window.api) return;
+        const saved = await window.api.settings();
+        if (!saved || typeof saved !== "object") return;
+
+        if (saved.theme === "dark" || saved.theme === "light") {
+          if (!safeTheme || !safeTheme()) {
+            document.documentElement.dataset.theme = saved.theme;
+            try { localStorage.setItem("nexus-theme", saved.theme); } catch (e) {}
+          }
+        }
+
+        const budget = Array.from(document.querySelectorAll("input.slider"))
+          .find((el) => (el.getAttribute("aria-label") || "").includes("单次"));
+        if (budget && typeof saved.budgetPerRun === "number") budget.value = String(saved.budgetPerRun);
+
+        if (budget) {
+          let timer = null;
+          budget.addEventListener("input", function () {
+            clearTimeout(timer);
+            timer = setTimeout(function () {
+              window.api.saveSettings({ budgetPerRun: Number(budget.value) });
+            }, 400);
+          });
+        }
+
+        const toggle = document.getElementById("theme-toggle");
+        if (toggle) {
+          toggle.addEventListener("click", function () {
+            setTimeout(function () {
+              window.api.saveSettings({ theme: document.documentElement.dataset.theme });
+            }, 60);
+          });
+        }
+      })();
+    </script>
   </body>
 </html>

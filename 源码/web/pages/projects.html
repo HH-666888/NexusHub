@@ -260,5 +260,56 @@
         host.insertBefore(chip, host.firstChild);
       })();
     </script>
+    <script src="../system/api.js"></script>
+    <script>
+      // 真数据：登录后从 /api/v1/runs 拉列表；没有后端或未登录时保留页面上原有的演示卡片
+      (async function () {
+        if (!window.api) return;
+        const runs = await window.api.runs(24);
+        if (!Array.isArray(runs) || runs.length === 0) return;
+
+        const grid = document.querySelector(".grid");
+        if (!grid) return;
+
+        const stageLabel = {
+          spec: "需求分析", arch: "架构设计", build: "并行开发",
+          assemble: "集成装配", test: "自动测试", deliver: "验收交付",
+        };
+        const statusLabel = { running: "运行中", done: "已完成", failed: "失败" };
+
+        function fmtTime(ms) {
+          const d = new Date(ms);
+          const pad = (n) => String(n).padStart(2, "0");
+          return pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+        }
+
+        // 清掉演示卡片，只留"新建项目"
+        Array.from(grid.querySelectorAll(".card")).forEach((el) => el.remove());
+
+        runs.forEach(function (run) {
+          const card = document.createElement("article");
+          card.className = "card";
+          card.dataset.run = run.id;
+          card.style.cursor = "pointer";
+          const pillClass = run.status === "running" ? "pill-live" : run.status === "failed" ? "pill-warn" : "pill";
+          card.innerHTML =
+            '<div class="thumb"><span class="pill ' + pillClass + '">' +
+            (statusLabel[run.status] || run.status) + "</span></div>" +
+            '<div class="body"><h3></h3>' +
+            '<div class="meta"><span>' + (stageLabel[run.stage] || run.stage) + "</span><span>¥" +
+            (run.totalCostCny || 0).toFixed(2) + "</span><span>" + fmtTime(run.createdAt) + "</span></div>" +
+            '<div class="actions"><button class="btn btn-sm btn-ghost" type="button">看产线</button></div></div>';
+          card.querySelector("h3").textContent = run.prompt;
+
+          const open = function (event) {
+            if (event) event.stopPropagation();
+            location.href = "./workbench.html?run=" + encodeURIComponent(run.id);
+          };
+          card.addEventListener("click", open);
+          card.querySelector("button").addEventListener("click", open);
+          grid.appendChild(card);
+        });
+      })();
+    </script>
   </body>
 </html>

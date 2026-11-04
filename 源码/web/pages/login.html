@@ -141,9 +141,10 @@
         document.documentElement.dataset.style = query.get("style") || "";
       })();
     </script>
+    <script src="../system/api.js"></script>
     <script src="../system/demo.js"></script>
     <script>
-      // 假登录：不校验账号密码，点一下就算登录（演示用）
+      // 真登录：调 /api/v1/auth/*；静态单开（没有后端）时才退回演示登录
       (function () {
         const params = new URLSearchParams(location.search);
         const isRegister = params.get("mode") === "register";
@@ -164,22 +165,64 @@
           if (foot) foot.innerHTML = '已有账号？<a href="./login.html">去登录</a>';
         }
 
-        function go() {
-          const account = document.querySelector("#account");
-          const name = (account && account.value ? account.value : "").trim() || "评委";
-          if (window.NexusDemo) window.NexusDemo.login(name);
+        function targetUrl() {
+          if (prompt) return "./workbench.html?run=new&prompt=" + encodeURIComponent(prompt);
+          if (next === "workbench") return "./workbench.html?run=new";
+          if (next) return "./" + next + ".html";
+          return "./projects.html";
+        }
 
-          let target = "./projects.html";
-          if (prompt) target = "./workbench.html?run=new&prompt=" + encodeURIComponent(prompt);
-          else if (next === "workbench") target = "./workbench.html?run=new";
-          else if (next) target = "./" + next + ".html";
-          location.href = target;
+        function showError(message) {
+          let box = document.querySelector(".auth-error");
+          if (!box) {
+            box = document.createElement("p");
+            box.className = "auth-error";
+            box.style.cssText = "margin:0 0 10px;color:#dc2626;font-size:13px;";
+            const form = document.getElementById("auth-form");
+            if (form) form.insertBefore(box, form.firstChild);
+          }
+          box.textContent = message;
+        }
+
+        async function submit() {
+          const field = document.querySelector("#account");
+          const pwd = document.querySelector("#password");
+          const username = (field && field.value ? field.value : "").trim();
+          const password = pwd && pwd.value ? pwd.value : "";
+
+          if (window.api) {
+            const result = isRegister
+              ? await window.api.register(username, password, password)
+              : await window.api.login(username, password);
+
+            if (result.ok) {
+              if (window.NexusDemo) window.NexusDemo.login(username || "评委");
+              location.href = targetUrl();
+              return;
+            }
+
+            if (!result.offline) {
+              showError(
+                isRegister
+                  ? "注册失败：账号可能已存在，或密码少于 " + "6 位"
+                  : "账号或密码不对",
+              );
+              return;
+            }
+          }
+
+          // 没有后端（直接双击打开 / 单开静态服务）时，保留演示登录
+          if (window.NexusDemo) window.NexusDemo.login(username || "评委");
+          location.href = targetUrl();
         }
 
         const form = document.getElementById("auth-form");
-        if (form) form.addEventListener("submit", function (event) { event.preventDefault(); go(); });
+        if (form) form.addEventListener("submit", function (event) { event.preventDefault(); submit(); });
         document.querySelectorAll(".oauth button").forEach(function (btn) {
-          btn.addEventListener("click", go);
+          btn.addEventListener("click", function () {
+            if (window.NexusDemo) window.NexusDemo.login("评委");
+            location.href = targetUrl();
+          });
         });
 
         const toRegister = document.getElementById("to-register");

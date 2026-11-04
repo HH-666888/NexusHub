@@ -1569,5 +1569,57 @@
         document.title = "NexusHub · " + prompt.slice(0, 16);
       })();
     </script>
+    <script src="../system/api.js"></script>
+    <script>
+      // 真数据：新建运行时真的落库；带真实 run id 时读详情
+      (async function () {
+        if (!window.api) return;
+        const params = new URLSearchParams(location.search);
+        const id = params.get("run") || "";
+        const prompt = params.get("prompt") || "";
+        const crumb = document.querySelector(".crumb b");
+
+        function setCrumb(text) {
+          if (crumb && text) crumb.textContent = text.length > 18 ? text.slice(0, 18) + "…" : text;
+        }
+
+        if (id === "new" && prompt) {
+          const result = await window.api.createRun(prompt);
+          if (result.ok && result.data) {
+            const real = result.data.id;
+            history.replaceState(
+              null,
+              "",
+              "./workbench.html?run=" + encodeURIComponent(real) + "&prompt=" + encodeURIComponent(prompt),
+            );
+            setCrumb(prompt);
+          }
+          return;
+        }
+
+        if (!id || /^demo\d+$/.test(id)) return;
+
+        const run = await window.api.run(id);
+        if (!run) return;
+        setCrumb(run.prompt);
+
+        const pill = document.querySelector(".pill-live");
+        if (pill && run.status !== "running") {
+          pill.textContent = run.status === "done" ? "已完成 · 6 / 6 道" : "运行中断";
+        }
+
+        const events = await window.api.events(id);
+        if (Array.isArray(events) && events.length) {
+          const bar = document.querySelector(".event-line, .events, .eventbar");
+          if (bar) {
+            const last = events[events.length - 1];
+            const text = typeof last.payload === "object" && last.payload && last.payload.text
+              ? last.payload.text
+              : last.kind;
+            bar.textContent = "事件 " + events.length + " 条 · 最新：" + text;
+          }
+        }
+      })();
+    </script>
   </body>
 </html>
