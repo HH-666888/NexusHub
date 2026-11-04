@@ -9,7 +9,8 @@
 }
 
 html { scroll-behavior: smooth; scroll-padding-top: calc(var(--flow-nav-h) + 8px); }
-body { overflow-x: hidden; }
+html { overflow-x: clip; }
+body { overflow-x: clip; }
 
 /* 顶部阅读进度 */
 .scroll-progress {
@@ -22,6 +23,14 @@ body { overflow-x: hidden; }
   transform-origin: 0 50%;
   will-change: transform;
 }
+
+/* ───────── 顶栏：下滑收起 / 上滑出现 ───────── */
+.topbar {
+  transition: transform 0.28s var(--ease-out), box-shadow 0.2s ease;
+  will-change: transform;
+}
+.topbar.is-hidden { transform: translateY(-100%); }
+.topbar.is-scrolled { box-shadow: 0 1px 0 var(--line); }
 
 /* ───────── 页面内的品牌字标 ───────── */
 .brandmark {

@@ -36,6 +36,15 @@
       // 顶部进度
       if (bar) bar.style.transform = `scaleX(${docH > 0 ? Math.min(1, y / docH) : 0})`;
 
+      // 顶栏：下滑收起、上滑出现（不遮挡长页）
+      const topbar = document.querySelector(".topbar");
+      if (topbar) {
+        const hide = y > 120 && y > lastBarY;
+        topbar.classList.toggle("is-hidden", hide);
+        topbar.classList.toggle("is-scrolled", y > 8);
+        lastBarY = y;
+      }
+
       // 导航：滚过首屏 80% 才出现
       if (nav && hero) {
         const heroBottom = hero.offsetTop + hero.offsetHeight * 0.8;
@@ -111,6 +120,7 @@
   const state = new Map();
   stages.forEach((s) => state.set(s, { played: false, visible: false }));
   let lastY = window.scrollY || 0;
+  let lastBarY = window.scrollY || 0;
   let upAccum = 0;   // 累计向上滚了多少，用来判断回看了一眼
 
   function playStage(s) {
