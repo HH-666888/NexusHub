@@ -8,6 +8,37 @@
     <link rel="stylesheet" href="../system/glass.css" />
     <link rel="stylesheet" href="./welcome.css" />
     <link rel="stylesheet" href="./welcome-long.css?v=20261105b" />
+    <script>
+      /* 刷新 → 回到顶部；浏览器后退/前进 → 保留原来的位置。
+         必须在 <head> 里执行：等脚本加载完再滚，用户会先看到闪一下。 */
+      (function () {
+        var entries = performance.getEntriesByType && performance.getEntriesByType("navigation");
+        var type = entries && entries[0] && entries[0].type;
+        if (type !== "reload") return;
+
+        try {
+          history.scrollRestoration = "manual";
+        } catch (e) {
+          /* 忽略 */
+        }
+
+        // 刷新时把 #锚点 去掉，否则浏览器会跳到那一节
+        if (location.hash) {
+          history.replaceState(null, "", location.pathname + location.search);
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+          var root = document.documentElement;
+          var prev = root.style.scrollBehavior;
+          root.style.scrollBehavior = "auto"; // 关掉平滑滚动，避免"从下面滑上来"
+          window.scrollTo(0, 0);
+          requestAnimationFrame(function () {
+            window.scrollTo(0, 0);
+            root.style.scrollBehavior = prev;
+          });
+        });
+      })();
+    </script>
   </head>
   <body>
     <header class="topbar">
