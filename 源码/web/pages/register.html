@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NexusHub · 注册</title>
+    <link rel="stylesheet" href="../system/app.css" />
+    <link rel="stylesheet" href="../system/glass.css" />
+    <link rel="stylesheet" href="../system/auth.css" />
+  </head>
+  <body>
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <svg viewBox="0 0 24 24" aria-hidden><path class="brand-mark" d="M4 20V4h3.4l9.2 12V4H20v16h-3.4L7.4 8v12H4z" /></svg>
+          NexusHub
+        </div>
+
+        <h1>创建账号</h1>
+        <p class="auth-sub">注册后就能开始构建你的第一个软件</p>
+
+        <form id="auth-form" novalidate>
+          <div class="auth-field" data-field="username">
+            <label for="username">用户名</label>
+            <div class="input-wrap">
+              <input id="username" name="username" type="text" placeholder="2–20 位，中文 / 字母 / 数字 / _ / -" autocomplete="username" />
+            </div>
+            <p class="field-tip" data-tip="username"></p>
+          </div>
+
+          <div class="auth-field" data-field="password">
+            <label for="password">密码</label>
+            <div class="input-wrap">
+              <input id="password" name="password" type="password" placeholder="6–128 位，至少两类字符" autocomplete="new-password" />
+              <button class="eye-btn" type="button" id="eye-btn" aria-label="显示密码">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden>
+                  <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" />
+                  <circle cx="12" cy="12" r="2.6" />
+                </svg>
+              </button>
+            </div>
+            <p class="field-tip" data-tip="password"></p>
+          </div>
+
+          <div class="auth-field" data-field="confirm">
+            <label for="confirm">确认密码</label>
+            <div class="input-wrap">
+              <input id="confirm" name="confirm" type="password" placeholder="再输一次" autocomplete="new-password" />
+            </div>
+            <p class="field-tip" data-tip="confirm"></p>
+          </div>
+
+          <button class="btn btn-primary auth-submit" type="submit" id="submit-btn">注册并开始</button>
+        </form>
+
+        <p class="auth-foot">已经有账号了？<a href="./login.html" id="to-login">去登录</a></p>
+        <p class="auth-legal">继续即表示同意《服务条款》与《隐私政策》</p>
+      </div>
+    </div>
+
+    <script>
+      function safeTheme() {
+        try { return localStorage.getItem("nexus-theme"); } catch (e) { return null; }
+      }
+      (function () {
+        const query = new URLSearchParams(location.search);
+        document.documentElement.dataset.theme = query.get("theme") || safeTheme() || "light";
+      })();
+    </script>
+    <script src="../system/api.js"></script>
+    <script src="../system/demo.js"></script>
+    <script>
+      (function () {
+        const params = new URLSearchParams(location.search);
+        const next = params.get("next") || "";
+        const prompt = params.get("prompt") || "";
+
+        const form = document.getElementById("auth-form");
+        const username = document.getElementById("username");
+        const password = document.getElementById("password");
+        const confirm = document.getElementById("confirm");
+        const submitBtn = document.getElementById("submit-btn");
+        const eyeBtn = document.getElementById("eye-btn");
+
+        const NAME_RE = /^[\u4e00-\u9fa5A-Za-z0-9_-]{2,20}$/;
+
+        function classesOf(value) {
+          let count = 0;
+          if (/[A-Za-z]/.test(value)) count += 1;
+          if (/[0-9]/.test(value)) count += 1;
+          if (/[^A-Za-z0-9]/.test(value)) count += 1;
+          return count;
+        }
+
+        function tip(name, message, state) {
+          const box = document.querySelector('[data-tip="' + name + '"]');
+          const field = document.querySelector('[data-field="' + name + '"]');
+          if (box) {
+            box.textContent = message || "";
+            box.className = "field-tip" + (state ? " " + state : "");
+          }
+          if (field) {
+            field.classList.toggle("is-error", state === "error");
+            field.classList.toggle("is-ok", state === "ok");
+          }
+        }
+
+        function targetUrl() {
+          if (prompt) return "./workbench.html?run=new&prompt=" + encodeURIComponent(prompt);
+          if (next === "workbench") return "./workbench.html?run=new";
+          if (next) return "./" + next + ".html";
+          return "./projects.html";
+        }
+
+        [username, password, confirm].forEach(function (input) {
+          input.addEventListener("input", function () { tip(input.name, ""); });
+        });
+
+        // 用户名失焦：格式 + 是否被占用
+        username.addEventListener("blur", async function () {
+          const value = username.value.trim();
+          if (!value) return;
+          if (!NAME_RE.test(value)) {
+            tip("username", "用户名需 2–20 位，只能用中文、字母、数字、下划线或连字符", "error");
+            return;
+          }
+
+          tip("username", "正在检查…", "checking");
+          const taken = window.api ? await window.api.usernameTaken(value) : null;
+          if (taken === null) {
+            tip("username", "暂时无法校验，提交时再检查", "");
+            return;
+          }
+          if (taken) {
+            tip("username", "这个用户名已经被用了", "error");
+            return;
+          }
+          tip("username", "用户名可用", "ok");
+        });
+
+        eyeBtn.addEventListener("click", function () {
+          const show = password.type === "password";
+          password.type = show ? "text" : "password";
+          confirm.type = show ? "text" : "password";
+          eyeBtn.setAttribute("aria-label", show ? "隐藏密码" : "显示密码");
+          eyeBtn.style.color = show ? "var(--primary)" : "";
+        });
+
+        confirm.addEventListener("blur", function () {
+          if (confirm.value && confirm.value !== password.value) {
+            tip("confirm", "两次输入的密码不一致", "error");
+          }
+        });
+
+        form.addEventListener("submit", async function (event) {
+          event.preventDefault();
+          const name = username.value.trim();
+          const pwd = password.value;
+          const pwd2 = confirm.value;
+
+          if (!name) { tip("username", "请填写用户名", "error"); username.focus(); return; }
+          if (!NAME_RE.test(name)) {
+            tip("username", "用户名需 2–20 位，只能用中文、字母、数字、下划线或连字符", "error");
+            username.focus();
+            return;
+          }
+          if (!pwd) { tip("password", "请填写密码", "error"); password.focus(); return; }
+          if (pwd.length < 6 || pwd.length > 128) {
+            tip("password", "密码长度需在 6–128 位之间", "error");
+            password.focus();
+            return;
+          }
+          if (classesOf(pwd) < 2) {
+            tip("password", "密码至少包含两类字符（字母 / 数字 / 符号）", "error");
+            password.focus();
+            return;
+          }
+          if (pwd !== pwd2) { tip("confirm", "两次输入的密码不一致", "error"); confirm.focus(); return; }
+
+          submitBtn.disabled = true;
+          submitBtn.textContent = "注册中…";
+
+          try {
+            if (window.api) {
+              const result = await window.api.register(name, pwd, pwd2);
+              if (result.ok) {
+                if (window.NexusDemo) window.NexusDemo.login(name);
+                location.href = targetUrl();
+                return;
+              }
+              if (!result.offline) {
+                const message =
+                  result.status === 409 ? "这个用户名已经被用了" : "注册失败，请检查用户名和密码";
+                tip("username", message, "error");
+                return;
+              }
+            }
+
+            // 没有后端时退回演示登录
+            if (window.NexusDemo) window.NexusDemo.login(name);
+            location.href = targetUrl();
+          } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "注册并开始";
+          }
+        });
+
+        // 带上 next / prompt，注册完能接着走原来那条路
+        const toLogin = document.getElementById("to-login");
+        if (toLogin && (next || prompt)) {
+          const q = new URLSearchParams();
+          if (next) q.set("next", next);
+          if (prompt) q.set("prompt", prompt);
+          toLogin.href = "./login.html?" + q.toString();
+        }
+      })();
+    </script>
+  </body>
+</html>

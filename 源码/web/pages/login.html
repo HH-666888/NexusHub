@@ -6,82 +6,7 @@
     <title>NexusHub · 登录</title>
     <link rel="stylesheet" href="../system/app.css" />
     <link rel="stylesheet" href="../system/glass.css" />
-    <style>
-      .auth-wrap {
-        position: relative;
-        z-index: 1;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        padding: 40px 20px;
-      }
-      .auth-card {
-        width: 100%;
-        max-width: 420px;
-        padding: 34px 32px 28px;
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: var(--r-xl);
-        box-shadow: var(--shadow-card);
-      }
-      .auth-brand {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        font-size: 20px;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-        margin-bottom: 22px;
-      }
-      .auth-brand svg { width: 22px; height: 22px; }
-      .auth-card h1 {
-        margin: 0 0 8px;
-        text-align: center;
-        font-size: 25px;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-      }
-      .auth-sub {
-        margin: 0 0 26px;
-        text-align: center;
-        font-size: 13.5px;
-        color: var(--text-2);
-      }
-      .auth-field { display: grid; gap: 8px; margin-bottom: 16px; }
-      .auth-field label { font-size: 13.5px; color: var(--text); }
-      .auth-field input {
-        height: 44px;
-        padding: 0 13px;
-        border-radius: 10px;
-        border: 1px solid var(--line-2);
-        background: var(--card-2);
-        color: var(--text);
-        font: inherit;
-        font-size: 14px;
-        outline: none;
-      }
-      .auth-field input:focus { border-color: var(--primary); background: var(--card); box-shadow: 0 0 0 3px var(--primary-soft); }
-      .auth-field input::placeholder { color: var(--text-3); }
-      .row-aux { display: flex; justify-content: flex-end; margin: -6px 0 18px; font-size: 13px; }
-      .row-aux a { color: var(--primary); text-decoration: none; }
-      .auth-submit { width: 100%; height: 46px; font-size: 15px; }
-      .divider {
-        display: grid;
-        grid-template-columns: 1fr auto 1fr;
-        align-items: center;
-        gap: 12px;
-        margin: 22px 0;
-        color: var(--text-3);
-        font-size: 12.5px;
-      }
-      .divider::before, .divider::after { content: ""; height: 1px; background: var(--line); }
-      .oauth { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-      .oauth .btn { height: 42px; font-size: 13.5px; }
-      .auth-foot { margin: 22px 0 0; text-align: center; font-size: 13px; color: var(--text-2); }
-      .auth-foot a { color: var(--primary); font-weight: 600; text-decoration: none; }
-      .auth-legal { margin: 14px 0 0; text-align: center; font-size: 11.5px; color: var(--text-3); }
-    </style>
+    <link rel="stylesheet" href="../system/auth.css" />
   </head>
   <body>
     <div class="auth-wrap">
@@ -94,76 +19,66 @@
         <h1>欢迎回来</h1>
         <p class="auth-sub">登录后继续构建你的软件</p>
 
-        <form id="auth-form">
-          <div class="auth-field">
+        <div class="demo-hint">
+          <span>演示账号 <b>admin</b> / <b>123456</b></span>
+          <button type="button" id="fill-demo">填入</button>
+        </div>
+
+        <form id="auth-form" novalidate>
+          <div class="auth-field" data-field="account">
             <label for="account">账号</label>
-            <input id="account" type="text" placeholder="用户名，例如 demo" autocomplete="username" />
+            <div class="input-wrap">
+              <input id="account" name="account" type="text" placeholder="请输入用户名" autocomplete="username" />
+            </div>
+            <p class="field-tip" data-tip="account"></p>
           </div>
 
-          <div class="auth-field">
+          <div class="auth-field" data-field="password">
             <label for="password">密码</label>
-            <input id="password" type="password" placeholder="至少 6 位" autocomplete="current-password" />
+            <div class="input-wrap">
+              <input id="password" name="password" type="password" placeholder="请输入密码" autocomplete="current-password" />
+              <button class="eye-btn" type="button" id="eye-btn" aria-label="显示密码">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden>
+                  <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" />
+                  <circle cx="12" cy="12" r="2.6" />
+                </svg>
+              </button>
+            </div>
+            <p class="field-tip" data-tip="password"></p>
           </div>
 
           <div class="row-aux"><a href="#">忘记密码？</a></div>
 
-          <button class="btn btn-primary auth-submit" type="submit">登录</button>
+          <button class="btn btn-primary auth-submit" type="submit" id="submit-btn">登录</button>
         </form>
 
-        <div class="divider">或</div>
-
-        <div class="oauth">
-          <button class="btn btn-ghost" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden><path d="M9 19c-4 1.5-4-2-6-2.5M15 21v-3.4a3 3 0 0 0-.9-2.4c3-.3 6-1.5 6-6.6a5 5 0 0 0-1.4-3.5 4.6 4.6 0 0 0-.1-3.5S17.6 1 15 2.8a12 12 0 0 0-6 0C6.4 1 5.5 1.6 5.5 1.6a4.6 4.6 0 0 0-.1 3.5A5 5 0 0 0 4 8.6c0 5 3 6.3 6 6.6a3 3 0 0 0-.9 2.3V21" /></svg>
-            使用 GitHub
-          </button>
-          <button class="btn btn-ghost" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 7v10M7.5 9.5h9M7.5 14.5h9" /></svg>
-            使用 Google
-          </button>
-        </div>
-
-        <p class="auth-foot">还没有账号？<a href="./login.html?mode=register" id="to-register">立即注册</a></p>
+        <p class="auth-foot">还没有账号？<a href="./register.html" id="to-register">立即注册</a></p>
         <p class="auth-legal">继续即表示同意《服务条款》与《隐私政策》</p>
       </div>
     </div>
+
     <script>
-      // file:// 下有些浏览器禁用 localStorage：读写都兜底，别把整段脚本带崩
       function safeTheme() {
         try { return localStorage.getItem("nexus-theme"); } catch (e) { return null; }
-      }
-      function saveTheme(value) {
-        try { localStorage.setItem("nexus-theme", value); } catch (e) { /* 忽略 */ }
       }
       (function () {
         const query = new URLSearchParams(location.search);
         document.documentElement.dataset.theme = query.get("theme") || safeTheme() || "light";
-        document.documentElement.dataset.style = query.get("style") || "";
       })();
     </script>
     <script src="../system/api.js"></script>
     <script src="../system/demo.js"></script>
     <script>
-      // 真登录：调 /api/v1/auth/*；静态单开（没有后端）时才退回演示登录
       (function () {
         const params = new URLSearchParams(location.search);
-        const isRegister = params.get("mode") === "register";
         const next = params.get("next") || "";
         const prompt = params.get("prompt") || "";
 
-        if (isRegister) {
-          document.title = "NexusHub · 注册";
-          const h1 = document.querySelector("h1");
-          const sub = document.querySelector(".auth-sub");
-          const submit = document.querySelector(".auth-submit");
-          const aux = document.querySelector(".row-aux");
-          const foot = document.querySelector(".auth-foot");
-          if (h1) h1.textContent = "创建账号";
-          if (sub) sub.textContent = "注册后就能开始构建";
-          if (submit) submit.textContent = "注册并开始";
-          if (aux) aux.style.display = "none";
-          if (foot) foot.innerHTML = '已有账号？<a href="./login.html">去登录</a>';
-        }
+        const form = document.getElementById("auth-form");
+        const account = document.getElementById("account");
+        const password = document.getElementById("password");
+        const submitBtn = document.getElementById("submit-btn");
+        const eyeBtn = document.getElementById("eye-btn");
 
         function targetUrl() {
           if (prompt) return "./workbench.html?run=new&prompt=" + encodeURIComponent(prompt);
@@ -172,67 +87,78 @@
           return "./projects.html";
         }
 
-        function showError(message) {
-          let box = document.querySelector(".auth-error");
-          if (!box) {
-            box = document.createElement("p");
-            box.className = "auth-error";
-            box.style.cssText = "margin:0 0 10px;color:#dc2626;font-size:13px;";
-            const form = document.getElementById("auth-form");
-            if (form) form.insertBefore(box, form.firstChild);
+        function tip(name, message, state) {
+          const box = document.querySelector('[data-tip="' + name + '"]');
+          const field = document.querySelector('[data-field="' + name + '"]');
+          if (box) {
+            box.textContent = message || "";
+            box.className = "field-tip" + (state ? " " + state : "");
           }
-          box.textContent = message;
+          if (field) {
+            field.classList.toggle("is-error", state === "error");
+            field.classList.toggle("is-ok", state === "ok");
+          }
         }
 
-        async function submit() {
-          const field = document.querySelector("#account");
-          const pwd = document.querySelector("#password");
-          const username = (field && field.value ? field.value : "").trim();
-          const password = pwd && pwd.value ? pwd.value : "";
-
-          if (window.api) {
-            const result = isRegister
-              ? await window.api.register(username, password, password)
-              : await window.api.login(username, password);
-
-            if (result.ok) {
-              if (window.NexusDemo) window.NexusDemo.login(username || "评委");
-              location.href = targetUrl();
-              return;
-            }
-
-            if (!result.offline) {
-              showError(
-                isRegister
-                  ? "注册失败：账号可能已存在，或密码少于 " + "6 位"
-                  : "账号或密码不对",
-              );
-              return;
-            }
-          }
-
-          // 没有后端（直接双击打开 / 单开静态服务）时，保留演示登录
-          if (window.NexusDemo) window.NexusDemo.login(username || "评委");
-          location.href = targetUrl();
-        }
-
-        const form = document.getElementById("auth-form");
-        if (form) form.addEventListener("submit", function (event) { event.preventDefault(); submit(); });
-        document.querySelectorAll(".oauth button").forEach(function (btn) {
-          btn.addEventListener("click", function () {
-            if (window.NexusDemo) window.NexusDemo.login("评委");
-            location.href = targetUrl();
-          });
+        [account, password].forEach(function (input) {
+          input.addEventListener("input", function () { tip(input.name, ""); });
         });
 
-        const toRegister = document.getElementById("to-register");
-        if (toRegister) {
-          toRegister.addEventListener("click", function (event) {
-            event.preventDefault();
-            const q = new URLSearchParams({ mode: "register" });
-            if (next) q.set("next", next);
-            if (prompt) q.set("prompt", prompt);
-            location.href = "./login.html?" + q.toString();
+        eyeBtn.addEventListener("click", function () {
+          const show = password.type === "password";
+          password.type = show ? "text" : "password";
+          eyeBtn.setAttribute("aria-label", show ? "隐藏密码" : "显示密码");
+          eyeBtn.style.color = show ? "var(--primary)" : "";
+        });
+
+        document.getElementById("fill-demo").addEventListener("click", function () {
+          account.value = "admin";
+          password.value = "123456";
+          tip("account", "");
+          tip("password", "");
+          password.focus();
+        });
+
+        form.addEventListener("submit", async function (event) {
+          event.preventDefault();
+          const name = account.value.trim();
+          const pwd = password.value;
+
+          if (!name) { tip("account", "请输入账号", "error"); account.focus(); return; }
+          if (!pwd) { tip("password", "请输入密码", "error"); password.focus(); return; }
+
+          submitBtn.disabled = true;
+          submitBtn.textContent = "登录中…";
+
+          try {
+            if (window.api) {
+              const result = await window.api.login(name, pwd);
+              if (result.ok) {
+                if (window.NexusDemo) window.NexusDemo.login(name);
+                location.href = targetUrl();
+                return;
+              }
+              if (!result.offline) {
+                tip("password", "账号或密码不对", "error");
+                return;
+              }
+            }
+
+            // 没有后端时（双击打开 / 纯静态托管）退回演示登录
+            if (window.NexusDemo) window.NexusDemo.login(name);
+            location.href = targetUrl();
+          } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "登录";
+          }
+        });
+        // 把 next / prompt 带进注册页，注册完能接着走
+        if (next || prompt) {
+          const q = new URLSearchParams();
+          if (next) q.set("next", next);
+          if (prompt) q.set("prompt", prompt);
+          document.querySelectorAll('a[href="./register.html"]').forEach(function (link) {
+            link.href = "./register.html?" + q.toString();
           });
         }
       })();

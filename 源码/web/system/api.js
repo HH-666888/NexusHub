@@ -67,6 +67,13 @@
       return request("/auth/logout", { method: "POST" });
     },
 
+    /** 注册页即时重名校验：返回 true 表示已被占用；接口不可用时返回 null。 */
+    async usernameTaken(username) {
+      const result = await request("/auth/check-username?username=" + encodeURIComponent(username));
+      if (!result.ok || !result.data) return null;
+      return Boolean(result.data.exists);
+    },
+
     /** 运行列表；offline 时返回 null。 */
     async runs(limit) {
       const result = await request("/runs?limit=" + (limit || 50));
