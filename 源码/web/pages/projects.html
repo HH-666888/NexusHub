@@ -261,15 +261,15 @@
       })();
     </script>
     <script src="../system/api.js"></script>
+    <script src="../system/demo.js"></script>
     <script>
-      // 真数据：登录后从 /api/v1/runs 拉列表；没有后端或未登录时保留页面上原有的演示卡片
-      (async function () {
-        if (!window.api) return;
-        const runs = await window.api.runs(24);
-        if (!Array.isArray(runs) || runs.length === 0) return;
-
+      // 项目页真数据：列表、空状态、新建、退出登录
+      (function () {
         const grid = document.querySelector(".grid");
-        if (!grid) return;
+        const count = document.querySelector(".count");
+        const newBar = document.querySelector(".new-bar");
+        const newInput = newBar ? newBar.querySelector("input") : null;
+        const newBtn = newBar ? newBar.querySelector("button") : null;
 
         const stageLabel = {
           spec: "需求分析", arch: "架构设计", build: "并行开发",
@@ -283,10 +283,7 @@
           return pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
         }
 
-        // 清掉演示卡片，只留"新建项目"
-        Array.from(grid.querySelectorAll(".card")).forEach((el) => el.remove());
-
-        runs.forEach(function (run) {
+        function cardFor(run) {
           const card = document.createElement("article");
           card.className = "card";
           card.dataset.run = run.id;
@@ -307,8 +304,97 @@
           };
           card.addEventListener("click", open);
           card.querySelector("button").addEventListener("click", open);
-          grid.appendChild(card);
-        });
+          return card;
+        }
+
+        function clearDemoCards() {
+          if (!grid) return;
+          Array.from(grid.querySelectorAll(".card")).forEach((el) => el.remove());
+          const empty = grid.querySelector(".empty-state");
+          if (empty) empty.remove();
+        }
+
+        function showEmpty() {
+          if (!grid) return;
+          const box = document.createElement("div");
+          box.className = "empty-state";
+          box.style.cssText =
+            "grid-column:1/-1;padding:36px 20px;border:1px dashed var(--line-2);border-radius:16px;text-align:center;color:var(--text-2);font-size:13.5px;";
+          box.innerHTML = "还没有项目。<br />在上面输入一句话，就能开始第一个构建。";
+          grid.appendChild(box);
+        }
+
+        async function load() {
+          if (!window.api) return;
+          const runs = await window.api.runs(24);
+          if (!Array.isArray(runs)) return; // 没有后端 / 未登录：保留演示卡片
+
+          clearDemoCards();
+          if (count) count.textContent = String(runs.length);
+
+          if (runs.length === 0) {
+            showEmpty();
+            return;
+          }
+          runs.forEach((run) => grid.appendChild(cardFor(run)));
+        }
+
+        async function create() {
+          const prompt = (newInput && newInput.value ? newInput.value : "").trim();
+          if (!prompt) {
+            if (newInput) newInput.focus();
+            return;
+          }
+          if (newBtn) {
+            newBtn.disabled = true;
+            newBtn.textContent = "创建中…";
+          }
+          try {
+            if (window.api) {
+              const result = await window.api.createRun(prompt);
+              if (result.ok && result.data) {
+                location.href = "./workbench.html?run=" + encodeURIComponent(result.data.id);
+                return;
+              }
+              if (!result.offline) {
+                alert("创建失败，请稍后重试");
+                return;
+              }
+            }
+            location.href = "./workbench.html?run=new&prompt=" + encodeURIComponent(prompt);
+          } finally {
+            if (newBtn) {
+              newBtn.disabled = false;
+              newBtn.textContent = "生成";
+            }
+          }
+        }
+
+        if (newBtn) newBtn.addEventListener("click", create);
+        if (newInput) {
+          newInput.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") create();
+          });
+        }
+
+        // 退出登录
+        const right = document.querySelector(".appbar-right");
+        if (right) {
+          const out = document.createElement("button");
+          out.className = "btn btn-ghost";
+          out.type = "button";
+          out.textContent = "退出";
+          out.style.height = "36px";
+          out.style.fontSize = "13px";
+          out.addEventListener("click", async function () {
+            if (window.api) await window.api.logout();
+            if (window.NexusDemo) window.NexusDemo.logout();
+            location.href = "./login.html";
+          });
+          right.insertBefore(out, right.querySelector(".avatar"));
+        }
+
+        load();
       })();
     </script>
   </body>
