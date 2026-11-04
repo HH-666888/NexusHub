@@ -107,33 +107,27 @@
 
     <div class="settings-shell">
       <nav class="settings-side" aria-label="设置分区">
-        <a class="is-here" href="#">
+        <a class="is-here" href="#s-model">
           <svg viewBox="0 0 24 24" aria-hidden><rect x="4" y="4" width="16" height="7" rx="2" /><rect x="4" y="14" width="16" height="6" rx="2" /></svg>
           模型配置
         </a>
-        <a href="#">
+        <a href="#s-budget">
           <svg viewBox="0 0 24 24" aria-hidden><rect x="4" y="5" width="16" height="14" rx="3" /><path d="M8 10h8M8 14h5" /></svg>
           成本预算
         </a>
-        <a href="#">
+        <a href="#s-theme">
           <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="4" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2" /></svg>
           外观主题
         </a>
-        <a href="#">
-          <svg viewBox="0 0 24 24" aria-hidden><rect x="3" y="5" width="18" height="12" rx="2" /><path d="M8 21h8" /></svg>
-          沙箱环境
-        </a>
-        <a href="#">
-          <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="9" r="3.6" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>
-          账号
-        </a>
+        
+        
       </nav>
 
       <main class="settings-main">
         <h1>设置</h1>
         <p>这里改的东西只影响你这台机器上的运行，不会同步到别人的账号。</p>
 
-        <section class="panel section">
+        <section class="panel section" id="s-model">
           <h2>模型提供商</h2>
           <p class="desc">决定工厂用谁的大脑。换提供商不影响已经生成过的项目。</p>
 
@@ -180,7 +174,7 @@
           </div>
         </section>
 
-        <section class="panel section">
+        <section class="panel section" id="s-budget">
           <h2>成本预算</h2>
           <p class="desc">两道闸门：单次任务到顶就停，每日总额到顶当天不再接新任务。</p>
 
@@ -201,7 +195,7 @@
           </div>
         </section>
 
-        <section class="panel section">
+        <section class="panel section" id="s-theme">
           <h2>外观主题</h2>
           <p class="desc">浅色适合白天与投屏，深色适合夜里盯着看。</p>
 
