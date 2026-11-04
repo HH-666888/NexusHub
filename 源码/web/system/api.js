@@ -26,6 +26,13 @@
     } catch (error) {
       data = null;
     }
+
+    // 纯静态托管（python http.server / 双击打开）时，/api/v1 不存在，
+    // 服务器会回一个 HTML 404。这种情况按"没有后端"处理，让调用方回退演示数据。
+    if (!response.ok && data === null) {
+      return { ok: false, offline: true, status: response.status, data: null };
+    }
+
     return { ok: response.ok, offline: false, status: response.status, data };
   }
 
