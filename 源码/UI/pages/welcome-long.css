@@ -28,7 +28,7 @@ body { overflow-x: hidden; }
   display: grid;
   justify-items: center;
   gap: 18px;
-  padding: 40px 0 0;
+  padding: 30px 0 0;
   text-align: center;
 }
 .bridge h2 {
