@@ -3,9 +3,12 @@
 不放业务。业务在 features/*/service.py，工序在 pipeline/。
 """
 
+from pathlib import Path
+
 from fastapi import Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -71,6 +74,12 @@ def create_app() -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+    # 静态站：源码/web（页面、样式、脚本都由这里托管）。
+    # 必须挂最后 —— 挂载在 "/" 会接管所有未命中的路径，/api/v1 由上面的路由先匹配。
+    web_dir = Path(__file__).resolve().parents[2] / "web"
+    if web_dir.is_dir():
+        app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web")
 
     return app
 
