@@ -127,7 +127,7 @@
       </div>
 
       <div class="grid">
-        <a class="card-new" href="#">
+        <a class="card-new" href="./workbench.html?run=new">
           <span class="plus"><svg viewBox="0 0 24 24" aria-hidden><path d="M12 5v14M5 12h14" /></svg></span>
           <b>新建项目</b>
           <small>从一句话开始</small>
@@ -226,6 +226,38 @@
           document.documentElement.dataset.theme = next;
           saveTheme(next);
         });
+      })();
+    </script>
+    <script>
+      // 项目卡 → 工作台（原型串联：没有真实数据，统一进同一页）
+      (function () {
+        const cards = Array.from(document.querySelectorAll(".card"));
+        const open = (i) => { location.href = "./workbench.html?run=demo" + (i + 1); };
+
+        cards.forEach(function (card, i) {
+          card.style.cursor = "pointer";
+          card.addEventListener("click", function (event) {
+            if (event.target.closest("button, a")) return;
+            open(i);
+          });
+          const btn = card.querySelector(".actions button");
+          if (btn) btn.addEventListener("click", function (event) { event.stopPropagation(); open(i); });
+        });
+      })();
+    </script>
+    <script src="../system/demo.js"></script>
+    <script>
+      (function () {
+        const user = window.NexusDemo && window.NexusDemo.getUser();
+        if (!user) return;
+        const host = document.querySelector(".appbar-right") || document.querySelector(".topbar-actions") || document.querySelector("header");
+        if (!host) return;
+        const chip = document.createElement("span");
+        chip.id = "demo-who";
+        chip.className = "pill";
+        chip.style.marginRight = "8px";
+        chip.textContent = user;
+        host.insertBefore(chip, host.firstChild);
       })();
     </script>
   </body>

@@ -94,7 +94,7 @@
         <h1>欢迎回来</h1>
         <p class="auth-sub">登录后继续构建你的软件</p>
 
-        <form onsubmit="return false">
+        <form id="auth-form">
           <div class="auth-field">
             <label for="account">账号</label>
             <input id="account" type="text" placeholder="用户名，例如 demo" autocomplete="username" />
@@ -123,7 +123,7 @@
           </button>
         </div>
 
-        <p class="auth-foot">还没有账号？<a href="#">立即注册</a></p>
+        <p class="auth-foot">还没有账号？<a href="./login.html?mode=register" id="to-register">立即注册</a></p>
         <p class="auth-legal">继续即表示同意《服务条款》与《隐私政策》</p>
       </div>
     </div>
@@ -139,6 +139,59 @@
         const query = new URLSearchParams(location.search);
         document.documentElement.dataset.theme = query.get("theme") || safeTheme() || "light";
         document.documentElement.dataset.style = query.get("style") || "";
+      })();
+    </script>
+    <script src="../system/demo.js"></script>
+    <script>
+      // 假登录：不校验账号密码，点一下就算登录（演示用）
+      (function () {
+        const params = new URLSearchParams(location.search);
+        const isRegister = params.get("mode") === "register";
+        const next = params.get("next") || "";
+        const prompt = params.get("prompt") || "";
+
+        if (isRegister) {
+          document.title = "NexusHub · 注册";
+          const h1 = document.querySelector("h1");
+          const sub = document.querySelector(".auth-sub");
+          const submit = document.querySelector(".auth-submit");
+          const aux = document.querySelector(".row-aux");
+          const foot = document.querySelector(".auth-foot");
+          if (h1) h1.textContent = "创建账号";
+          if (sub) sub.textContent = "注册后就能开始构建";
+          if (submit) submit.textContent = "注册并开始";
+          if (aux) aux.style.display = "none";
+          if (foot) foot.innerHTML = '已有账号？<a href="./login.html">去登录</a>';
+        }
+
+        function go() {
+          const account = document.querySelector("#account");
+          const name = (account && account.value ? account.value : "").trim() || "评委";
+          if (window.NexusDemo) window.NexusDemo.login(name);
+
+          let target = "./projects.html";
+          if (prompt) target = "./workbench.html?run=new&prompt=" + encodeURIComponent(prompt);
+          else if (next === "workbench") target = "./workbench.html?run=new";
+          else if (next) target = "./" + next + ".html";
+          location.href = target;
+        }
+
+        const form = document.getElementById("auth-form");
+        if (form) form.addEventListener("submit", function (event) { event.preventDefault(); go(); });
+        document.querySelectorAll(".oauth button").forEach(function (btn) {
+          btn.addEventListener("click", go);
+        });
+
+        const toRegister = document.getElementById("to-register");
+        if (toRegister) {
+          toRegister.addEventListener("click", function (event) {
+            event.preventDefault();
+            const q = new URLSearchParams({ mode: "register" });
+            if (next) q.set("next", next);
+            if (prompt) q.set("prompt", prompt);
+            location.href = "./login.html?" + q.toString();
+          });
+        }
       })();
     </script>
   </body>
