@@ -4,8 +4,11 @@ MySQL 的建表脚本。**表结构的唯一事实来源是 `docs/05-数据库�
 
 ```
 database/
+├─ admin.sql             # 管理员种子（admin / 123456，可重复执行）
 └─ schema/
-   └─ 001_init.sql     # 10 张表的完整 DDL（幂等，可重复执行）
+   ├─ 001_init.sql       # 10 张表的完整 DDL（幂等，可重复执行）
+   ├─ 002_provisioner.sql # 建库用的供给账号（只有 CREATE/DROP DATABASE）
+   └─ 003_runtime.sql    # 运行时记录表（run_databases / run_runtimes）
 ```
 
 ## 怎么用

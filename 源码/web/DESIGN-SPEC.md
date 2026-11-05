@@ -3,8 +3,8 @@
 > 这份文档描述的是 `web/` 目录下那套**纯静态原型**：它为什么看起来是这样、动效怎么做的、
 > 每个数值是几、哪些坑必须避开。写它的目的是让这套东西能被复述、被复用、被改造成规范。
 >
-> 覆盖范围：`web/pages/*.html`（欢迎、登录、项目、工作台、设置）、`web/system/app.css`、
-> `web/system/glass.css`。所有数值都是代码里真实存在的值，不是估算。
+> 覆盖范围：`web/<页面>/index.html`（欢迎、登录、项目、工作台、设置）、`web/common/app.css`、
+> `web/common/glass.css`。所有数值都是代码里真实存在的值，不是估算。
 
 ---
 
@@ -656,13 +656,13 @@ document.documentElement.dataset.style = "" | "glass";
 
 ```
 web/
-  system/app.css      设计令牌 + 通用组件（按钮/胶囊/面板/表单/图标容器）
-  system/glass.css    玻璃态外观（只覆盖表面）
-  pages/welcome.html  营销页（含 welcome.css）
-  pages/login.html    登录
-  pages/projects.html 我的项目
-  pages/workbench.html 树 + 三栏 + 代码流（本文件第 5、6 节的主体）
-  pages/settings.html 设置
+  common/app.css      设计令牌 + 通用组件（按钮/胶囊/面板/表单/图标容器）
+  common/glass.css    玻璃态外观（只覆盖表面）
+  welcome/  营销页（含 welcome.css）
+  login/    登录
+  projects/ 我的项目
+  workbench/ 树 + 三栏 + 代码流（本文件第 5、6 节的主体）
+  settings/ 设置
   shots/              迭代截图
 ```
 

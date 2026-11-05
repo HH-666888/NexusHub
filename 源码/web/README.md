@@ -4,8 +4,8 @@
 
 ```
 web/
-  system/app.css     设计系统：两套主题的变量 + 按钮/胶囊/面板/表单/画布节点
-  system/glass.css   玻璃态外观：只覆盖表面（背景色块 / 半透卡片 / 发光按钮），`?style=glass` 启用
+  common/app.css     设计系统：两套主题的变量 + 按钮/胶囊/面板/表单/画布节点
+  common/glass.css   玻璃态外观：只覆盖表面（背景色块 / 半透卡片 / 发光按钮），`?style=glass` 启用
   pages/             六个页面（这一版的全部交付）
     welcome.html       首页（营销页，未登录）
     login.html         登录
@@ -19,13 +19,13 @@ web/
 ```
 
 本地静态服务：`python -m http.server 5600 --directory web`，
-然后开 `http://127.0.0.1:5600/pages/welcome.html`（`?theme=dark` 直接看深色）。
+然后开 `http://127.0.0.1:8000/welcome/`（`?theme=dark` 直接看深色）。
 
 截图（固定窗口尺寸，方便逐版对比）：
 
 ```bash
 cd frontend
-node scripts/shot.mjs "http://127.0.0.1:5600/pages/welcome.html?theme=light" \
+node ../tools/shot.mjs "http://127.0.0.1:8000/welcome/?theme=light" \
   "../web/shots/xx.png" "nexus_session=dummy" 960 1440
 ```
 
@@ -53,7 +53,7 @@ node scripts/shot.mjs "http://127.0.0.1:5600/pages/welcome.html?theme=light" \
 | `--primary-soft` | `#eef4ff` | `rgba(59,130,246,.14)` | 选中态底色 |
 | `--ok` / `--warn` / `--fail` | `#16a34a` / `#d97706` / `#dc2626` | `#4ade80` / `#fbbf24` / `#f87171` | 验收通过 / 待确认 / 未通过 |
 
-## 树型工作流 + 三栏工作台（`pages/workbench.html`）
+## 树型工作流 + 三栏工作台（`workbench/`）
 
 这一页把之前定的两条并到了一起，不再是四象限：
 
@@ -141,7 +141,7 @@ node scripts/shot.mjs "http://127.0.0.1:5600/pages/welcome.html?theme=light" \
 
 深色同理：`?theme=dark&style=glass`。
 
-玻璃态的实现原则（`system/glass.css`）：
+玻璃态的实现原则（`common/glass.css`）：
 
 1. **背景必须先有颜色** —— 没有色块就没有"透"可言，所以加了四团模糊径向渐变（蓝 / 青 / 浅蓝 / 靛）；
 2. **卡片半透 + backdrop-filter** —— `rgba(255,255,255,.88→.46)` 斜向渐变，内描边 1px 白色做高光，外侧只留一层柔影；
