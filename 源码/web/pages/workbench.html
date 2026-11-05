@@ -1736,6 +1736,17 @@
           if (status === "done") render();
         },
 
+        /** 重播单个文件前，把它清空 */
+        resetFile(path) {
+          const file = fileOf(path);
+          if (!file) return;
+          file.lines = [];
+          file.state = "live";
+          LIVE.buf.set(path, "");
+          if (codeView.current === path) liveRenderCurrent();
+          renderTabs();
+        },
+
         /** 文件写完：把对应分支从「写入中」改成「完成」 */
         markBranchDone(path) {
           const task = TASKS.find((item) => item.file === path);

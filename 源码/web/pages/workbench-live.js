@@ -67,8 +67,8 @@
   }
 
   /** 一条事件 → 页面动作。回放与实时都走这里，所以刷新不会丢状态。 */
-  function apply(kind, payload, at) {
-    state.events.push({ kind, payload, at });
+  function apply(kind, payload, at, record) {
+    if (record !== false) state.events.push({ kind, payload, at });
 
     if (kind === "phase") {
       const index = PHASE_OF[payload.phase] ?? 2;
@@ -384,11 +384,89 @@
     }
   }
 
+  // ───────── 重播（本地，不请求后端） ─────────
+
+  function rebind(id, handler) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const clone = el.cloneNode(true);
+    el.parentNode.replaceChild(clone, el);
+    clone.addEventListener("click", handler);
+  }
+
+  function stopReplay() {
+    if (state.timer) {
+      clearInterval(state.timer);
+      state.timer = null;
+    }
+  }
+
+  function replayAll() {
+    stopReplay();
+    wb.resetFiles();
+    wb.setStage(0);
+    wb.setProgress(0);
+    wb.setStatus("running");
+
+    let index = 0;
+    state.timer = setInterval(function () {
+      if (index >= state.events.length) {
+        stopReplay();
+        wb.setStatus("done");
+        wb.setProgress(100);
+        return;
+      }
+      const item = state.events[index++];
+      apply(item.kind, item.payload, item.at, false);
+    }, 150);
+  }
+
+  function replayFile() {
+    stopReplay();
+    const name = document.getElementById("file-name");
+    const path = name ? name.textContent.trim() : "";
+    if (!path) return;
+    const items = state.events.filter(function (item) {
+      return item.kind === "file" && item.payload && item.payload.path === path;
+    });
+    if (!items.length) return;
+
+    wb.resetFile(path);
+    let index = 0;
+    state.timer = setInterval(function () {
+      if (index >= items.length) {
+        stopReplay();
+        return;
+      }
+      const item = items[index++];
+      wb.feedFile(item.payload.path, item.payload.lang, item.payload.delta || "", Boolean(item.payload.done));
+    }, 120);
+  }
+
+  function backToLive() {
+    stopReplay();
+    wb.resetFiles();
+    state.events.forEach(function (item) {
+      apply(item.kind, item.payload, item.at, false);
+    });
+    if (state.run) applyRun(state.run);
+  }
+
   // ───────── 启动 ─────────
 
   (async function boot() {
     document.body.classList.add("is-live");
     wb.setEvent("已连接，等待第一个事件…");
+
+    // 顶栏预算用设置里的真实上限
+    try {
+      const settings = await window.api.settings();
+      const limit = settings && typeof settings.budgetPerRun === "number" ? settings.budgetPerRun : null;
+      const pill = document.querySelector(".appbar-right .pill-plain");
+      if (pill && limit !== null) pill.textContent = "¥0.00 / ¥" + Number(limit).toFixed(2);
+    } catch (error) {
+      /* 读不到就保持原样 */
+    }
 
     const run = await window.api.run(id);
     if (run) applyRun(run);
@@ -403,6 +481,9 @@
 
     wireControls();
     wireTabs();
+    rebind("replay", replayAll);
+    rebind("replay-file", replayFile);
+    rebind("back-live", backToLive);
     subscribe();
   })();
 })();
