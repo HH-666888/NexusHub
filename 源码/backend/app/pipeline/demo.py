@@ -543,6 +543,9 @@ def _emit(run_id: str, event: Any) -> None:
     _write(run_id, event.kind, event.model_dump(by_alias=True, exclude_none=True))
 
 
+_TASK_TIMES: dict[str, int] = {}
+
+
 def _task(
     run_id: str,
     *,
@@ -568,6 +571,14 @@ def _task(
     }
     if reason:
         task["reason"] = reason
+
+    # 耗时：started 记一下，done/failed 结算；前端点开任务就能看到"花了多久"
+    stamp = now_ms()
+    if action == "started":
+        _TASK_TIMES[task_id] = stamp
+    elif action in ("done", "failed"):
+        task["ms"] = stamp - _TASK_TIMES.pop(task_id, stamp)
+
     _safe_write(run_id, "task", {"kind": "task", "action": action, "task": task})
 
 
