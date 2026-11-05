@@ -57,6 +57,7 @@ class GeneratePhase(StrEnum):
     GENERATING = "generating"
     CHECKING = "checking"
     SAVING = "saving"
+    DELIVER = "deliver"
     DONE = "done"
     FAILED = "failed"
 
