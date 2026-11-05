@@ -12,6 +12,10 @@ class ModuleBuildSummary(ApiModel):
     name: str
     summary: str
     cost_cny: float
+    # 工作台树要用：这个模块产出哪个文件、现在什么状态、写到几成
+    file: str = ""
+    state: str = "pending"   # pending / live / done / failed
+    progress: int = 0
 
 
 class ModuleBuildFailureSummary(ApiModel):

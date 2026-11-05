@@ -13,6 +13,8 @@ from app.domain.artifact import Artifact
 from app.domain.check import CheckResult, CheckSummary, StageCheck
 from app.domain.cost import PriceTier
 from app.domain.event import (
+    FileEvent,
+    VerdictEvent,
     ArchEvent,
     ArtifactEvent,
     CheckEvent,
@@ -111,3 +113,18 @@ def to_frame(event: GenerateEvent) -> str:
     """事件 → SSE 帧。序列化统一走这里，保证与写库的 JSON 是同一份。"""
     payload: dict[str, Any] = event.model_dump(by_alias=True, mode="json")
     return format_event(payload)
+
+
+def file_event(
+    *,
+    path: str,
+    lang: str,
+    delta: str = "",
+    done: bool = False,
+    lines: int = 0,
+) -> FileEvent:
+    return FileEvent(path=path, lang=lang, delta=delta, done=done, lines=lines)
+
+
+def verdict_event(*, layers: list[dict], passed: int, total: int) -> VerdictEvent:
+    return VerdictEvent(layers=layers, passed=passed, total=total)

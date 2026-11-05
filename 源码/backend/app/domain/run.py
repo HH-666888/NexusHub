@@ -10,12 +10,14 @@ from app.domain.base import ApiModel
 
 
 class StageId(StrEnum):
-    SPEC = "spec"
-    ARCH = "arch"
-    UI = "ui"
+    """六道工序。刻意用最简单、最短的词：一眼能读懂，也不用猜缩写。"""
+
+    PLAN = "plan"
+    DESIGN = "design"
     BUILD = "build"
     ASSEMBLE = "assemble"
-    VERIFY = "verify"
+    TEST = "test"
+    DELIVER = "deliver"
 
 
 class RunStatus(StrEnum):

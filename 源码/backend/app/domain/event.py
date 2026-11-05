@@ -41,6 +41,9 @@ class EventKind(StrEnum):
     TOOL = "tool"
     RETRIEVAL = "retrieval"
     COST = "cost"
+    # 工作台流式代码与验收结果（本轮新增，已回写契约书 §7）
+    FILE = "file"
+    VERDICT = "verdict"
 
 
 class GeneratePhase(StrEnum):
@@ -152,6 +155,30 @@ class CostEvent(ApiModel):
     total_cny: float
 
 
+class FileEvent(ApiModel):
+    """流式代码：只发增量，完整内容最后落 artifacts。
+
+    - `delta` 为空且 `done=True`：表示这个文件开写/收尾
+    - `lines`：当前累计行数，前端直接显示「流式写入 · N 行」
+    """
+
+    kind: Literal["file"] = "file"
+    path: str
+    lang: str
+    delta: str = ""
+    done: bool = False
+    lines: int = 0
+
+
+class VerdictEvent(ApiModel):
+    """三层验收结果（db / api / ui）。"""
+
+    kind: Literal["verdict"] = "verdict"
+    layers: list[dict] = []
+    passed: int = 0
+    total: int = 0
+
+
 GenerateEvent = Annotated[
     PhaseEvent
     | ReasoningEvent
@@ -165,6 +192,8 @@ GenerateEvent = Annotated[
     | ArtifactEvent
     | ErrorEvent
     | RetrievalEvent
-    | CostEvent,
+    | CostEvent
+    | FileEvent
+    | VerdictEvent,
     Field(discriminator="kind"),
 ]
