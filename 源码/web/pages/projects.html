@@ -324,19 +324,50 @@
           grid.appendChild(box);
         }
 
+        let allRuns = [];
+        let filter = "all";
+        const segButtons = Array.from(document.querySelectorAll(".seg button"));
+
+        function renderList() {
+          clearDemoCards();
+          const list = filter === "all" ? allRuns : allRuns.filter((run) => run.status === filter);
+          if (count) count.textContent = String(list.length);
+          if (list.length === 0) {
+            showEmpty();
+            return;
+          }
+          list.forEach((run) => grid.appendChild(cardFor(run)));
+        }
+
+        function paintFilters() {
+          const byStatus = { running: 0, done: 0, failed: 0 };
+          allRuns.forEach((run) => { byStatus[run.status] = (byStatus[run.status] || 0) + 1; });
+          const labels = { all: "全部", running: "进行中", done: "已完成", failed: "未通过" };
+          segButtons.forEach((btn) => {
+            const key = btn.dataset.filter || "all";
+            btn.textContent = labels[key] + (key === "all" ? "" : " " + (byStatus[key] || 0));
+            btn.classList.toggle("is-on", key === filter);
+          });
+        }
+
+        segButtons.forEach((btn, i) => {
+          btn.dataset.filter = ["all", "running", "done", "failed"][i] || "all";
+          btn.addEventListener("click", function () {
+            filter = btn.dataset.filter;
+            paintFilters();
+            renderList();
+          });
+        });
+
         async function load() {
           if (!window.api) return;
           const runs = await window.api.runs(24);
           if (!Array.isArray(runs)) return; // 没有后端 / 未登录：保留演示卡片
 
+          allRuns = runs;
           clearDemoCards();
-          if (count) count.textContent = String(runs.length);
-
-          if (runs.length === 0) {
-            showEmpty();
-            return;
-          }
-          runs.forEach((run) => grid.appendChild(cardFor(run)));
+          paintFilters();
+          renderList();
         }
 
         async function create() {
