@@ -135,6 +135,13 @@ def summary():
 """,
     },
     "checks": ["页面能打开", "能记一笔", "合计数字正确"],
+    "failure": {
+        "case": "合计数字正确",
+        "reason": "SUM 在 SQLite 里返回字符串，前端拼成 0.0050.00 这样的数字",
+        "file": "api/main.py",
+        "find": 'return {"total": total}',
+        "replace": 'return {"total": float(total or 0)}',
+    },
 }
 
 _TODO = {
@@ -249,6 +256,13 @@ def items():
 """,
     },
     "checks": ["页面能打开", "能加一条", "能勾选完成"],
+    "failure": {
+        "case": "能勾选完成",
+        "reason": "done 字段在 SQLite 里是整数，1 - done 遇到 NULL 会算成 NULL，勾选没反应",
+        "file": "api/main.py",
+        "find": "UPDATE todos SET done = 1 - done WHERE id = ?",
+        "replace": "UPDATE todos SET done = CASE COALESCE(done, 0) WHEN 1 THEN 0 ELSE 1 END WHERE id = ?",
+    },
 }
 
 _POMODORO = {
@@ -340,6 +354,13 @@ def items():
 """,
     },
     "checks": ["页面能打开", "能开始计时", "刷新后会话还在"],
+    "failure": {
+        "case": "刷新后会话还在",
+        "reason": "重新进入页面时 planned_sec 取到 NULL，计时器从 0 开始",
+        "file": "api/main.py",
+        "find": "SELECT id, started_at, planned_sec FROM sessions",
+        "replace": "SELECT id, started_at, COALESCE(planned_sec, 1500) FROM sessions",
+    },
 }
 
 
@@ -749,13 +770,75 @@ def _script(run_id: str, pace: float) -> None:
         return
     _set_stage(run_id, StageId.TEST)
     _emit(run_id, ev.phase("checking", "自动测试"))
+
+    files = dict(template["files"])          # 修复会改动这里，最终产物用改后的
+    failure = template.get("failure") or {}
     results = []
+
     for index, name in enumerate(template["checks"]):
         task_id = f"t-test-{index + 1}"
         _task(run_id, task_id=task_id, stage="test", title=name, kind="test", action="created")
         time.sleep(pace)
         _task(run_id, task_id=task_id, stage="test", title=name, kind="test", action="started")
         time.sleep(pace)
+
+        # 最后一条用例先失败一次，然后回环修复、复测通过
+        if failure and name == failure["case"]:
+            _task(run_id, task_id=task_id, stage="test", title=name, kind="test",
+                  action="failed", reason=failure["reason"])
+            _emit(run_id, ev.check(results, CheckSummary(
+                passed=len(results), total=len(template["checks"]), failed=1)))
+            _emit(run_id, ev.reasoning("先别往下走：" + failure["reason"]))
+
+            if not _wait_while_paused(run_id):
+                return
+
+            # 回到第 3 道修代码
+            _set_stage(run_id, StageId.BUILD)
+            _emit(run_id, ev.phase("building", "回环修复"))
+            fix_id = "t-fix-1"
+            fix_title = "修复：" + failure["case"]
+            _task(run_id, task_id=fix_id, stage="build", title=fix_title, kind="fix",
+                  action="created", file=failure["file"], note="按失败原因定位")
+            time.sleep(pace)
+            _task(run_id, task_id=fix_id, stage="build", title=fix_title, kind="fix",
+                  action="started", file=failure["file"])
+
+            patched = files[failure["file"]].replace(failure["find"], failure["replace"], 1)
+            files[failure["file"]] = patched
+            _emit(run_id, {
+                "kind": "file",
+                "path": failure["file"],
+                "lang": _lang_of(failure["file"]),
+                "delta": patched,
+                "replace": True,
+                "done": True,
+                "lines": patched.count(chr(10)),
+            })
+            time.sleep(pace)
+            _task(run_id, task_id=fix_id, stage="build", title=fix_title, kind="fix",
+                  action="done", file=failure["file"], note="改完")
+
+            total = _add_cost(run_id, 0.02)
+            _safe_write(run_id, "cost", {"kind": "cost", "stage": "build",
+                                         "deltaCny": 0.02, "totalCny": round(total, 4)})
+
+            # 回到第 5 道复测
+            if not _wait_while_paused(run_id):
+                return
+            _set_stage(run_id, StageId.TEST)
+            _emit(run_id, ev.phase("checking", "复测"))
+            retest_id = f"t-test-retest-{index + 1}"
+            retest_title = "复测：" + name
+            _task(run_id, task_id=retest_id, stage="test", title=retest_title, kind="test", action="created")
+            time.sleep(pace)
+            _task(run_id, task_id=retest_id, stage="test", title=retest_title, kind="test", action="started")
+            time.sleep(pace)
+            _task(run_id, task_id=retest_id, stage="test", title=retest_title, kind="test",
+                  action="done", note="通过")
+            results.append(CheckResult(name=name, pass_=True, detail="修复后通过"))
+            continue
+
         _task(run_id, task_id=task_id, stage="test", title=name, kind="test", action="done", note="通过")
         results.append(CheckResult(name=name, pass_=True, detail="通过"))
 
@@ -776,11 +859,11 @@ def _script(run_id: str, pace: float) -> None:
     ]
     _emit(run_id, {"kind": "verdict", "layers": layers, "passed": 3, "total": 3})
 
-    html = template["files"]["web/index.html"]
+    html = files["web/index.html"]
     saved = _save_artifact(run_id, "index.html", "html", html)
     _save_artifact(run_id, "spec.json", "json", spec.model_dump_json(by_alias=True, indent=2))
     try:
-        write_workspace(run_id, template)
+        write_workspace(run_id, {"files": files})
     except Exception:  # noqa: BLE001
         pass
     _emit(run_id, {"kind": "artifact", "artifact": {"name": saved["name"], "kind": saved["kind"], "bytes": saved["bytes"]}})
