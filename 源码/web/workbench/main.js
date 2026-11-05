@@ -66,11 +66,48 @@
       /* 折叠规则：超过 5 个就先折叠，只画 5 个 + 一枚"还有 N 个" */
       const COLLAPSE_AT = 5;
 
+      /* 真实任务仓库：每道工序下面都可以有任务，不再只有第 3 道 */
+      const STAGE_ORDER = ["plan", "design", "build", "assemble", "test", "deliver"];
+      const TASK_STORE = { tasks: [] };
+
+      /** 把后端任务转成树上的卡片刻度 */
+      function toCard(task) {
+        const state =
+          task.state === "done" ? "done"
+            : task.state === "running" ? "live"
+              : task.state === "failed" ? "fail" : "wait";
+        return {
+          id: task.id,
+          title: task.title,
+          file: task.file || task.note || "",
+          note: task.note || "",
+          state,
+          progress: state === "done" ? 100 : state === "live" ? 45 : 0,
+          parallel: state === "live",
+        };
+      }
+
+      function tasksOf(stageIndex, limit) {
+        const stage = STAGE_ORDER[stageIndex];
+        const mine = TASK_STORE.tasks.filter((task) => task.stage === stage).map(toCard);
+        if (!mine.length && stageIndex === 2) {
+          // 演示态：没有真实任务时，继续用写死的三个分支
+          const expanded = view.expanded.has(stageIndex);
+          const list = expanded || TASKS.length <= limit ? TASKS.slice() : TASKS.slice(0, limit);
+          return limit ? list.slice(0, limit) : list;
+        }
+        return limit ? mine.slice(0, limit) : mine;
+      }
+
+      function taskCountOf(stageIndex) {
+        const stage = STAGE_ORDER[stageIndex];
+        const mine = TASK_STORE.tasks.filter((task) => task.stage === stage);
+        if (!mine.length && stageIndex === 2 && TASK_STORE.tasks.length === 0) return TASKS.length;
+        return mine.length;
+      }
+
       function childrenOf(stageIndex, limit = COLLAPSE_AT) {
-        if (stageIndex !== 2) return [];
-        const expanded = view.expanded.has(stageIndex);
-        if (expanded || TASKS.length <= limit) return TASKS.slice();
-        return TASKS.slice(0, limit);
+        return tasksOf(stageIndex, limit);
       }
 
       /** 子树占多高：分支多、卡多，占用就大；这是"行距自动拉长"的依据 */
@@ -83,7 +120,9 @@
       }
 
       let timers = [];
-      const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+      // 实时模式下节点是随时增删的，别做错峰入场动画（清除定时器会把它们永远藏住）
+      const later = (fn, ms) =>
+        document.body.classList.contains("is-live") ? fn() : timers.push(setTimeout(fn, ms));
       const clearTimers = () => {
         timers.forEach(clearTimeout);
         timers = [];
@@ -229,8 +268,8 @@
           });
 
           // 折叠时在末尾补一枚"还有 N 个"
-          const hidden = TASKS.length - row.kids.length;
-          if (row.index === 2 && hidden > 0) {
+          const hidden = taskCountOf(row.index) - row.kids.length;
+          if (hidden > 0) {
             const top = firstTop + row.kids.length * (row.m.h + row.m.gap);
             nodes.push({
               kind: "chip",
@@ -289,7 +328,7 @@
         const measure = (limit, sw, tw, gap) => stages.map((stage, i) => {
           const index = view.focus === null ? i : view.focus;
           const kids = childrenOf(index, limit);
-          const hidden = index === 2 ? TASKS.length - kids.length : 0;
+          const hidden = taskCountOf(index) - kids.length;
           const slots = kids.length + (hidden > 0 ? 1 : 0);
           const kidsW = slots ? slots * tw + (slots - 1) * taskGap : 0;
           return { stage, index, kids, hidden, kidsW, colW: Math.max(sw, kidsW), sw, tw };
@@ -474,7 +513,8 @@
           const liveIndex = STAGES.findIndex((s) => s.state === "live");
           const doneCount = STAGES.filter((s) => s.state === "done").length;
           const current = liveIndex >= 0 ? liveIndex + 1 : Math.max(doneCount, 1);
-          pill.innerHTML = `<i class="pulse-dot"></i>运行中 · 第 ${current} / 6 道 · ${TASKS.length} 个分支（${parallel} 个并行）`;
+          const total = TASK_STORE.tasks.length || TASKS.length;
+          pill.innerHTML = `<i class="pulse-dot"></i>运行中 · 第 ${current} / 6 道 · ${total} 个任务（${parallel} 个并行）`;
         }
         const name = document.getElementById("focus-name");
         if (view.focus !== null) {
@@ -931,6 +971,47 @@
         lineCount = document.getElementById("line-count");
       }
 
+      function renderTaskList() {
+        const list = document.querySelector(".t-child");
+        if (!list || !TASK_STORE.tasks.length) return;
+        const order = STAGE_ORDER;
+        const sorted = TASK_STORE.tasks.slice().sort(function (a, b) {
+          return order.indexOf(a.stage) - order.indexOf(b.stage);
+        });
+        list.innerHTML = sorted
+          .map(function (task) {
+            const stateText =
+              task.state === "done" ? "完成"
+                : task.state === "running" ? "进行中"
+                  : task.state === "failed" ? "失败" : "等待";
+            const cls = task.state === "running" ? " is-live" : task.state === "failed" ? " is-fail" : "";
+            const short = String(task.file || "").split("/").pop();
+            const label = task.title + (short ? " · " + short : task.note ? " · " + task.note : "");
+            return '<div class="t-item' + cls + '" data-task="' + task.id + '">' +
+              '<span class="name">' + label + "</span>" +
+              '<span class="state">' + stateText + "</span></div>";
+          })
+          .join("");
+
+        const count = document.querySelector(".tasks-head h2 .pill");
+        if (count) count.textContent = TASK_STORE.tasks.length + " 项";
+      }
+
+      function refreshTaskViews() {
+        renderTaskList();
+
+        if (TASK_STORE.tasks.length) {
+          const done = TASK_STORE.tasks.filter(function (task) { return task.state === "done"; }).length;
+          const pct = Math.round((done / TASK_STORE.tasks.length) * 100);
+          const pctEl = document.getElementById("pct");
+          const barEl = document.getElementById("bar");
+          if (pctEl) pctEl.textContent = pct + "%";
+          if (barEl) barEl.style.width = pct + "%";
+        }
+
+        render();
+      }
+
       window.__wb = {
         isLive: true,
 
@@ -969,6 +1050,11 @@
 
         /** 用真实任务替换第 3 道下面的分支卡与侧栏子项 */
         setBranches(items) {
+          if (TASK_STORE.tasks.length) {
+            // 已经有真实任务了，这里只更新道次说明，别把侧栏/树覆盖回演示数据
+            if (STAGES[2]) STAGES[2].note = items.length + " 个任务并行";
+            return;
+          }
           TASKS.length = 0;
           items.forEach((it) => {
             TASKS.push({
@@ -994,7 +1080,29 @@
 
           const count = document.querySelector(".tasks-head h2 .pill");
           if (count) count.textContent = items.length + " 项";
-          if (STAGES[2]) STAGES[2].note = items.length + " 个分支并行";
+          if (STAGES[2]) STAGES[2].note = items.length + " 个任务并行";
+          render();
+        },
+
+        /** 任务：created / started / done / failed 都走这里 */
+        addTask(task) {
+          if (!task || !task.id) return;
+          const index = TASK_STORE.tasks.findIndex((item) => item.id === task.id);
+          if (index >= 0) TASK_STORE.tasks[index] = Object.assign({}, TASK_STORE.tasks[index], task);
+          else TASK_STORE.tasks.push(Object.assign({}, task));
+          refreshTaskViews();
+        },
+
+        updateTask(id, patch) {
+          const task = TASK_STORE.tasks.find((item) => item.id === id);
+          if (!task) return;
+          Object.assign(task, patch || {});
+          refreshTaskViews();
+        },
+
+        clearTasks() {
+          TASK_STORE.tasks.length = 0;
+          renderTaskList();
           render();
         },
 

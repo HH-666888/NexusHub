@@ -94,6 +94,11 @@
       return;
     }
 
+    if (kind === "task") {
+      if (payload && payload.task) wb.addTask(payload.task);
+      return;
+    }
+
     if (kind === "modules") {
       const items = (payload.batch && payload.batch.modules) || [];
       if (items.length) wb.setBranches(items);
@@ -404,6 +409,7 @@
   function replayAll() {
     stopReplay();
     wb.resetFiles();
+    if (wb.clearTasks) wb.clearTasks();
     wb.setStage(0);
     wb.setProgress(0);
     wb.setStatus("running");
@@ -446,6 +452,7 @@
   function backToLive() {
     stopReplay();
     wb.resetFiles();
+    if (wb.clearTasks) wb.clearTasks();
     state.events.forEach(function (item) {
       apply(item.kind, item.payload, item.at, false);
     });
