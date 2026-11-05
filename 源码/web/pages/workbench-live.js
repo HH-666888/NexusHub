@@ -263,19 +263,19 @@
       const pane = document.getElementById("pane-" + name);
       if (pane) pane.style.display = "none";
     });
-    if (body) body.style.display = which === "代码" ? "" : "none";
+    const isCode = which === "代码";
+    if (body) body.style.display = isCode ? "" : "none";
     const fileTabs = document.getElementById("file-tabs");
-    if (fileTabs) fileTabs.style.display = which === "代码" ? "" : "none";
+    if (fileTabs) fileTabs.style.display = isCode ? "" : "none";
+    const fileRow = document.querySelector(".code-file");
+    if (fileRow) fileRow.style.display = isCode ? "" : "none";
+    const reviewBar = document.getElementById("review-bar");
+    if (reviewBar) reviewBar.classList.toggle("is-hidden", !isCode);
 
     if (which === "预览") {
       const pane = ensurePane("preview");
       pane.style.display = "block";
-      if (!pane.querySelector("iframe")) {
-        const frame = document.createElement("iframe");
-        frame.style.cssText = "width:100%;height:100%;border:1px solid var(--line);border-radius:12px;background:#fff;";
-        frame.src = "/api/v1/runs/" + encodeURIComponent(id) + "/artifact";
-        pane.appendChild(frame);
-      }
+      openPreview(pane);
     }
 
     if (which === "验收") {
@@ -283,6 +283,34 @@
       pane.style.display = "block";
       renderVerdict();
     }
+  }
+
+  /** 预览优先用真正跑起来的进程；起不来再退回产物 HTML */
+  async function openPreview(pane) {
+    if (pane.dataset.ready === "1") return;
+    pane.dataset.ready = "1";
+    pane.innerHTML = '<p style="color:var(--text-3);font-size:13px;">正在启动预览…</p>';
+
+    let src = "/api/v1/runs/" + encodeURIComponent(id) + "/artifact";
+    try {
+      const response = await fetch("/api/v1/runs/" + encodeURIComponent(id) + "/runtime", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (response.ok) {
+        const info = await response.json();
+        if (info.previewUrl) src = info.previewUrl;
+      }
+    } catch (error) {
+      /* 起不来就用产物 HTML */
+    }
+
+    const frame = document.createElement("iframe");
+    frame.style.cssText = "width:100%;height:100%;border:1px solid var(--line);border-radius:12px;background:#fff;";
+    frame.src = src;
+    pane.innerHTML = "";
+    pane.appendChild(frame);
+    pane.dataset.ready = "0";
   }
 
   function renderVerdict() {
