@@ -23,7 +23,7 @@
           <div class="auth-field" data-field="username">
             <label for="username">用户名</label>
             <div class="input-wrap">
-              <input id="username" name="username" type="text" placeholder="2–20 位，中文 / 字母 / 数字 / _ / -" autocomplete="username" />
+              <input id="username" name="username" type="text" placeholder="4–20 个字符" autocomplete="username" />
             </div>
             <p class="field-tip" data-tip="username"></p>
           </div>
@@ -31,7 +31,7 @@
           <div class="auth-field" data-field="password">
             <label for="password">密码</label>
             <div class="input-wrap">
-              <input id="password" name="password" type="password" placeholder="6–128 位，至少两类字符" autocomplete="new-password" />
+              <input id="password" name="password" type="password" placeholder="至少 6 位" autocomplete="new-password" />
               <button class="eye-btn" type="button" id="eye-btn" aria-label="显示密码">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden>
                   <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" />
@@ -82,16 +82,6 @@
         const submitBtn = document.getElementById("submit-btn");
         const eyeBtn = document.getElementById("eye-btn");
 
-        const NAME_RE = /^[\u4e00-\u9fa5A-Za-z0-9_-]{2,20}$/;
-
-        function classesOf(value) {
-          let count = 0;
-          if (/[A-Za-z]/.test(value)) count += 1;
-          if (/[0-9]/.test(value)) count += 1;
-          if (/[^A-Za-z0-9]/.test(value)) count += 1;
-          return count;
-        }
-
         function tip(name, message, state) {
           const box = document.querySelector('[data-tip="' + name + '"]');
           const field = document.querySelector('[data-field="' + name + '"]');
@@ -116,28 +106,6 @@
           input.addEventListener("input", function () { tip(input.name, ""); });
         });
 
-        // 用户名失焦：格式 + 是否被占用
-        username.addEventListener("blur", async function () {
-          const value = username.value.trim();
-          if (!value) return;
-          if (!NAME_RE.test(value)) {
-            tip("username", "用户名需 2–20 位，只能用中文、字母、数字、下划线或连字符", "error");
-            return;
-          }
-
-          tip("username", "正在检查…", "checking");
-          const taken = window.api ? await window.api.usernameTaken(value) : null;
-          if (taken === null) {
-            tip("username", "暂时无法校验，提交时再检查", "");
-            return;
-          }
-          if (taken) {
-            tip("username", "这个用户名已经被用了", "error");
-            return;
-          }
-          tip("username", "用户名可用", "ok");
-        });
-
         eyeBtn.addEventListener("click", function () {
           const show = password.type === "password";
           password.type = show ? "text" : "password";
@@ -159,19 +127,14 @@
           const pwd2 = confirm.value;
 
           if (!name) { tip("username", "请填写用户名", "error"); username.focus(); return; }
-          if (!NAME_RE.test(name)) {
-            tip("username", "用户名需 2–20 位，只能用中文、字母、数字、下划线或连字符", "error");
+          if (name.length < 4 || name.length > 20) {
+            tip("username", "用户名需 4–20 个字符", "error");
             username.focus();
             return;
           }
           if (!pwd) { tip("password", "请填写密码", "error"); password.focus(); return; }
-          if (pwd.length < 6 || pwd.length > 128) {
-            tip("password", "密码长度需在 6–128 位之间", "error");
-            password.focus();
-            return;
-          }
-          if (classesOf(pwd) < 2) {
-            tip("password", "密码至少包含两类字符（字母 / 数字 / 符号）", "error");
+          if (pwd.length < 6) {
+            tip("password", "密码至少 6 位", "error");
             password.focus();
             return;
           }

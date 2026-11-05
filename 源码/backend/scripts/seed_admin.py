@@ -1,7 +1,7 @@
 """种一个演示管理员账号：admin / 123456。
 
-说明：注册接口要求"至少两类字符"，而 123456 只有数字，走正常注册会被拒。
-这个脚本走数据层直接落库（哈希仍然用 argon2id），只用于比赛演示账号。
+规则放宽后（只校验长度：用户名 4–20、密码 ≥6），123456 走正常注册即可，
+不再需要绕过校验。
 
 可重复执行：已存在就跳过。
 用法（在 源码/backend 下）：
@@ -11,8 +11,9 @@
 from __future__ import annotations
 
 from app.db.session import SessionLocal
+from app.features.auth import service as auth_service
 from app.features.auth.repo import SqlAuthStore
-from app.shared.passwords import hash_password
+from app.shared.errors import AppError
 from app.shared.time import now_ms
 
 ADMIN_USERNAME = "admin"
@@ -27,17 +28,17 @@ def main() -> int:
             print(f"已存在：{ADMIN_USERNAME}，跳过")
             return 0
 
-        now = now_ms()
-        account = store.insert_user(
+        user, _token = auth_service.register(
+            store,
             username=ADMIN_USERNAME,
-            display_name="管理员",
-            password_hash=hash_password(ADMIN_PASSWORD),
-            now=now,
+            password=ADMIN_PASSWORD,
+            confirm_password=ADMIN_PASSWORD,
+            now=now_ms(),
         )
         db.commit()
-        print(f"已创建：{account.username} / {ADMIN_PASSWORD}（id={account.id}，绕过密码强度校验）")
+        print(f"已创建：{user.username} / {ADMIN_PASSWORD}（id={user.id}）")
         return 0
-    except Exception as error:  # noqa: BLE001 - 脚本要给出人话
+    except AppError as error:
         db.rollback()
         print(f"创建失败：{error}")
         return 1
