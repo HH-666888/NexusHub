@@ -4,7 +4,7 @@ Revision ID: 0002
 Revises: 0001
 Create Date: 2026-11-02
 
-表结构同样只有一份来源：`database/schema/002_runtime.sql`。
+表结构同样只有一份来源：`database/schema/003_runtime.sql`。
 """
 
 import os
@@ -26,7 +26,7 @@ def _schema_path() -> Path:
     override = os.environ.get("NEXUS_RUNTIME_SQL")
     if override:
         return Path(override)
-    return Path(__file__).resolve().parents[3] / "database" / "schema" / "002_runtime.sql"
+    return Path(__file__).resolve().parents[3] / "database" / "schema" / "003_runtime.sql"
 
 
 def upgrade() -> None:
