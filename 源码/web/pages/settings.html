@@ -153,23 +153,23 @@
                 <input class="input" type="password" value="sk-demo-0000000000000000" />
                 <button class="btn btn-ghost" type="button">测试连接</button>
               </div>
-              <p class="hintline">存在本机 `.env`，不会上传。留空则用环境变量里的 Key。</p>
+              <p class="hintline">保存后不回显；留空表示不修改。留空时用环境变量里的 Key。</p>
             </div>
           </div>
 
           <div class="field-row">
             <label>决策模型</label>
             <select class="select">
-              <option>deepseek-chat（快、便宜，适合拆需求与定架构）</option>
-              <option>deepseek-reasoner（慢、贵，适合复杂需求）</option>
+              <option value="deepseek-chat">deepseek-chat（快、便宜，适合拆需求与定架构）</option>
+              <option value="deepseek-reasoner">deepseek-reasoner（慢、贵，适合复杂需求）</option>
             </select>
           </div>
 
           <div class="field-row">
             <label>执行模型</label>
             <select class="select">
-              <option>deepseek-chat（默认，写代码够用）</option>
-              <option>deepseek-reasoner（复杂页面更稳）</option>
+              <option value="deepseek-chat">deepseek-chat（默认，写代码够用）</option>
+              <option value="deepseek-reasoner">deepseek-reasoner（复杂页面更稳）</option>
             </select>
           </div>
         </section>
@@ -295,8 +295,12 @@
           setProvider(data.provider);
           setTheme(data.theme === "dark" ? "dark" : "light");
 
-          if (selects[0]) selects[0].value = data.modelDecide;
-          if (selects[1]) selects[1].value = data.modelBuild;
+          [selects[0], selects[1]].forEach(function (select, i) {
+            if (!select) return;
+            const want = i === 0 ? data.modelDecide : data.modelBuild;
+            const exists = Array.from(select.options).some((o) => o.value === want);
+            select.value = exists ? want : select.options[0].value;
+          });
 
           if (sliders[0]) { sliders[0].value = data.budgetPerRun; paintBudget(sliders[0]); }
           if (sliders[1]) { sliders[1].value = data.budgetPerDay; paintBudget(sliders[1]); }
