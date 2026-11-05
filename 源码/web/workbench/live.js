@@ -13,7 +13,7 @@
     window.api.createRun(prompt, params.get("fast") === "1").then(function (result) {
       if (result && result.ok && result.data) {
         location.replace(
-          "./workbench.html?run=" +
+          "./?run=" +
             encodeURIComponent(result.data.id) +
             "&prompt=" +
             encodeURIComponent(prompt),

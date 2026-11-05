@@ -73,8 +73,9 @@
       return result.ok ? result.data : null;
     },
 
-    async createRun(prompt) {
-      return request("/runs", { method: "POST", body: JSON.stringify({ prompt }) });
+    async createRun(prompt, fast) {
+      const path = fast ? "/runs?fast=1" : "/runs";
+      return request(path, { method: "POST", body: JSON.stringify({ prompt }) });
     },
 
     async run(runId) {
