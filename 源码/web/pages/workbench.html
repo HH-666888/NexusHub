@@ -1118,8 +1118,11 @@
       function updateHeader() {
         const parallel = TASKS.filter((t) => t.parallel).length;
         const pill = document.querySelector(".appbar-center .pill");
-        if (pill) {
-          pill.innerHTML = `<i class="pulse-dot"></i>运行中 · 第 3 / 6 道 · ${TASKS.length} 个分支（${parallel} 个并行）`;
+        if (pill && !pill.dataset.lock) {
+          const liveIndex = STAGES.findIndex((s) => s.state === "live");
+          const doneCount = STAGES.filter((s) => s.state === "done").length;
+          const current = liveIndex >= 0 ? liveIndex + 1 : Math.max(doneCount, 1);
+          pill.innerHTML = `<i class="pulse-dot"></i>运行中 · 第 ${current} / 6 道 · ${TASKS.length} 个分支（${parallel} 个并行）`;
         }
         const name = document.getElementById("focus-name");
         if (view.focus !== null) {
@@ -1361,7 +1364,8 @@
         if (streaming) {
           // 已经写过的行先补齐，再接着往后写 —— 切走再切回不会丢进度
           for (let i = 0; i < file.written; i += 1) addLine(i, file.lines[i]);
-          streamLines(path);
+          // 实时模式下代码由事件驱动，不能再开本地打字机，否则会写两遍
+          if (!(window.__wb && window.__wb.isLive)) streamLines(path);
         } else {
           file.lines.forEach((text, i) => addLine(i, text));
         }
@@ -1554,9 +1558,221 @@
         work.classList.add("no-code");
       }
 
-      // 首屏：先树，再代码流
+      /* ───────── 真实数据桥：workbench-live.js 通过它驱动这一页 ───────── */
+      const LIVE = { buf: new Map(), calls: 0 };
+
+      function liveEnsureFile(path, lang) {
+        let file = fileOf(path);
+        if (!file) {
+          file = { path, lang: lang || "text", state: "live", lines: [], written: 0 };
+          FILES.push(file);
+          renderTabs();
+        }
+        return file;
+      }
+
+      function liveRenderCurrent() {
+        const file = fileOf(codeView.current);
+        if (!file) return;
+        codeBody.innerHTML = "";
+        file.lines.forEach((text, i) => addLine(i, text));
+        streamState.innerHTML =
+          file.state === "done"
+            ? `已生成 · <b id="line-count">${file.lines.length}</b> 行`
+            : `流式写入 · <b id="line-count">${file.lines.length}</b> 行`;
+        lineCount = document.getElementById("line-count");
+      }
+
+      window.__wb = {
+        isLive: true,
+
+        stopTimeline() {
+          timelineTimers.forEach(clearTimeout);
+          timelineTimers = [];
+        },
+
+        /** 当前是第几道（0..5）：前面的算完成，当前进行中，后面等待 */
+        setStage(index) {
+          STAGES.forEach((s, i) => {
+            s.state = i < index ? "done" : i === index ? "live" : "wait";
+            // 带数字的说明（5 条验收标准 / 3 个分支并行）保留，其它换成完成
+            if (i < index && !/^\d/.test(s.note)) s.note = "完成";
+          });
+          const groups = document.querySelectorAll("#task-list .t-group");
+          const rows = groups[1];
+          if (rows) {
+            rows.querySelectorAll(".t-item").forEach((row, i) => {
+              row.classList.toggle("is-live", i === index);
+              const state = row.querySelector(".state");
+              if (state) state.textContent = i < index ? "完成" : i === index ? "进行中" : "等待";
+            });
+          }
+          const label = document.querySelector(".stage-progress .label span:first-child");
+          if (label && STAGES[index]) label.textContent = "第 " + (index + 1) + " 道 · " + STAGES[index].name;
+          render();
+        },
+
+        setProgress(pct) {
+          const pctEl = document.getElementById("pct");
+          const barEl = document.getElementById("bar");
+          if (pctEl) pctEl.textContent = pct + "%";
+          if (barEl) barEl.style.width = pct + "%";
+        },
+
+        /** 用真实任务替换第 3 道下面的分支卡与侧栏子项 */
+        setBranches(items) {
+          TASKS.length = 0;
+          items.forEach((it) => {
+            TASKS.push({
+              title: it.title || it.name || it.moduleId || "任务",
+              file: it.file || "",
+              state: it.state === "done" ? "done" : "live",
+              progress: it.progress || 0,
+              parallel: it.parallel !== false,
+            });
+          });
+
+          const list = document.querySelector(".t-child");
+          if (list) {
+            list.innerHTML = items
+              .map((it) => {
+                const state = it.state === "done" ? "完成" : it.state === "live" ? "写入中" : "等待";
+                const label = it.title || it.name || it.moduleId || "任务";
+                const short = String(it.file || "").split("/").pop();
+                return `<div class="t-item${it.state === "live" ? " is-live" : ""}"><span class="name">${label} · ${short}</span><span class="state">${state}</span></div>`;
+              })
+              .join("");
+          }
+
+          const count = document.querySelector(".tasks-head h2 .pill");
+          if (count) count.textContent = items.length + " 项";
+          if (STAGES[2]) STAGES[2].note = items.length + " 个分支并行";
+          render();
+        },
+
+        /** 流式代码：delta 累加到文件，done 时收尾 */
+        feedFile(path, lang, delta, done) {
+          const file = liveEnsureFile(path, lang);
+          const merged = (LIVE.buf.get(path) || "") + (delta || "");
+          const parts = merged.split("\n");
+          const rest = parts.pop();
+          parts.forEach((line) => file.lines.push(line));
+          LIVE.buf.set(path, rest);
+
+          if (done) {
+            if (rest) file.lines.push(rest);
+            LIVE.buf.set(path, "");
+            file.state = "done";
+            if (codeView.live === path) codeView.live = null;
+            renderTabs();
+          }
+
+          if (!codeView.current) {
+            codeView.live = done ? null : path;
+            showFile(path);
+            return;
+          }
+          if (codeView.current === path) liveRenderCurrent();
+        },
+
+        /** 事件到达时切换焦点文件（可选） */
+        focusFile(path) {
+          if (codeView.current === path) return;
+          if (fileOf(path)) showFile(path);
+        },
+
+        setCost(cny) {
+          const budget = document.querySelector(".appbar-right .pill-plain");
+          if (budget) {
+            const limit = (budget.textContent.split("/")[1] || " ¥2.00").trim();
+            budget.textContent = "¥" + Number(cny).toFixed(2) + " / " + limit;
+          }
+          const bottom = document.querySelector(".statusbar .cost");
+          if (bottom) bottom.textContent = "本轮 ¥" + Number(cny).toFixed(2) + " · " + LIVE.calls + " 次模型调用";
+        },
+
+        addCall() {
+          LIVE.calls += 1;
+          const bottom = document.querySelector(".statusbar .cost");
+          if (bottom) {
+            const cny = (bottom.textContent.match(/¥([\d.]+)/) || [])[1] || "0.00";
+            bottom.textContent = "本轮 ¥" + cny + " · " + LIVE.calls + " 次模型调用";
+          }
+        },
+
+        setEvent(text) {
+          const line = document.getElementById("event-line");
+          if (line) line.textContent = text;
+        },
+
+        setStatus(status) {
+          const pill = document.querySelector(".appbar-center .pill");
+          if (!pill) return;
+          const map = { running: "运行中", paused: "已暂停", done: "已完成", failed: "已失败", cancelled: "已取消" };
+          const label = map[status] || status;
+          let done = STAGES.filter((s) => s.state === "done").length;
+          if (status === "done") {
+            STAGES.forEach((s) => {
+              s.state = "done";
+              if (!/^\d/.test(s.note) && s.note !== "完成") s.note = "完成";
+            });
+            done = 6;
+            const rows = document.querySelectorAll("#task-list .t-group")[1];
+            if (rows) {
+              rows.querySelectorAll(".t-item").forEach((row) => {
+                row.classList.remove("is-live");
+                const st = row.querySelector(".state");
+                if (st) st.textContent = "完成";
+              });
+            }
+          }
+          pill.dataset.lock = "1"; // 别让 updateHeader 把它覆盖回「运行中」
+          if (status === "running") delete pill.dataset.lock;
+          pill.className = "pill " + (status === "running" ? "pill-live" : status === "done" ? "pill-ok" : "pill-warn");
+          pill.innerHTML =
+            (status === "running" ? '<i class="pulse-dot"></i>' : "") +
+            label +
+            " · 第 " + done + " / 6 道";
+          if (status === "done") render();
+        },
+
+        /** 文件写完：把对应分支从「写入中」改成「完成」 */
+        markBranchDone(path) {
+          const task = TASKS.find((item) => item.file === path);
+          if (task) {
+            task.state = "done";
+            task.progress = 100;
+          }
+          const rows = Array.from(document.querySelectorAll(".t-child .t-item"));
+          rows.forEach((row) => {
+            const name = row.querySelector(".name");
+            if (name && String(name.textContent).includes(String(path).split("/").pop())) {
+              row.classList.remove("is-live");
+              const state = row.querySelector(".state");
+              if (state) state.textContent = "完成";
+            }
+          });
+          render();
+        },
+
+        /** 实时模式开始时清掉页面自带的演示文件，避免和真内容叠在一起 */
+        resetFiles() {
+          FILES.length = 0;
+          codeView.current = null;
+          codeView.live = null;
+          codeBody.innerHTML = "";
+          renderTabs();
+        },
+      };
+
+      // 带真实 run id 时由 workbench-live.js 驱动，不跑演示时间线
+      const bootRunId = new URLSearchParams(location.search).get("run") || "";
+      const liveMode = Boolean(bootRunId) && !/^(new|demo\d+)$/.test(bootRunId);
+      window.__wb.isLive = liveMode;
+
+      // 首屏：先树，再代码流（实时模式不演）
       render();
-      runTimeline();
+      if (!liveMode) runTimeline();
       window.__treeDone = true;
     </script>
     <script>
@@ -1570,56 +1786,6 @@
       })();
     </script>
     <script src="../system/api.js"></script>
-    <script>
-      // 真数据：新建运行时真的落库；带真实 run id 时读详情
-      (async function () {
-        if (!window.api) return;
-        const params = new URLSearchParams(location.search);
-        const id = params.get("run") || "";
-        const prompt = params.get("prompt") || "";
-        const crumb = document.querySelector(".crumb b");
-
-        function setCrumb(text) {
-          if (crumb && text) crumb.textContent = text.length > 18 ? text.slice(0, 18) + "…" : text;
-        }
-
-        if (id === "new" && prompt) {
-          const result = await window.api.createRun(prompt);
-          if (result.ok && result.data) {
-            const real = result.data.id;
-            history.replaceState(
-              null,
-              "",
-              "./workbench.html?run=" + encodeURIComponent(real) + "&prompt=" + encodeURIComponent(prompt),
-            );
-            setCrumb(prompt);
-          }
-          return;
-        }
-
-        if (!id || /^demo\d+$/.test(id)) return;
-
-        const run = await window.api.run(id);
-        if (!run) return;
-        setCrumb(run.prompt);
-
-        const pill = document.querySelector(".pill-live");
-        if (pill && run.status !== "running") {
-          pill.textContent = run.status === "done" ? "已完成 · 6 / 6 道" : "运行中断";
-        }
-
-        const events = await window.api.events(id);
-        if (Array.isArray(events) && events.length) {
-          const bar = document.querySelector(".event-line, .events, .eventbar");
-          if (bar) {
-            const last = events[events.length - 1];
-            const text = typeof last.payload === "object" && last.payload && last.payload.text
-              ? last.payload.text
-              : last.kind;
-            bar.textContent = "事件 " + events.length + " 条 · 最新：" + text;
-          }
-        }
-      })();
-    </script>
+    <script src="./workbench-live.js"></script>
   </body>
 </html>
