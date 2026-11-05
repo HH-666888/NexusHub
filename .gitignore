@@ -88,3 +88,6 @@ venv/
 .import_linter_cache/
 *.egg-info/
 backend/.env
+
+# artifacts/ 是运行产物目录，但 backend 里有一个同名的源码包，别一起忽略
+!源码/backend/app/features/artifacts/
