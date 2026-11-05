@@ -33,17 +33,12 @@
         });
       })();
 
-(function () {
-        const user = window.NexusDemo && window.NexusDemo.getUser();
-        if (!user) return;
-        const host = document.querySelector(".appbar-right") || document.querySelector(".topbar-actions") || document.querySelector("header");
-        if (!host) return;
-        const chip = document.createElement("span");
-        chip.id = "demo-who";
-        chip.className = "pill";
-        chip.style.marginRight = "8px";
-        chip.textContent = user;
-        host.insertBefore(chip, host.firstChild);
+// 头像显示真实用户名（不在顶栏另插一个演示用的 chip）
+      (async function () {
+        if (!window.api) return;
+        const user = await window.api.me();
+        const avatar = document.querySelector(".avatar");
+        if (avatar) avatar.textContent = user ? user.username || "我" : "未登录";
       })();
 
 // 项目页真数据：列表、空状态、新建、退出登录
@@ -54,11 +49,15 @@
         const newInput = newBar ? newBar.querySelector("input") : null;
         const newBtn = newBar ? newBar.querySelector("button") : null;
 
+        // 与后端 StageId 对应：plan / design / build / assemble / test / deliver
         const stageLabel = {
-          spec: "需求分析", arch: "架构设计", build: "并行开发",
+          plan: "需求分析", design: "架构设计", build: "并行开发",
           assemble: "集成装配", test: "自动测试", deliver: "验收交付",
         };
-        const statusLabel = { running: "运行中", done: "已完成", failed: "失败" };
+        const statusLabel = {
+          running: "运行中", paused: "已暂停", done: "已完成",
+          failed: "失败", cancelled: "已取消",
+        };
 
         function fmtTime(ms) {
           const d = new Date(ms);
@@ -71,9 +70,14 @@
           card.className = "card";
           card.dataset.run = run.id;
           card.style.cursor = "pointer";
-          const pillClass = run.status === "running" ? "pill-live" : run.status === "failed" ? "pill-warn" : "pill";
+          const pillClass =
+            run.status === "running" ? "pill-live"
+              : run.status === "failed" || run.status === "paused" || run.status === "cancelled" ? "pill-warn"
+                : "pill";
           card.innerHTML =
-            '<div class="thumb"><span class="pill ' + pillClass + '">' +
+            '<div class="thumb">' +
+            '<span class="tl a"></span><span class="tl b"></span><span class="tb"></span>' +
+            '<span class="pill ' + pillClass + '">' +
             (statusLabel[run.status] || run.status) + "</span></div>" +
             '<div class="body"><h3></h3>' +
             '<div class="meta"><span>' + (stageLabel[run.stage] || run.stage) + "</span><span>¥" +
@@ -109,6 +113,7 @@
 
         let allRuns = [];
         let filter = "all";
+        const state = { budgetPerDay: 20 };
         const segButtons = Array.from(document.querySelectorAll(".seg button"));
 
         function renderList() {
@@ -144,6 +149,11 @@
 
         async function load() {
           if (!window.api) return;
+          const settings = await window.api.settings();
+          if (settings && typeof settings.budgetPerDay === "number") {
+            state.budgetPerDay = settings.budgetPerDay;
+          }
+
           const runs = await window.api.runs(24);
           if (!Array.isArray(runs)) return; // 没有后端 / 未登录：保留演示卡片
 
@@ -151,6 +161,26 @@
           clearDemoCards();
           paintFilters();
           renderList();
+          updateStats(runs);
+        }
+
+        /** 顶栏预算与页脚统计：都按「今天」算，不写死 */
+        function updateStats(runs) {
+          const start = new Date();
+          start.setHours(0, 0, 0, 0);
+          const todayCost = runs
+            .filter((run) => new Date(run.createdAt) >= start)
+            .reduce((sum, run) => sum + Number(run.totalCostCny || 0), 0);
+
+          const budget = state.budgetPerDay;
+          const headPill = document.querySelector(".appbar-right .pill-plain");
+          if (headPill) headPill.textContent = "¥" + todayCost.toFixed(2) + " / ¥" + budget.toFixed(2);
+
+          const footCount = document.getElementById("foot-count");
+          if (footCount) footCount.textContent = "共 " + runs.length + " 个项目 · 今日花费 ¥" + todayCost.toFixed(2);
+
+          const footBudget = document.getElementById("foot-budget");
+          if (footBudget) footBudget.textContent = "剩余预算 ¥" + Math.max(0, budget - todayCost).toFixed(2);
         }
 
         async function create() {
