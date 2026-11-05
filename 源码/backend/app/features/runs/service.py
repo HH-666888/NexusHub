@@ -41,3 +41,10 @@ def events(db: Session, *, run_id: str):
 
 def artifacts(db: Session, *, run_id: str):
     return repo.list_artifacts(db, run_id=run_id)
+
+def set_status(db: Session, *, run_id: str, status: str) -> None:
+    run = db.get(__import__("app.db.models", fromlist=["Run"]).Run, run_id)
+    if run is None:
+        return
+    run.status = status
+    db.commit()
