@@ -95,5 +95,15 @@
     async saveSettings(patch) {
       return request("/settings", { method: "PUT", body: JSON.stringify(patch) });
     },
+
+    /** 真的去探一下提供商；返回 { ok, message } */
+    async testConnection(payload) {
+      const result = await request("/settings/test", {
+        method: "POST",
+        body: JSON.stringify(payload || {}),
+      });
+      if (result.ok && result.data) return result.data;
+      return { ok: false, message: result.offline ? "后端没启动，测不了" : "测试失败" };
+    },
   };
 })();
