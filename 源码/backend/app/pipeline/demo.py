@@ -1,11 +1,11 @@
 """演示用事件发生器。
 
-为什么需要它：真正的六道工序（调模型写代码）还没接，但**接口和前端必须是真的**。
-这个模块按契约里的事件格式，一步一步往 `run_events` 写事件、同步更新 `runs` 的
-阶段/状态/成本，最后落 artifacts。
+真正的六道工序还没接模型，但接口、事件、前端消费都必须是真格式：
+- 每一步都落 `task` 事件（created / started / done），树才会一个个长出来
+- 生成内容按 prompt 选模板（记账 / 待办 / 番茄钟），不再千篇一律
+- 同时更新 runs 的 stage / status / cost，结束落 artifacts 与工作区文件
 
-以后接入真实 pipeline，只需要让 orchestrator 产出同样的事件，本文件整个删掉即可，
-前端一行都不用改。
+以后接真模型时，让 orchestrator 发同样的事件即可，本文件整个删掉。
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ import time
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from app.db.models import Artifact, Run, RunEvent
 from app.db.session import SessionLocal
@@ -27,111 +26,333 @@ from app.domain.spec import AcceptanceCriterion, AppSpec, SpecGate
 from app.pipeline import events as ev
 from app.shared.time import now_ms
 
-# 每个 run 的节奏：普通 0.32s/事件，?fast=1 时 0.06s
 _PACE: dict[str, float] = {}
-_DEFAULT_PACE = 0.32
-_FAST_PACE = 0.06
+_DEFAULT_PACE = 0.28
+_FAST_PACE = 0.05
 
-# 线程表：防止同一个 run 被启动两次
 _RUNNING: dict[str, threading.Thread] = {}
 _LOCK = threading.Lock()
 
 
-DEMO_FILES: list[dict[str, Any]] = [
-    {
-        "path": "db/schema.sql",
-        "lang": "sql",
-        "module": ("db", "数据库", "一张表存一次计时"),
-        "content": """-- 番茄钟：一个会话一张表就够了
+# ─────────────────────── 模板：输入决定内容 ───────────────────────
+
+_FINANCE = {
+    "name": "记账本",
+    "goal": "一个能记一笔、能看合计的记账本",
+    "scenarios": ["记一笔支出", "看本月列表", "看本月合计", "删除一笔"],
+    "acceptance": [
+        "能填金额和备注并保存",
+        "列表按日期倒序显示",
+        "底部显示本月合计",
+        "刷新后数据还在",
+        "空明细时显示提示文案",
+    ],
+    "modules": [
+        ("db", "数据库", "一张 entries 表"),
+        ("api", "后端接口", "增 / 查 / 汇总"),
+        ("web", "前端页面", "表单 + 列表 + 合计"),
+    ],
+    "files": {
+        "db/schema.sql": """-- 记账本：一笔一条
+CREATE TABLE IF NOT EXISTS entries (
+  id     INTEGER PRIMARY KEY AUTOINCREMENT,
+  amount REAL NOT NULL,
+  note   TEXT DEFAULT '',
+  day    TEXT NOT NULL
+);
+
+CREATE INDEX idx_entries_day ON entries (day);
+""",
+        "api/main.py": """import sqlite3
+
+from fastapi import FastAPI
+
+app = FastAPI()
+DB = "app.db"
+
+
+@app.post("/api/entries")
+def add(amount: float, note: str = "", day: str = ""):
+    with sqlite3.connect(DB) as conn:
+        conn.execute("INSERT INTO entries (amount, note, day) VALUES (?, ?, ?)", (amount, note, day))
+    return {"ok": True}
+
+
+@app.get("/api/entries")
+def items():
+    with sqlite3.connect(DB) as conn:
+        rows = conn.execute("SELECT id, amount, note, day FROM entries ORDER BY day DESC").fetchall()
+    return {"items": [{"id": r[0], "amount": r[1], "note": r[2], "day": r[3]} for r in rows]}
+
+
+@app.get("/api/summary")
+def summary():
+    with sqlite3.connect(DB) as conn:
+        total = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM entries").fetchone()[0]
+    return {"total": total}
+""",
+        "web/index.html": """<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>记账本</title>
+  <style>
+    body { max-width: 420px; margin: 40px auto; font-family: sans-serif; }
+    .row { display: flex; gap: 8px; }
+    input { flex: 1; padding: 8px; }
+    li { display: flex; justify-content: space-between; padding: 6px 0; }
+    .total { margin-top: 12px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h2>记账本</h2>
+  <div class="row">
+    <input id="amount" placeholder="金额" />
+    <input id="note" placeholder="备注" />
+    <button id="add">记一笔</button>
+  </div>
+  <ul id="list"></ul>
+  <p class="total">本月合计：<span id="total">0.00</span></p>
+  <script>
+    async function load() {
+      const data = await (await fetch("/api/entries")).json();
+      list.innerHTML = data.items.map(function (item) {
+        return "<li><span>" + item.note + "</span><span>¥" + Number(item.amount).toFixed(2) + "</span></li>";
+      }).join("");
+      const sum = await (await fetch("/api/summary")).json();
+      total.textContent = Number(sum.total).toFixed(2);
+    }
+    add.onclick = async function () {
+      const day = new Date().toISOString().slice(0, 10);
+      await fetch("/api/entries?amount=" + amount.value +
+        "&note=" + encodeURIComponent(note.value) + "&day=" + day, { method: "POST" });
+      load();
+    };
+    load();
+  </script>
+</body>
+</html>
+""",
+    },
+    "checks": ["页面能打开", "能记一笔", "合计数字正确"],
+}
+
+_TODO = {
+    "name": "待办清单",
+    "goal": "一个能加、能勾、能删的待办清单",
+    "scenarios": ["加一条待办", "勾选完成", "删除", "刷新后还在"],
+    "acceptance": [
+        "能输入标题并添加",
+        "能勾选完成状态",
+        "完成的条目样式变淡",
+        "能删除条目",
+        "刷新后列表还在",
+    ],
+    "modules": [
+        ("db", "数据库", "一张 todos 表"),
+        ("api", "后端接口", "增 / 改 / 删 / 查"),
+        ("web", "前端页面", "输入框 + 列表"),
+    ],
+    "files": {
+        "db/schema.sql": """-- 待办清单
+CREATE TABLE IF NOT EXISTS todos (
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  title   TEXT NOT NULL,
+  done    INTEGER NOT NULL DEFAULT 0,
+  created TEXT NOT NULL
+);
+
+CREATE INDEX idx_todos_created ON todos (created);
+""",
+        "api/main.py": """import sqlite3
+
+from fastapi import FastAPI
+
+app = FastAPI()
+DB = "app.db"
+
+
+@app.post("/api/todos")
+def add(title: str):
+    with sqlite3.connect(DB) as conn:
+        conn.execute("INSERT INTO todos (title, created) VALUES (?, datetime('now'))", (title,))
+    return {"ok": True}
+
+
+@app.post("/api/todos/{todo_id}/toggle")
+def toggle(todo_id: int):
+    with sqlite3.connect(DB) as conn:
+        conn.execute("UPDATE todos SET done = 1 - done WHERE id = ?", (todo_id,))
+    return {"ok": True}
+
+
+@app.delete("/api/todos/{todo_id}")
+def remove(todo_id: int):
+    with sqlite3.connect(DB) as conn:
+        conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
+    return {"ok": True}
+
+
+@app.get("/api/todos")
+def items():
+    with sqlite3.connect(DB) as conn:
+        rows = conn.execute("SELECT id, title, done FROM todos ORDER BY id DESC").fetchall()
+    return {"items": [{"id": r[0], "title": r[1], "done": bool(r[2])} for r in rows]}
+""",
+        "web/index.html": """<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>待办清单</title>
+  <style>
+    body { max-width: 420px; margin: 40px auto; font-family: sans-serif; }
+    .row { display: flex; gap: 8px; }
+    input { flex: 1; padding: 8px; }
+    li { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
+    li.done span { color: #9ca3af; text-decoration: line-through; }
+    li span { flex: 1; }
+  </style>
+</head>
+<body>
+  <h2>待办清单</h2>
+  <div class="row"><input id="title" placeholder="要做的事" /><button id="add">添加</button></div>
+  <ul id="list"></ul>
+  <script>
+    async function load() {
+      const data = await (await fetch("/api/todos")).json();
+      list.innerHTML = data.items.map(function (todo) {
+        return '<li class="' + (todo.done ? "done" : "") + '">' +
+          '<input type="checkbox" ' + (todo.done ? "checked" : "") + ' data-id="' + todo.id + '" class="toggle">' +
+          "<span>" + todo.title + "</span>" +
+          '<button data-del="' + todo.id + '">删</button></li>';
+      }).join("");
+    }
+    list.onclick = async function (event) {
+      const id = event.target.dataset.id || event.target.dataset.del;
+      if (!id) return;
+      if (event.target.dataset.del) {
+        await fetch("/api/todos/" + id, { method: "DELETE" });
+      } else {
+        await fetch("/api/todos/" + id + "/toggle", { method: "POST" });
+      }
+      load();
+    };
+    add.onclick = async function () {
+      await fetch("/api/todos?title=" + encodeURIComponent(title.value), { method: "POST" });
+      title.value = "";
+      load();
+    };
+    load();
+  </script>
+</body>
+</html>
+""",
+    },
+    "checks": ["页面能打开", "能加一条", "能勾选完成"],
+}
+
+_POMODORO = {
+    "name": "番茄钟",
+    "goal": "一个能开始、暂停、重置的番茄钟",
+    "scenarios": ["开始计时", "暂停", "重置", "刷新后仍在"],
+    "acceptance": [
+        "点开始后圆盘开始变化",
+        "暂停后计时停住",
+        "重置回到 25:00",
+        "刷新后剩余时间还在",
+        "结束时有提示",
+    ],
+    "modules": [
+        ("db", "数据库", "一张 sessions 表"),
+        ("api", "后端接口", "开始 / 结束 / 查询"),
+        ("web", "前端页面", "圆盘 + 按钮"),
+    ],
+    "files": {
+        "db/schema.sql": """-- 番茄钟：一个会话一张表
 CREATE TABLE IF NOT EXISTS sessions (
-  id          BIGINT PRIMARY KEY AUTO_INCREMENT,
-  started_at  BIGINT NOT NULL,
-  planned_sec INT NOT NULL DEFAULT 1500,
-  ended_at    BIGINT NULL,
-  created_at  BIGINT NOT NULL
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  started_at  INTEGER NOT NULL,
+  planned_sec INTEGER NOT NULL DEFAULT 1500,
+  ended_at    INTEGER
 );
 
 CREATE INDEX idx_sessions_started ON sessions (started_at);
 """,
-    },
-    {
-        "path": "api/main.py",
-        "lang": "python",
-        "module": ("api", "后端接口", "四条路由：开始/结束/查询/健康"),
-        "content": """from fastapi import FastAPI
-from sqlalchemy import create_engine, text
+        "api/main.py": """import sqlite3
+import time
+
+from fastapi import FastAPI
 
 app = FastAPI()
-engine = create_engine("mysql+pymysql://app:app@127.0.0.1:3306/timer")
-
-
-@app.get("/health")
-def health():
-    return {"ok": True}
+DB = "app.db"
 
 
 @app.post("/api/sessions")
-def start_session():
-    with engine.begin() as conn:
-        conn.execute(text("INSERT INTO sessions (started_at, planned_sec, created_at) "
-                          "VALUES (:s, 1500, :c)"), {"s": 0, "c": 0})
+def start():
+    with sqlite3.connect(DB) as conn:
+        conn.execute("INSERT INTO sessions (started_at) VALUES (?)", (int(time.time()),))
+    return {"ok": True}
+
+
+@app.post("/api/sessions/{sid}/end")
+def end(sid: int):
+    with sqlite3.connect(DB) as conn:
+        conn.execute("UPDATE sessions SET ended_at = ? WHERE id = ?", (int(time.time()), sid))
     return {"ok": True}
 
 
 @app.get("/api/sessions")
-def list_sessions():
-    with engine.connect() as conn:
-        rows = conn.execute(text("SELECT id, started_at, planned_sec FROM sessions")).mappings()
-        return {"items": [dict(row) for row in rows]}
+def items():
+    with sqlite3.connect(DB) as conn:
+        rows = conn.execute("SELECT id, started_at, planned_sec FROM sessions").fetchall()
+    return {"items": [{"id": r[0], "started": r[1], "planned": r[2]} for r in rows]}
 """,
-    },
-    {
-        "path": "web/index.html",
-        "lang": "html",
-        "module": ("web", "前端页面", "一个圆盘、两个按钮"),
-        "content": """<!doctype html>
+        "web/index.html": """<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
   <title>番茄钟</title>
   <style>
     body { display: flex; flex-direction: column; align-items: center; justify-content: center;
-           gap: 28px; height: 100vh; margin: 0; font-family: sans-serif; background: #fafafa; }
+           gap: 24px; height: 100vh; margin: 0; font-family: sans-serif; background: #fafafa; }
     .dial { --p: 0%; width: 220px; height: 220px; border-radius: 50%;
-            border: 6px solid #f3f4f6;
-            background: conic-gradient(#ef4444 var(--p), #f3f4f6 0);
+            border: 6px solid #f3f4f6; background: conic-gradient(#ef4444 var(--p), #f3f4f6 0);
             box-shadow: inset 0 0 0 14px #fff; }
     .row { display: flex; gap: 12px; }
-    button { padding: 10px 22px; border: 0; border-radius: 999px; font-size: 15px;
-             background: #ef4444; color: #fff; cursor: pointer; }
+    button { padding: 10px 22px; border: 0; border-radius: 999px; background: #ef4444; color: #fff; }
     button#reset { background: #e5e7eb; color: #374151; }
   </style>
 </head>
 <body>
   <div class="dial" id="dial"></div>
-  <div class="row">
-    <button id="start">开始</button>
-    <button id="reset">重置</button>
-  </div>
+  <div class="row"><button id="start">开始</button><button id="reset">重置</button></div>
   <script>
     let left = 1500, timer = null;
-    function paint() {
-      dial.style.setProperty("--p", (1 - left / 1500) * 100 + "%");
-    }
-    start.onclick = () => {
-      timer = setInterval(() => { left -= 1; paint(); }, 1000);
+    function paint() { dial.style.setProperty("--p", (1 - left / 1500) * 100 + "%"); }
+    start.onclick = function () {
+      fetch("/api/sessions", { method: "POST" });
+      timer = setInterval(function () { left -= 1; paint(); }, 1000);
     };
-    reset.onclick = () => { clearInterval(timer); left = 1500; paint(); };
+    reset.onclick = function () { clearInterval(timer); left = 1500; paint(); };
   </script>
 </body>
 </html>
 """,
     },
-]
+    "checks": ["页面能打开", "能开始计时", "刷新后会话还在"],
+}
 
 
-def _pace_for(run_id: str) -> float:
-    return _PACE.get(run_id, _DEFAULT_PACE)
+def _template_for(prompt: str) -> dict[str, Any]:
+    text = prompt or ""
+    if any(word in text for word in ("记账", "账本", "收入", "支出", "账单")):
+        return _FINANCE
+    if any(word in text for word in ("待办", "清单", "todo", "任务", "勾选")):
+        return _TODO
+    return _POMODORO
+
+
+# ─────────────────────── 生命周期 ───────────────────────
 
 
 def mark_pace(run_id: str, *, fast: bool) -> None:
@@ -139,7 +360,6 @@ def mark_pace(run_id: str, *, fast: bool) -> None:
 
 
 def start(run_id: str) -> bool:
-    """启动一个 run 的演示流水线；已经在跑就返回 False。"""
     with _LOCK:
         thread = _RUNNING.get(run_id)
         if thread is not None and thread.is_alive():
@@ -151,10 +371,9 @@ def start(run_id: str) -> bool:
 
 
 def _run(run_id: str) -> None:
-    pace = _pace_for(run_id)
     try:
-        _script(run_id, pace)
-    except Exception as error:  # noqa: BLE001 - 演示线程不能让进程挂掉
+        _script(run_id, _PACE.get(run_id, _DEFAULT_PACE))
+    except Exception as error:  # noqa: BLE001
         _safe_write(run_id, "error", {"kind": "error", "message": str(error)})
         _set_status(run_id, "failed")
     finally:
@@ -162,11 +381,10 @@ def _run(run_id: str) -> None:
             _RUNNING.pop(run_id, None)
 
 
-# ───────────────────────── 内部动作 ─────────────────────────
+# ─────────────────────── 内部动作 ───────────────────────
 
 
 def _alive(run_id: str) -> str:
-    """返回当前状态；线程每一步都看它，暂停就等，取消就退。"""
     db = SessionLocal()
     try:
         run = db.get(Run, run_id)
@@ -176,7 +394,6 @@ def _alive(run_id: str) -> str:
 
 
 def _wait_while_paused(run_id: str) -> bool:
-    """暂停时原地等；返回 False 表示被取消了。"""
     while True:
         status = _alive(run_id)
         if status == "cancelled":
@@ -231,9 +448,6 @@ def _set_status(run_id: str, status: str) -> None:
 
 
 def _budget_of(run_id: str) -> float | None:
-    """读这个用户设置的单次预算；没设就返回 None（不限）。"""
-    from sqlalchemy import select
-
     from app.db.models import Setting
 
     db = SessionLocal()
@@ -302,25 +516,59 @@ def _save_artifact(run_id: str, name: str, kind: str, content: str) -> dict[str,
 
 
 def _emit(run_id: str, event: Any) -> None:
-    """Pydantic 事件或普通 dict 都能发。"""
     if isinstance(event, dict):
-        payload = event
-        kind = payload["kind"]
-    else:
-        payload = event.model_dump(by_alias=True, exclude_none=True)
-        kind = event.kind
-    _write(run_id, kind, payload)
+        _write(run_id, event["kind"], event)
+        return
+    _write(run_id, event.kind, event.model_dump(by_alias=True, exclude_none=True))
 
 
-# ───────────────────────── 剧本 ─────────────────────────
+def _task(
+    run_id: str,
+    *,
+    task_id: str,
+    stage: str,
+    title: str,
+    kind: str,
+    action: str,
+    note: str = "",
+    file: str = "",
+    reason: str = "",
+) -> None:
+    state = {"created": "pending", "started": "running", "done": "done", "failed": "failed"}[action]
+    task = {
+        "id": task_id,
+        "stage": stage,
+        "title": title,
+        "kind": kind,
+        "state": state,
+        "note": note,
+        "file": file,
+        "attempts": 1,
+    }
+    if reason:
+        task["reason"] = reason
+    _safe_write(run_id, "task", {"kind": "task", "action": action, "task": task})
+
+
+def write_workspace(run_id: str, template: dict[str, Any] | None = None) -> str:
+    """把产物文件写到运行时工作区，供预览进程直接跑。"""
+    from pathlib import Path
+
+    from app.config import get_settings
+
+    files = (template or _POMODORO)["files"]
+    root = Path(get_settings().runtime_workspace_dir).resolve() / run_id
+    for path, content in files.items():
+        target = root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    return str(root)
+
+
+# ─────────────────────── 剧本 ───────────────────────
 
 
 def _script(run_id: str, pace: float) -> None:
-    budget = _budget_of(run_id)
-
-    def over_budget(total: float) -> bool:
-        return budget is not None and total >= budget
-
     db = SessionLocal()
     try:
         run = db.get(Run, run_id)
@@ -328,110 +576,124 @@ def _script(run_id: str, pace: float) -> None:
     finally:
         db.close()
 
+    template = _template_for(prompt)
+    budget = _budget_of(run_id)
+
+    def over_budget(total: float) -> bool:
+        return budget is not None and total >= budget
+
     if not _wait_while_paused(run_id):
         return
 
-    # 01 需求分析
+    # ── 01 需求分析 ──
     _set_stage(run_id, StageId.PLAN)
     _emit(run_id, ev.phase("spec", "需求分析"))
+    _task(run_id, task_id="t-plan-1", stage="plan", title="澄清需求边界", kind="clarify", action="created")
+    _task(run_id, task_id="t-plan-2", stage="plan", title="写验收标准", kind="spec", action="created")
     time.sleep(pace)
-    _emit(run_id, ev.reasoning("先把这句话拆成能验收的条目，再决定做什么、不做什么。"))
+
+    _task(run_id, task_id="t-plan-1", stage="plan", title="澄清需求边界", kind="clarify", action="started")
+    _emit(run_id, ev.reasoning(f"先确认「{prompt[:18]}」要做什么、不做什么。"))
     time.sleep(pace)
+    _task(run_id, task_id="t-plan-1", stage="plan", title="澄清需求边界", kind="clarify", action="done", note="边界已定")
 
     spec = AppSpec(
         prompt=prompt,
-        goal="一个能开始、暂停、重置的番茄钟",
-        audience="需要专注的人",
-        scenarios=["开始计时", "暂停", "重置", "刷新后仍在"],
+        goal=template["goal"],
+        audience="需要它的人",
+        scenarios=template["scenarios"],
         acceptance=[
-            AcceptanceCriterion(id="a1", text="点开始后圆盘开始变化"),
-            AcceptanceCriterion(id="a2", text="暂停后计时停住"),
-            AcceptanceCriterion(id="a3", text="重置回到 25:00"),
-            AcceptanceCriterion(id="a4", text="刷新后剩余时间还在"),
-            AcceptanceCriterion(id="a5", text="结束时有提示"),
+            AcceptanceCriterion(id=f"a{index + 1}", text=text)
+            for index, text in enumerate(template["acceptance"])
         ],
         questions=[],
         model="demo",
         generated_at=now_ms(),
     )
-    _emit(run_id, ev.spec_event(spec, SpecGate.DECLARED))
+    _task(run_id, task_id="t-plan-2", stage="plan", title="写验收标准", kind="spec", action="started")
     time.sleep(pace)
+    _task(run_id, task_id="t-plan-2", stage="plan", title="写验收标准", kind="spec", action="done",
+          note=f"{len(template['acceptance'])} 条")
+    _emit(run_id, ev.spec_event(spec, SpecGate.DECLARED))
+
     total = _add_cost(run_id, 0.02)
     _safe_write(run_id, "cost", {"kind": "cost", "stage": "plan", "deltaCny": 0.02, "totalCny": round(total, 4)})
-    time.sleep(pace)
+    if over_budget(total):
+        _safe_write(run_id, "error", {"kind": "error", "message": "预算到顶，已停在需求分析", "hint": "去设置里调高单次预算"})
+        _set_status(run_id, "paused")
+        return
 
-    # 02 架构设计
+    # ── 02 架构设计 ──
     _set_stage(run_id, StageId.DESIGN)
     _emit(run_id, ev.phase("arch", "架构设计"))
+    _task(run_id, task_id="t-design-1", stage="design", title="划模块边界", kind="design", action="created")
+    _task(run_id, task_id="t-design-2", stage="design", title="定数据流", kind="design", action="created")
+    time.sleep(pace)
+
+    _task(run_id, task_id="t-design-1", stage="design", title="划模块边界", kind="design", action="started")
     time.sleep(pace)
     arch = ArchSpec(
-        modules=[
-            ArchModule(id="db", name="数据库", responsibility="存会话"),
-            ArchModule(id="api", name="后端接口", responsibility="开始/结束/查询"),
-            ArchModule(id="web", name="前端页面", responsibility="圆盘与按钮"),
-            ArchModule(id="test", name="自测", responsibility="跑一遍主流程"),
-        ],
+        modules=[ArchModule(id=m[0], name=m[1], responsibility=m[2]) for m in template["modules"]],
         packages=[],
         spec=spec,
         model="demo",
         generated_at=now_ms(),
     )
-    _emit(
-        run_id,
-        ev.arch_event(
-            arch,
-            __import__("app.domain.check", fromlist=["StageCheck"]).StageCheck(
-                results=[],
-                passed=1,
-                total=1,
-            ),
-        ),
-    )
+    _task(run_id, task_id="t-design-1", stage="design", title="划模块边界", kind="design", action="done",
+          note=f"{len(template['modules'])} 个模块")
+    _emit(run_id, ev.arch_event(arch, {"results": [], "passed": 1, "total": 1}))
+
+    _task(run_id, task_id="t-design-2", stage="design", title="定数据流", kind="design", action="started")
     time.sleep(pace)
+    _task(run_id, task_id="t-design-2", stage="design", title="定数据流", kind="design", action="done",
+          note="页面 → 接口 → 表")
+
     total = _add_cost(run_id, 0.03)
     _safe_write(run_id, "cost", {"kind": "cost", "stage": "design", "deltaCny": 0.03, "totalCny": round(total, 4)})
     if over_budget(total):
-        _safe_write(
-            run_id,
-            "error",
-            {"kind": "error", "message": "预算到顶，已停在第 2 道", "hint": "去设置里调高单次预算再继续"},
-        )
+        _safe_write(run_id, "error", {"kind": "error", "message": "预算到顶，已停在架构设计", "hint": "去设置里调高单次预算"})
         _set_status(run_id, "paused")
         return
 
-    # 03 并行开发
+    # ── 03 并行开发 ──
     _set_stage(run_id, StageId.BUILD)
     _emit(run_id, ev.phase("building", "并行开发"))
+    for module_id, module_name, summary in template["modules"]:
+        _task(
+            run_id,
+            task_id=f"t-build-{module_id}",
+            stage="build",
+            title=f"写{module_name}",
+            kind="code",
+            action="created",
+            file=_file_of(template, module_id),
+        )
     time.sleep(pace)
 
-    modules = [
-        ModuleBuildSummary(
-            module_id=m["module"][0],
-            name=m["module"][1],
-            summary=m["module"][2],
-            cost_cny=0.02,
-            file=m["path"],
-            state="live",
-            progress=12,
-        )
-        for m in DEMO_FILES
-    ]
     batch = BuildBatchSummary(
-        modules=modules,
+        modules=[
+            ModuleBuildSummary(
+                module_id=module_id,
+                name=module_name,
+                summary=summary,
+                cost_cny=0.02,
+                file=_file_of(template, module_id),
+                state="live",
+                progress=0,
+            )
+            for module_id, module_name, summary in template["modules"]
+        ],
         failed=[],
-        concurrency=3,
+        concurrency=len(template["modules"]),
         total_cost_cny=0.06,
-        peak_in_flight=3,
+        peak_in_flight=len(template["modules"]),
     )
     _emit(run_id, ev.modules(batch))
-    time.sleep(pace)
 
-    # 三路交错流式写代码
-    chunks = {m["path"]: _split(m["content"]) for m in DEMO_FILES}
-    lang = {m["path"]: m["lang"] for m in DEMO_FILES}
-    written = {m["path"]: [] for m in DEMO_FILES}
-    line_counts = {m["path"]: 0 for m in DEMO_FILES}
-    longest = max(len(v) for v in chunks.values())
+    chunks = {path: _split(content) for path, content in template["files"].items()}
+    line_counts = {path: 0 for path in template["files"]}
+    started: set[str] = set()
+    longest = max(len(value) for value in chunks.values())
 
     for step in range(longest):
         if not _wait_while_paused(run_id):
@@ -439,15 +701,19 @@ def _script(run_id: str, pace: float) -> None:
         for path, parts in chunks.items():
             if step >= len(parts):
                 continue
+            module_id = _module_of(path)
+            if path not in started:
+                started.add(path)
+                _task(run_id, task_id=f"t-build-{module_id}", stage="build",
+                      title=f"写{_module_name(template, path)}", kind="code", action="started", file=path)
             piece = parts[step]
-            written[path].append(piece)
             line_counts[path] += piece.count("\n")
             _emit(
                 run_id,
                 {
                     "kind": "file",
                     "path": path,
-                    "lang": lang[path],
+                    "lang": _lang_of(path),
                     "delta": piece,
                     "done": step == len(parts) - 1,
                     "lines": line_counts[path],
@@ -455,105 +721,113 @@ def _script(run_id: str, pace: float) -> None:
             )
         time.sleep(pace)
 
-    for path in written:
-        _emit(
-            run_id,
-            {
-                "kind": "file",
-                "path": path,
-                "lang": lang[path],
-                "delta": "",
-                "done": True,
-                "lines": line_counts[path],
-            },
-        )
+    for path, content in template["files"].items():
+        _emit(run_id, {"kind": "file", "path": path, "lang": _lang_of(path), "delta": "", "done": True,
+                       "lines": content.count("\n")})
+        _task(run_id, task_id=f"t-build-{_module_of(path)}", stage="build",
+              title=f"写{_module_name(template, path)}", kind="code", action="done",
+              file=path, note=f"{content.count(chr(10))} 行")
 
     total = _add_cost(run_id, 0.09)
     _safe_write(run_id, "cost", {"kind": "cost", "stage": "build", "deltaCny": 0.09, "totalCny": round(total, 4)})
 
-    # 04 集成装配
+    # ── 04 集成装配 ──
     if not _wait_while_paused(run_id):
         return
     _set_stage(run_id, StageId.ASSEMBLE)
     _emit(run_id, ev.phase("saving", "集成装配"))
+    _task(run_id, task_id="t-assemble-1", stage="assemble", title="接线与配置", kind="wire", action="created")
     time.sleep(pace)
+    _task(run_id, task_id="t-assemble-1", stage="assemble", title="接线与配置", kind="wire", action="started")
     _emit(run_id, ev.text("入口、路由、配置一次接好；依赖对齐，没有悬空引用。"))
     time.sleep(pace)
+    _task(run_id, task_id="t-assemble-1", stage="assemble", title="接线与配置", kind="wire", action="done",
+          note="入口已通")
 
-    # 05 自动测试
+    # ── 05 自动测试 ──
     if not _wait_while_paused(run_id):
         return
     _set_stage(run_id, StageId.TEST)
     _emit(run_id, ev.phase("checking", "自动测试"))
-    time.sleep(pace)
-    results = [
-        CheckResult(name="页面能打开", pass_=True, detail="200"),
-        CheckResult(name="接口返回 200", pass_=True, detail="GET /api/sessions"),
-        CheckResult(name="刷新后数据还在", pass_=True, detail="会话表有记录"),
-    ]
-    _emit(
-        run_id,
-        ev.check(
-            results,
-            CheckSummary(passed=3, total=3, failed=0),
-        ),
-    )
-    time.sleep(pace)
+    results = []
+    for index, name in enumerate(template["checks"]):
+        task_id = f"t-test-{index + 1}"
+        _task(run_id, task_id=task_id, stage="test", title=name, kind="test", action="created")
+        time.sleep(pace)
+        _task(run_id, task_id=task_id, stage="test", title=name, kind="test", action="started")
+        time.sleep(pace)
+        _task(run_id, task_id=task_id, stage="test", title=name, kind="test", action="done", note="通过")
+        results.append(CheckResult(name=name, pass_=True, detail="通过"))
 
-    # 06 验收交付
+    _emit(run_id, ev.check(results, CheckSummary(passed=len(results), total=len(results), failed=0)))
+
+    # ── 06 验收交付 ──
     if not _wait_while_paused(run_id):
         return
     _set_stage(run_id, StageId.DELIVER)
     _emit(run_id, ev.phase("deliver", "验收交付"))
+    _task(run_id, task_id="t-deliver-1", stage="deliver", title="打包产物", kind="deliver", action="created")
     time.sleep(pace)
 
     layers = [
-        {"layer": "db", "passed": 3, "total": 3, "checks": [{"name": "表 sessions 存在", "pass": True}]},
-        {"layer": "api", "passed": 3, "total": 3, "checks": [{"name": "GET /api/sessions", "pass": True}]},
-        {"layer": "ui", "passed": 2, "total": 2, "checks": [{"name": "页面能加载", "pass": True}]},
+        {"layer": "db", "passed": 1, "total": 1, "checks": [{"name": "表已建好", "pass": True}]},
+        {"layer": "api", "passed": 1, "total": 1, "checks": [{"name": "接口可访问", "pass": True}]},
+        {"layer": "ui", "passed": 1, "total": 1, "checks": [{"name": "页面能加载", "pass": True}]},
     ]
-    _emit(run_id, {"kind": "verdict", "layers": layers, "passed": 8, "total": 8})
-    time.sleep(pace)
+    _emit(run_id, {"kind": "verdict", "layers": layers, "passed": 3, "total": 3})
 
-    # 产物落库
-    html = next(m["content"] for m in DEMO_FILES if m["path"] == "web/index.html")
+    html = template["files"]["web/index.html"]
     saved = _save_artifact(run_id, "index.html", "html", html)
     _save_artifact(run_id, "spec.json", "json", spec.model_dump_json(by_alias=True, indent=2))
     try:
-        write_workspace(run_id)
-    except Exception:  # noqa: BLE001 —— 写盘失败不影响事件链
+        write_workspace(run_id, template)
+    except Exception:  # noqa: BLE001
         pass
-    _emit(
-        run_id,
-        {
-            "kind": "artifact",
-            "artifact": {"name": saved["name"], "kind": saved["kind"], "bytes": saved["bytes"]},
-        },
-    )
+    _emit(run_id, {"kind": "artifact", "artifact": {"name": saved["name"], "kind": saved["kind"], "bytes": saved["bytes"]}})
+
+    _task(run_id, task_id="t-deliver-1", stage="deliver", title="打包产物", kind="deliver", action="done",
+          note="可预览")
 
     _set_status(run_id, "done")
     _emit(run_id, ev.phase("done", "完成"))
 
 
-def write_workspace(run_id: str) -> str:
-    """把产物文件写到运行时工作区，供预览进程直接跑。
-
-    路径约定：<workspace>/<run_id>/{api/main.py, web/index.html, db/schema.sql}
-    """
-    from pathlib import Path
-
-    from app.config import get_settings
-
-    root = Path(get_settings().runtime_workspace_dir).resolve() / run_id
-    for item in DEMO_FILES:
-        target = root / item["path"]
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(item["content"], encoding="utf-8")
-    return str(root)
+# ─────────────────────── 小工具 ───────────────────────
 
 
-def _split(text: str, size: int = 90) -> list[str]:
-    """按固定长度切片，模拟模型吐字。切点尽量落在换行后。"""
+def _file_of(template: dict[str, Any], module_id: str) -> str:
+    prefix = {"db": "db/", "api": "api/", "web": "web/"}.get(module_id, "")
+    for path in template["files"]:
+        if path.startswith(prefix):
+            return path
+    return ""
+
+
+def _module_of(path: str) -> str:
+    if path.startswith("db/"):
+        return "db"
+    if path.startswith("api/"):
+        return "api"
+    return "web"
+
+
+def _module_name(template: dict[str, Any], path: str) -> str:
+    module_id = _module_of(path)
+    for mid, name, _ in template["modules"]:
+        if mid == module_id:
+            return name
+    return module_id
+
+
+def _lang_of(path: str) -> str:
+    if path.endswith(".sql"):
+        return "sql"
+    if path.endswith(".py"):
+        return "python"
+    return "html"
+
+
+def _split(text: str, size: int = 80) -> list[str]:
     parts: list[str] = []
     start = 0
     while start < len(text):
