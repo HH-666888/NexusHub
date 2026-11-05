@@ -95,9 +95,16 @@ def list_sessions():
   <meta charset="utf-8" />
   <title>番茄钟</title>
   <style>
-    body { display: grid; place-items: center; height: 100vh; font-family: sans-serif; }
-    .dial { width: 220px; height: 220px; border-radius: 50%;
-            background: conic-gradient(#ef4444 var(--p), #f3f4f6 0); }
+    body { display: flex; flex-direction: column; align-items: center; justify-content: center;
+           gap: 28px; height: 100vh; margin: 0; font-family: sans-serif; background: #fafafa; }
+    .dial { --p: 0%; width: 220px; height: 220px; border-radius: 50%;
+            border: 6px solid #f3f4f6;
+            background: conic-gradient(#ef4444 var(--p), #f3f4f6 0);
+            box-shadow: inset 0 0 0 14px #fff; }
+    .row { display: flex; gap: 12px; }
+    button { padding: 10px 22px; border: 0; border-radius: 999px; font-size: 15px;
+             background: #ef4444; color: #fff; cursor: pointer; }
+    button#reset { background: #e5e7eb; color: #374151; }
   </style>
 </head>
 <body>
@@ -459,7 +466,7 @@ def _script(run_id: str, pace: float) -> None:
     if not _wait_while_paused(run_id):
         return
     _set_stage(run_id, StageId.DELIVER)
-    _emit(run_id, ev.phase("done", "验收交付"))
+    _emit(run_id, ev.phase("deliver", "验收交付"))
     time.sleep(pace)
 
     layers = [
@@ -474,6 +481,10 @@ def _script(run_id: str, pace: float) -> None:
     html = next(m["content"] for m in DEMO_FILES if m["path"] == "web/index.html")
     saved = _save_artifact(run_id, "index.html", "html", html)
     _save_artifact(run_id, "spec.json", "json", spec.model_dump_json(by_alias=True, indent=2))
+    try:
+        write_workspace(run_id)
+    except Exception:  # noqa: BLE001 —— 写盘失败不影响事件链
+        pass
     _emit(
         run_id,
         {
@@ -484,6 +495,23 @@ def _script(run_id: str, pace: float) -> None:
 
     _set_status(run_id, "done")
     _emit(run_id, ev.phase("done", "完成"))
+
+
+def write_workspace(run_id: str) -> str:
+    """把产物文件写到运行时工作区，供预览进程直接跑。
+
+    路径约定：<workspace>/<run_id>/{api/main.py, web/index.html, db/schema.sql}
+    """
+    from pathlib import Path
+
+    from app.config import get_settings
+
+    root = Path(get_settings().runtime_workspace_dir).resolve() / run_id
+    for item in DEMO_FILES:
+        target = root / item["path"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(item["content"], encoding="utf-8")
+    return str(root)
 
 
 def _split(text: str, size: int = 90) -> list[str]:

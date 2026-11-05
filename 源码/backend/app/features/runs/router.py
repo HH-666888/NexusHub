@@ -11,7 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 
 from app.db.models import RunEvent
+from app.features.runtime import runner as runtime_runner
+from app.features.runtime import service as runtime_service
+from app.features.runtime.repo import SqlRuntimeRepo
 from app.pipeline import demo
+from app.shared.time import now_ms
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_user, get_db
@@ -149,3 +153,50 @@ def get_verdict(
     payload = dict(row.payload)
     payload["source"] = "stored"
     return payload
+
+@router.post("/{run_id}/runtime")
+def start_runtime(
+    run_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """把产物当本机进程跑起来（RUNTIME_RUNNER=process），返回可打开的预览地址。"""
+    _owned_or_404(db, run_id, user)
+    files_dir = demo.write_workspace(run_id)
+    try:
+        record = runtime_service.start_runtime(
+            SqlRuntimeRepo(db), run_id=run_id, files_dir=files_dir, now=now_ms()
+        )
+        db.commit()
+    except Exception as error:  # noqa: BLE001 - 起不来要把原因告诉前端
+        db.rollback()
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return {"status": record.status, "previewUrl": record.preview_url}
+
+
+@router.get("/{run_id}/runtime")
+def read_runtime(
+    run_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    _owned_or_404(db, run_id, user)
+    record = SqlRuntimeRepo(db).find_runtime(run_id)
+    if record is None:
+        return {"status": "none", "previewUrl": None}
+    status = record.status
+    if status == "running" and not runtime_runner.is_running(record.container_id):
+        status = "exited"
+    return {"status": status, "previewUrl": record.preview_url}
+
+
+@router.post("/{run_id}/runtime/stop")
+def stop_runtime(
+    run_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    _owned_or_404(db, run_id, user)
+    runtime_service.stop_runtime(SqlRuntimeRepo(db), run_id=run_id, now=now_ms())
+    db.commit()
+    return {"ok": True}
