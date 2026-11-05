@@ -91,3 +91,6 @@ backend/.env
 
 # artifacts/ 是运行产物目录，但 backend 里有一个同名的源码包，别一起忽略
 !源码/backend/app/features/artifacts/
+
+# workbench/ 是运行时产物目录名，但 web 下有一个同名源码目录，别一起忽略
+!源码/web/workbench/
