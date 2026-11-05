@@ -476,6 +476,7 @@
             const t = item.data;
             el.className = `node-task ${t.state}${t.parallel ? " parallel" : ""}${item.dense ? " dense" : ""}`;
             el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px;height:${item.h}px`;
+            if (t.id) el.dataset.task = t.id;
             el.innerHTML = `<b>${t.title}</b>${item.dense ? "" : `<code>${t.file}</code>`}
               <span class="mini"><i style="width:${t.progress}%"></i></span>`;
             const appearAt = 1480 + taskItems.indexOf(item) * 90;
@@ -999,6 +1000,7 @@
 
       function refreshTaskViews() {
         renderTaskList();
+        if (tcCurrent) showTaskDetail(tcCurrent);
 
         if (TASK_STORE.tasks.length) {
           const done = TASK_STORE.tasks.filter(function (task) { return task.state === "done"; }).length;
@@ -1010,6 +1012,79 @@
         }
 
         render();
+      }
+
+      /* ───────── 任务详情卡：点一下就知道它干了什么 ───────── */
+
+      const tc = {
+        box: document.getElementById("task-card"),
+        stage: document.getElementById("tc-stage"),
+        title: document.getElementById("tc-title"),
+        state: document.getElementById("tc-state"),
+        ms: document.getElementById("tc-ms"),
+        file: document.getElementById("tc-file"),
+        note: document.getElementById("tc-note"),
+        open: document.getElementById("tc-open"),
+      };
+      let tcCurrent = null;
+
+      const STATE_TEXT = { pending: "等待", running: "进行中", done: "完成", failed: "失败" };
+
+      function fmtMs(ms) {
+        if (!ms && ms !== 0) return "—";
+        return ms < 1000 ? ms + " ms" : (ms / 1000).toFixed(1) + " s";
+      }
+
+      function showTaskDetail(id) {
+        const task = TASK_STORE.tasks.find((item) => item.id === id);
+        if (!task || !tc.box) return;
+        tcCurrent = id;
+
+        const index = STAGE_ORDER.indexOf(task.stage);
+        if (tc.stage) tc.stage.textContent = index >= 0 ? "第 " + (index + 1) + " 道 · " + STAGES[index].name : task.stage;
+        if (tc.title) tc.title.textContent = task.title || "任务";
+        if (tc.state) {
+          tc.state.textContent = STATE_TEXT[task.state] || task.state;
+          tc.state.className = task.state === "failed" ? "is-fail" : "";
+        }
+        if (tc.ms) tc.ms.textContent = fmtMs(task.ms);
+        if (tc.file) tc.file.textContent = task.file || "—";
+        if (tc.note) {
+          tc.note.textContent = task.reason
+            ? "原因：" + task.reason
+            : task.note ? "说明：" + task.note : "";
+        }
+
+        if (tc.open) {
+          const target = task.file && fileOf(task.file) ? task.file : "";
+          // 用 style.display，别用 hidden：.btn 的 display 会盖掉 [hidden]
+          tc.open.style.display = target ? "" : "none";
+          tc.open.onclick = function () {
+            if (target) showFile(target);
+          };
+        }
+        tc.box.hidden = false;
+      }
+
+      function hideTaskDetail() {
+        tcCurrent = null;
+        if (tc.box) tc.box.hidden = true;
+      }
+
+      if (tc.box) {
+        const close = document.getElementById("tc-close");
+        if (close) close.addEventListener("click", hideTaskDetail);
+        document.addEventListener("keydown", function (event) {
+          if (event.key === "Escape") hideTaskDetail();
+        });
+        // 事件委托：树上的任务卡和侧栏的任务项都能点
+        document.addEventListener("click", function (event) {
+          const hit = event.target.closest("[data-task]");
+          if (!hit) return;
+          const id = hit.dataset.task;
+          if (!id || !TASK_STORE.tasks.some((item) => item.id === id)) return;
+          showTaskDetail(id);
+        });
       }
 
       window.__wb = {

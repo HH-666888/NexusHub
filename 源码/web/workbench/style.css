@@ -493,3 +493,64 @@
 }
 .node-task.fail b { color: #b91c1c; }
 .node-task.fail .mini i { background: #dc2626; }
+
+/* 任务详情卡：贴在中栏左下，不挡树的主干 */
+.task-card {
+  position: absolute;
+  /* 贴在中栏左上角：不挡侧栏，也不挡底部的状态栏 */
+  left: 318px;
+  top: 62px;
+  width: 300px;
+  padding: 12px 14px 14px;
+  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+  z-index: 30;
+}
+.task-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.task-card .tc-stage {
+  font-size: 11px;
+  color: var(--text-3);
+  letter-spacing: 0.04em;
+}
+.task-card .tc-close {
+  border: 0;
+  background: transparent;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.task-card h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--text-1);
+}
+.task-card dl {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.task-card dl div {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 12px;
+}
+.task-card dt { color: var(--text-3); }
+.task-card dd { margin: 0; color: var(--text-1); word-break: break-all; }
+.task-card .tc-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.task-card .tc-note:empty { display: none; }
+.task-card .is-fail { color: #b91c1c; font-weight: 600; }
+.task-card #tc-open { margin-top: 10px; }
