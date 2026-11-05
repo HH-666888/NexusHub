@@ -1,24 +1,31 @@
 @echo off
-chcp 65001 >nul
-title NexusHub åç«¯
+setlocal
+title NexusHub ºó¶Ë
 cd /d "%~dp0"
 
+set "PORT=8000"
+if not "%~1"=="" set "PORT=%~1"
+
 echo ============================================
-echo  NexusHub åç«¯  http://127.0.0.1:8000
-echo  æŒ‰ Ctrl+C åœæ­¢
+echo  NexusHub ºó¶Ë
+echo  µØÖ·: http://127.0.0.1:%PORT%
+echo  Í£Ö¹: °´ Ctrl+C
 echo ============================================
 echo.
 
-python -c "import fastapi, uvicorn" 2>nul
+python -c "import fastapi, uvicorn" >nul 2>nul
 if errorlevel 1 (
-  echo [é”™è¯¯] æ²¡æ‰¾åˆ° fastapi / uvicornï¼Œè¯·å…ˆåœ¨ backend ç›®å½•æ‰§è¡Œï¼š
-  echo        pip install -e ".[dev]"
+  echo [´íÎó] Ã»ÕÒµ½ fastapi / uvicorn
+  echo        ÇëÏÈÔÚ±¾Ä¿Â¼Ö´ĞĞ: pip install -e ".[dev]"
   echo.
   pause
   exit /b 1
 )
 
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port %PORT%
+set "CODE=%ERRORLEVEL%"
+
 echo.
-echo åç«¯å·²åœæ­¢ã€‚
+echo ºó¶ËÒÑÍË³ö£¨´úÂë %CODE%£©¡£
+if not "%CODE%"=="0" echo Èç¹ûÌáÊ¾¶Ë¿Ú±»Õ¼ÓÃ£¬»»Ò»¸ö¶Ë¿Ú: start.bat 8001
 pause

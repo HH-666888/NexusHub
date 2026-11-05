@@ -1,7 +1,13 @@
 @echo off
-chcp 65001 >nul
-title 鍚姩 NexusHub
+setlocal
+title 启动 NexusHub
 cd /d "%~dp0"
-echo 姝ｅ湪鍚姩鍚庣锛堝墠绔敱瀹冧竴璧锋墭绠★級...
-start "" "http://127.0.0.1:8000/"
-call "backend\start.bat"
+
+echo 正在启动后端（前端页面由它一起托管）...
+echo 浏览器会在 6 秒后自动打开，没打开就手动访问 http://127.0.0.1:8000/
+echo.
+
+rem 后台等 6 秒再开浏览器，避免页面比服务先到
+start "" /b cmd /c "timeout /t 6 /nobreak >nul & start "" http://127.0.0.1:8000/"
+
+call "backend\start.bat" %*
