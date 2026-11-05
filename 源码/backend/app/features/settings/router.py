@@ -22,7 +22,12 @@ def read_settings(
     db: Session = Depends(get_db),
 ) -> dict:
     rows = db.execute(select(Setting).where(Setting.user_id == user.id)).scalars()
-    return {row.key: row.value for row in rows}
+    data = {row.key: row.value for row in rows}
+    # Key 只告诉前端"配没配"，绝不回显
+    if "apiKey" in data:
+        data.pop("apiKey")
+        data["apiKeySet"] = True
+    return data
 
 
 @router.put("")
@@ -41,4 +46,39 @@ def write_settings(
             row.updated_at = now
     db.commit()
     rows = db.execute(select(Setting).where(Setting.user_id == user.id)).scalars()
-    return {row.key: row.value for row in rows}
+    data = {row.key: row.value for row in rows}
+    if "apiKey" in data:
+        data.pop("apiKey")
+        data["apiKeySet"] = True
+    return data
+
+@router.post("/test")
+def test_connection(
+    payload: dict = Body(default_factory=dict),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """真的去探一下提供商，不通就说清楚，不假装成功。"""
+    import urllib.request
+
+    provider = str(payload.get("provider") or "deepseek")
+    key = str(payload.get("apiKey") or "").strip()
+
+    if not key:
+        row = db.get(Setting, {"user_id": user.id, "key": "apiKey"})
+        key = str((row.value if row else "") or "").strip()
+    if not key:
+        return {"ok": False, "message": "还没有填 API Key"}
+
+    base = {
+        "deepseek": "https://api.deepseek.com",
+        "openai": "https://api.openai.com",
+        "local": "http://127.0.0.1:11434",
+    }.get(provider, "https://api.deepseek.com")
+
+    try:
+        request = urllib.request.Request(base, method="GET")
+        with urllib.request.urlopen(request, timeout=4) as response:  # noqa: S310 - 固定域名
+            return {"ok": True, "message": f"{provider} 可达（HTTP {response.status}）"}
+    except Exception as error:  # noqa: BLE001 - 网络错误原样告诉用户
+        return {"ok": False, "message": f"连不上 {base}：{error.__class__.__name__}"}

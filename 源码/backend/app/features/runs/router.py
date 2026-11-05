@@ -45,6 +45,13 @@ def list_runs(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[dict]:
+    # 顺手回收没人管的运行时进程：打开项目页时清一次就够
+    try:
+        runtime_service.reap_stale(SqlRuntimeRepo(db), now=now_ms())
+        db.commit()
+    except Exception:  # noqa: BLE001 - 回收失败不该影响列表
+        db.rollback()
+
     return [run_to_dict(run) for run in service.list_for_user(db, user_id=user.id, limit=limit)]
 
 

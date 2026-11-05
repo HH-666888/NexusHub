@@ -230,6 +230,31 @@ def _set_status(run_id: str, status: str) -> None:
         db.close()
 
 
+def _budget_of(run_id: str) -> float | None:
+    """读这个用户设置的单次预算；没设就返回 None（不限）。"""
+    from sqlalchemy import select
+
+    from app.db.models import Setting
+
+    db = SessionLocal()
+    try:
+        run = db.get(Run, run_id)
+        if run is None:
+            return None
+        row = db.execute(
+            select(Setting).where(Setting.user_id == run.user_id, Setting.key == "budgetPerRun")
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        try:
+            value = float(row.value)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+    finally:
+        db.close()
+
+
 def _add_cost(run_id: str, amount: float) -> float:
     db = SessionLocal()
     try:
@@ -291,6 +316,11 @@ def _emit(run_id: str, event: Any) -> None:
 
 
 def _script(run_id: str, pace: float) -> None:
+    budget = _budget_of(run_id)
+
+    def over_budget(total: float) -> bool:
+        return budget is not None and total >= budget
+
     db = SessionLocal()
     try:
         run = db.get(Run, run_id)
@@ -360,6 +390,14 @@ def _script(run_id: str, pace: float) -> None:
     time.sleep(pace)
     total = _add_cost(run_id, 0.03)
     _safe_write(run_id, "cost", {"kind": "cost", "stage": "design", "deltaCny": 0.03, "totalCny": round(total, 4)})
+    if over_budget(total):
+        _safe_write(
+            run_id,
+            "error",
+            {"kind": "error", "message": "预算到顶，已停在第 2 道", "hint": "去设置里调高单次预算再继续"},
+        )
+        _set_status(run_id, "paused")
+        return
 
     # 03 并行开发
     _set_stage(run_id, StageId.BUILD)
