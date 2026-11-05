@@ -14,3 +14,7 @@
 
 # lock 文件在 diff 中折叠，减少噪音
 package-lock.json -diff linguist-generated
+
+# Windows 批处理必须是 CRLF，且不能被上面的 * 规则覆盖
+*.bat text eol=crlf
+*.cmd text eol=crlf
