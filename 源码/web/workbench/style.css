@@ -486,3 +486,10 @@
             "            background: conic-gradient(#ef4444 var(--p), #f3f4f6 0); }",
             "    .row { display: flex; gap: 12px; justify-content: center; }",
             "
+
+.node-task.fail {
+  border-color: #fca5a5;
+  box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.12), 0 6px 16px rgba(220, 38, 38, 0.08);
+}
+.node-task.fail b { color: #b91c1c; }
+.node-task.fail .mini i { background: #dc2626; }

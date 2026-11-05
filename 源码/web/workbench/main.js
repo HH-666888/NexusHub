@@ -1107,8 +1107,14 @@
         },
 
         /** 流式代码：delta 累加到文件，done 时收尾 */
-        feedFile(path, lang, delta, done) {
+        feedFile(path, lang, delta, done, replace) {
           const file = liveEnsureFile(path, lang);
+          if (replace) {
+            // 修复时整文件重写，不是追加
+            file.lines = [];
+            LIVE.buf.set(path, "");
+            file.state = "live";
+          }
           const merged = (LIVE.buf.get(path) || "") + (delta || "");
           const parts = merged.split("\n");
           const rest = parts.pop();

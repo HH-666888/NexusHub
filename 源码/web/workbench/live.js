@@ -107,7 +107,7 @@
     }
 
     if (kind === "file") {
-      wb.feedFile(payload.path, payload.lang, payload.delta || "", Boolean(payload.done));
+      wb.feedFile(payload.path, payload.lang, payload.delta || "", Boolean(payload.done), Boolean(payload.replace));
       if (payload.done) {
         wb.markBranchDone(payload.path);
         wb.setEvent(timeOf(at) + " · " + payload.path + " 写完");
