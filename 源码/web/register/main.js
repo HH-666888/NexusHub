@@ -1,76 +1,12 @@
-<!doctype html>
-<html lang="zh-CN" data-theme="light">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>NexusHub · 注册</title>
-    <link rel="stylesheet" href="../system/app.css" />
-    <link rel="stylesheet" href="../system/glass.css" />
-    <link rel="stylesheet" href="../system/auth.css" />
-  </head>
-  <body>
-    <div class="auth-wrap">
-      <div class="auth-card">
-        <div class="auth-brand">
-          <svg viewBox="0 0 24 24" aria-hidden><path class="brand-mark" d="M4 20V4h3.4l9.2 12V4H20v16h-3.4L7.4 8v12H4z" /></svg>
-          NexusHub
-        </div>
-
-        <h1>创建账号</h1>
-        <p class="auth-sub">注册后就能开始构建你的第一个软件</p>
-
-        <form id="auth-form" novalidate>
-          <div class="auth-field" data-field="username">
-            <label for="username">用户名</label>
-            <div class="input-wrap">
-              <input id="username" name="username" type="text" placeholder="4–20 个字符" autocomplete="username" />
-            </div>
-            <p class="field-tip" data-tip="username"></p>
-          </div>
-
-          <div class="auth-field" data-field="password">
-            <label for="password">密码</label>
-            <div class="input-wrap">
-              <input id="password" name="password" type="password" placeholder="至少 6 位" autocomplete="new-password" />
-              <button class="eye-btn" type="button" id="eye-btn" aria-label="显示密码">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden>
-                  <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" />
-                  <circle cx="12" cy="12" r="2.6" />
-                </svg>
-              </button>
-            </div>
-            <p class="field-tip" data-tip="password"></p>
-          </div>
-
-          <div class="auth-field" data-field="confirm">
-            <label for="confirm">确认密码</label>
-            <div class="input-wrap">
-              <input id="confirm" name="confirm" type="password" placeholder="再输一次" autocomplete="new-password" />
-            </div>
-            <p class="field-tip" data-tip="confirm"></p>
-          </div>
-
-          <button class="btn btn-primary auth-submit" type="submit" id="submit-btn">注册并开始</button>
-        </form>
-
-        <p class="auth-foot">已经有账号了？<a href="./login.html" id="to-login">去登录</a></p>
-        <p class="auth-legal">继续即表示同意《服务条款》与《隐私政策》</p>
-      </div>
-    </div>
-
-    <script>
-      function safeTheme() {
+function safeTheme() {
         try { return localStorage.getItem("nexus-theme"); } catch (e) { return null; }
       }
       (function () {
         const query = new URLSearchParams(location.search);
         document.documentElement.dataset.theme = query.get("theme") || safeTheme() || "light";
       })();
-    </script>
-    <script src="../system/api.js"></script>
-    <script src="../system/demo.js"></script>
-    <script>
-      (function () {
+
+(function () {
         const params = new URLSearchParams(location.search);
         const next = params.get("next") || "";
         const prompt = params.get("prompt") || "";
@@ -96,10 +32,10 @@
         }
 
         function targetUrl() {
-          if (prompt) return "./workbench.html?run=new&prompt=" + encodeURIComponent(prompt);
-          if (next === "workbench") return "./workbench.html?run=new";
-          if (next) return "./" + next + ".html";
-          return "./projects.html";
+          if (prompt) return "../workbench/?run=new&prompt=" + encodeURIComponent(prompt);
+          if (next === "workbench") return "../workbench/?run=new";
+          if (next) return "../" + next + "/";
+          return "../projects/";
         }
 
         [username, password, confirm].forEach(function (input) {
@@ -174,9 +110,6 @@
           const q = new URLSearchParams();
           if (next) q.set("next", next);
           if (prompt) q.set("prompt", prompt);
-          toLogin.href = "./login.html?" + q.toString();
+          toLogin.href = "../login/?" + q.toString();
         }
       })();
-    </script>
-  </body>
-</html>
