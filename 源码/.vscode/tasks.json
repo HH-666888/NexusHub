@@ -1,24 +1,39 @@
 {
-  "//": "VS Code 任务：把这些常用命令变成菜单里的一个点击项。",
-  "//npm": "一律用 npm.cmd 而不是 npm —— PowerShell 的执行策略默认禁止运行 npm.ps1，而 npm.cmd 不受影响。",
-  "//dev": "启动开发服务器不使用 isBackground / problemMatcher：开发服务器本来就永不退出，",
-  "//dev2": "用后台任务那套状态机会被误判成「任务出错」而弹黄色警告。终端里出现 ✓ Ready 就是就绪信号。",
+  "//": "VS Code 任务：把常用命令变成菜单里的一个点击项。",
+  "//frontend": "改前端不用重启：静态文件每次从磁盘读，文本资源带 no-cache。",
+  "//backend": "改后端 Python 需要重启；调试时把 --reload 加上即可自动重载。",
   "version": "2.0.0",
   "tasks": [
     {
       "label": "▶ 启动并打开页面",
-      "detail": "启动服务器，等它就绪后自动在浏览器打开 http://localhost:3000",
+      "detail": "启动 FastAPI（8000），就绪后自动打开 http://127.0.0.1:8000/",
       "dependsOrder": "parallel",
-      "dependsOn": ["启动开发服务器", "（内部）稍后打开浏览器"],
+      "dependsOn": ["启动后端", "（内部）稍后打开浏览器"],
       "problemMatcher": [],
       "group": { "kind": "build", "isDefault": true }
     },
     {
-      "label": "启动开发服务器",
+      "label": "启动后端",
       "detail": "只启动服务，不打开浏览器。停就在终端里按 Ctrl+C",
       "type": "shell",
-      "command": "npm.cmd",
-      "args": ["run", "dev"],
+      "command": "python",
+      "args": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "启动后端（自动重载）",
+      "detail": "改 Python 文件后自动重启，调试用；演示时别开，避免打断运行",
+      "type": "shell",
+      "command": "python",
+      "args": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000", "--reload"],
+      "options": { "cwd": "${workspaceFolder}/backend" },
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -35,7 +50,7 @@
       "args": [
         "-NoProfile",
         "-Command",
-        "Start-Sleep -Seconds 5; Start-Process 'http://localhost:3000'"
+        "Start-Sleep -Seconds 6; Start-Process 'http://127.0.0.1:8000/'"
       ],
       "problemMatcher": [],
       "presentation": { "reveal": "silent", "panel": "dedicated", "close": true },
@@ -46,41 +61,51 @@
       "detail": "服务器已经在跑的时候，用这个把页面调出来",
       "type": "shell",
       "command": "powershell",
-      "args": ["-NoProfile", "-Command", "Start-Process 'http://localhost:3000'"],
+      "args": ["-NoProfile", "-Command", "Start-Process 'http://127.0.0.1:8000/'"],
       "problemMatcher": [],
       "presentation": { "reveal": "silent", "panel": "dedicated", "close": true }
     },
     {
-      "label": "跑全部检查（类型+规范+测试+构建）",
-      "detail": "提交代码前跑一遍，四项必须全绿",
-      "type": "shell",
-      "command": "npm.cmd",
-      "args": ["run", "verify"],
-      "problemMatcher": [],
-      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
-    },
-    {
       "label": "跑单元测试",
+      "detail": "不需要数据库的测试：领域模型、事件、密码规则",
       "type": "shell",
-      "command": "npm.cmd",
-      "args": ["run", "test"],
+      "command": "python",
+      "args": ["-m", "pytest", "-q", "-m", "not integration"],
+      "options": { "cwd": "${workspaceFolder}/backend" },
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
-      "label": "看数据库结构",
+      "label": "跑全部检查（规范 + 测试 + 依赖方向）",
+      "detail": "提交前跑一遍：ruff + pytest + import-linter",
       "type": "shell",
-      "command": "npm.cmd",
-      "args": ["run", "db:inspect"],
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "cd ..\\backend; ruff check .; python -m pytest -q -m 'not integration'; lint-imports"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
-      "label": "能力探测：一句话生成一个应用",
-      "detail": "会真的调用模型并产生费用（约 ¥0.03）",
+      "label": "建表 / 迁移到最新",
+      "detail": "alembic upgrade head，对应数据库 schema",
       "type": "shell",
-      "command": "npm.cmd",
-      "args": ["run", "probe"],
+      "command": "python",
+      "args": ["-m", "alembic", "upgrade", "head"],
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "建管理员账号",
+      "detail": "admin / 123456，幂等，可重复跑",
+      "type": "shell",
+      "command": "python",
+      "args": ["scripts/seed_admin.py"],
+      "options": { "cwd": "${workspaceFolder}/backend" },
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     }
