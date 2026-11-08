@@ -15,7 +15,7 @@ def test_run_json_uses_camel_case() -> None:
     run = Run(
         id="9f2c7a41b3e54d0f9a1c2b3d4e",
         prompt="做一个番茄钟",
-        stage=StageId.SPEC,
+        stage=StageId.PLAN,
         status=RunStatus.RUNNING,
         total_cost_cny=0.0,
         usage=TokenUsage(input=10, output=20, thinking=5),
@@ -52,6 +52,6 @@ def test_paused_is_a_run_status_not_a_phase() -> None:
     assert "awaiting" not in [s.value for s in RunStatus]
 
 
-@pytest.mark.parametrize("stage", ["spec", "arch", "ui", "build", "assemble", "verify"])
+@pytest.mark.parametrize("stage", ["plan", "design", "build", "assemble", "test", "deliver"])
 def test_six_stages_exist(stage: str) -> None:
     assert StageId(stage).value == stage

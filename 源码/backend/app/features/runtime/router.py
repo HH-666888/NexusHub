@@ -20,8 +20,11 @@ from app.features.runtime.schemas import (
 )
 from app.shared.time import now_ms
 
+# 旧的运行时接口（/runtime/*）：保留给已有测试与内部脚本，新代码请用
+# POST/GET /runs/{run_id}/runtime。已从 OpenAPI 文档里隐藏，避免和主接口混淆。
 router = APIRouter(
     prefix="/runtime",
+    include_in_schema=False,
     tags=["runtime"],
     dependencies=[Depends(require_internal_token)],
 )

@@ -102,7 +102,8 @@ def test_register_rejects_duplicate_username(store: FakeStore) -> None:
     assert excinfo.value.status == 409
 
 
-@pytest.mark.parametrize("password", ["abc12", "a" * 129, "abcdef", "123456"])
+# 规则只有长度：>=6 且 <=128，不限制字符类型
+@pytest.mark.parametrize("password", ["abc12", "a" * 129])
 def test_register_rejects_weak_password(store: FakeStore, password: str) -> None:
     with pytest.raises(AppError) as excinfo:
         register(store, password=password)
@@ -119,7 +120,8 @@ def test_register_rejects_confirm_mismatch(store: FakeStore) -> None:
     assert "密码不一致" in excinfo.value.message
 
 
-@pytest.mark.parametrize("username", ["a", "a" * 21, "with space", "bad!", ""])
+# 规则只有长度：4~20，不限制字符类型（空格、符号都允许）
+@pytest.mark.parametrize("username", ["a", "a" * 21, ""])
 def test_register_rejects_bad_username(store: FakeStore, username: str) -> None:
     with pytest.raises(AppError) as excinfo:
         register(store, username=username)
