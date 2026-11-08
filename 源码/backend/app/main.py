@@ -87,7 +87,9 @@ def create_app() -> FastAPI:
         """
         response = await call_next(request)
         content_type = response.headers.get("content-type", "")
-        if content_type.startswith("text/html"):
+        # 文本类资源（html / css / js / json）一律每次校验，避免"改了看不到"；
+        # 图片、字体这类二进制仍可长缓存。
+        if content_type.startswith("text/") or "javascript" in content_type:
             response.headers["Cache-Control"] = "no-cache"
         return response
 
