@@ -76,3 +76,13 @@
 
       @media (max-width: 1080px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
       @media (max-width: 720px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* 删除：平时低调，悬停变红，别跟主操作抢注意力 */
+.card-del {
+  color: var(--text-3);
+}
+.card-del:hover {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fef2f2;
+}

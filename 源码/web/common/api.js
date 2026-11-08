@@ -73,6 +73,10 @@
       return result.ok ? result.data : null;
     },
 
+    async deleteRun(id) {
+      return request("/runs/" + encodeURIComponent(id), { method: "DELETE" });
+    },
+
     async createRun(prompt, fast) {
       const path = fast ? "/runs?fast=1" : "/runs";
       return request(path, { method: "POST", body: JSON.stringify({ prompt }) });

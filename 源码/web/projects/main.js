@@ -82,7 +82,8 @@
             '<div class="body"><h3></h3>' +
             '<div class="meta"><span>' + (stageLabel[run.stage] || run.stage) + "</span><span>¥" +
             (run.totalCostCny || 0).toFixed(2) + "</span><span>" + fmtTime(run.createdAt) + "</span></div>" +
-            '<div class="actions"><button class="btn btn-sm btn-ghost" type="button">看产线</button></div></div>';
+            '<div class="actions"><button class="btn btn-sm btn-ghost" type="button" data-open>看产线</button>' +
+            '<button class="btn btn-sm btn-ghost card-del" type="button" data-del>删除</button></div></div>';
           card.querySelector("h3").textContent = run.prompt;
 
           const open = function (event) {
@@ -90,7 +91,31 @@
             location.href = "../workbench/?run=" + encodeURIComponent(run.id);
           };
           card.addEventListener("click", open);
-          card.querySelector("button").addEventListener("click", open);
+          card.querySelector("[data-open]").addEventListener("click", open);
+
+          // 删除：二次确认，成功后从列表和统计里一起拿掉
+          const delBtn = card.querySelector("[data-del]");
+          delBtn.addEventListener("click", async function (event) {
+            event.stopPropagation();
+            const name = run.prompt || "这次运行";
+            if (!window.confirm("删除「" + name + "」？删除后不能恢复。")) return;
+
+            delBtn.disabled = true;
+            delBtn.textContent = "删除中…";
+            const result = window.api ? await window.api.deleteRun(run.id) : { ok: false };
+            if (!result.ok) {
+              delBtn.disabled = false;
+              delBtn.textContent = "删除";
+              alert(result.offline ? "后端没启动，删不了" : "删除失败，请重试");
+              return;
+            }
+
+            allRuns = allRuns.filter((item) => item.id !== run.id);
+            paintFilters();
+            renderList();
+            updateStats(allRuns);
+          });
+
           return card;
         }
 
