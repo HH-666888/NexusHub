@@ -26,8 +26,8 @@
 | 项 | 说明 |
 |---|---|
 | 运行方式 | 纯 HTML + CSS + 原生 JS，**无构建、无依赖、无网络请求** |
-| 打开方式 | 静态服务：`python -m http.server 5600 --directory web`，访问 `/pages/xxx.html` |
-| 截图工具 | `frontend/scripts/shot.mjs`（Edge CDP，可带 cookie、固定视口、等 2.5s 后截图） |
+| 打开方式 | 由 FastAPI 同源托管：`uvicorn app.main:app --port 8000`，访问 `/welcome/`、`/login/` 等目录 |
+| 截图工具 | `tools/shot.mjs`（Edge CDP，可带 cookie、固定视口、等 2.5s 后截图） |
 | 兼容目标 | Chromium 内核（用到了 `backdrop-filter`、`conic-gradient`、CSS 变量与 `data-*` 主题） |
 | 字体 | 仅系统字体：`PingFang SC / Hiragino Sans GB / Microsoft YaHei / system-ui`；等宽 `JetBrains Mono → Cascadia Mono → Consolas` |
 

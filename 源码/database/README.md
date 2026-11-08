@@ -38,10 +38,10 @@ alembic upgrade head     # 0001 初始迁移直接执行这份 SQL
 | 引擎 | InnoDB（唯一） |
 | 写脚本的方式 | 只增不删；改字段先改契约文档，再改这里，再写新迁移文件 |
 
-## 与 `frontend/drizzle/` 的关系
+## 与产物里的 SQLite 无关
 
-`frontend/drizzle/*.sql` 是**迁移前的 SQLite 迁移历史**（当前可运行版本用的仍然是它），
-与这里的 MySQL 结构不是同一套东西。后端切换完成后，那份历史归档保留、不再演进。
+生成的演示应用自己用 SQLite（`app.db`），那是**产物内部**的事，跟本目录的 MySQL 建表脚本没有关系。
+删掉 `frontend/` 之后，项目里唯一的迁移历史就是本目录的 `schema/*.sql` 和 `backend/migrations/`。
 
 ## 下一步
 
@@ -59,5 +59,5 @@ mysql -u root -p < database/schema/002_provisioner.sql
 # 3. 把这个密码写进 backend/.env 的 MYSQL_PROVISIONER_URL
 ```
 
-`002_runtime.sql` 是运行时自己的两张表（`run_databases` / `run_runtimes`），
+`003_runtime.sql` 是运行时自己的两张表（`run_databases` / `run_runtimes`），
 由 `alembic upgrade head` 建，不要手工执行。

@@ -947,7 +947,7 @@
         work.classList.add("no-code");
       }
 
-      /* ───────── 真实数据桥：workbench-live.js 通过它驱动这一页 ───────── */
+      /* ───────── 真实数据桥：live.js 通过它驱动这一页 ───────── */
       const LIVE = { buf: new Map(), calls: 0 };
 
       function liveEnsureFile(path, lang) {
@@ -1313,7 +1313,7 @@
         },
       };
 
-      // 带真实 run id 时由 workbench-live.js 驱动，不跑演示时间线
+      // 带真实 run id 时由 live.js 驱动，不跑演示时间线
       const bootRunId = new URLSearchParams(location.search).get("run") || "";
       const liveMode = Boolean(bootRunId) && !/^(new|demo\d+)$/.test(bootRunId);
       window.__wb.isLive = liveMode;
