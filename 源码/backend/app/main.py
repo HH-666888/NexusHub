@@ -5,7 +5,7 @@
 
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import Request, Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -78,6 +78,19 @@ def create_app() -> FastAPI:
     # 静态站：源码/web（页面、样式、脚本都由这里托管）。
     # 必须挂最后 —— 挂载在 "/" 会接管所有未命中的路径，/api/v1 由上面的路由先匹配。
     web_dir = Path(__file__).resolve().parents[2] / "web"
+
+    @app.middleware("http")
+    async def _cache_policy(request: Request, call_next):
+        """HTML 每次重新校验，带 ?v= 的静态资源才允许长缓存。
+
+        否则改完样式刷新还是旧的——前端已经踩过这个坑。
+        """
+        response = await call_next(request)
+        content_type = response.headers.get("content-type", "")
+        if content_type.startswith("text/html"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     if web_dir.is_dir():
         app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web")
 
