@@ -16,6 +16,7 @@ from app.features.runtime import service as runtime_service
 from app.features.runtime.repo import SqlRuntimeRepo
 from app.pipeline import demo
 from app.shared.time import now_ms
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_user, get_db
@@ -160,6 +161,46 @@ def get_verdict(
     payload = dict(row.payload)
     payload["source"] = "stored"
     return payload
+
+@router.delete("/{run_id}")
+def delete_run(
+    run_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """删掉一次运行：连同事件、产物、运行时记录一起清，工作区目录也删。"""
+    from pathlib import Path
+    from shutil import rmtree
+
+    from app.config import get_settings
+    from app.db.models import Artifact, RunDatabase, RunEvent, RunRuntime
+
+    run = _owned_or_404(db, run_id, user)
+
+    # 先停后台任务与预览进程，再删数据
+    service.set_status(db, run_id=run_id, status="cancelled")
+    try:
+        runtime_service.stop_runtime(SqlRuntimeRepo(db), run_id=run_id, now=now_ms())
+        db.commit()
+    except Exception:  # noqa: BLE001 - 没起过预览也无所谓
+        db.rollback()
+
+    db.execute(delete(RunEvent).where(RunEvent.run_id == run_id))
+    db.execute(delete(Artifact).where(Artifact.run_id == run_id))
+    db.execute(delete(RunDatabase).where(RunDatabase.run_id == run_id))
+    db.execute(delete(RunRuntime).where(RunRuntime.run_id == run_id))
+    db.delete(run)
+    db.commit()
+
+    workspace = Path(get_settings().runtime_workspace_dir).resolve() / run_id
+    if workspace.is_dir():
+        try:
+            rmtree(workspace, ignore_errors=True)
+        except OSError:
+            pass
+
+    return {"ok": True, "id": run_id}
+
 
 @router.post("/{run_id}/runtime")
 def start_runtime(
