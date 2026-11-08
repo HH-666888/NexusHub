@@ -144,31 +144,27 @@ body {
 .auth-foot { margin: 20px 0 0; text-align: center; font-size: 13px; color: var(--text-2); }
 .auth-foot a { color: var(--primary); font-weight: 600; text-decoration: none; }
 .auth-legal { margin: 14px 0 0; text-align: center; font-size: 11.5px; color: var(--text-3); }
-/* 返回欢迎页：固定在左下角，不跟卡片抢位置 */
+
+/* 返回欢迎页：在登录卡内部，按钮下方居中的小胶囊 */
 .back-home {
-  position: fixed;
-  left: 24px;
-  bottom: 24px;
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  padding: 8px 14px 8px 10px;
+  width: fit-content;
+  margin: 14px auto 2px;
+  padding: 6px 12px 6px 8px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--text-2);
-  font-size: 13px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 12.5px;
   text-decoration: none;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
-  transition: color .18s, border-color .18s, transform .18s;
-  z-index: 20;
+  transition: color .18s, border-color .18s, background .18s;
 }
-.back-home svg { width: 16px; height: 16px; }
+.back-home svg { width: 15px; height: 15px; }
 .back-home:hover {
   color: var(--primary);
   border-color: var(--primary-line);
-  transform: translateY(-1px);
-}
-@media (max-width: 720px) {
-  .back-home { left: 14px; bottom: 14px; }
+  background: var(--primary-soft);
 }
