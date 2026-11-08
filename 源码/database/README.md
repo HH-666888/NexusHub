@@ -41,7 +41,7 @@ alembic upgrade head     # 0001 初始迁移直接执行这份 SQL
 ## 与产物里的 SQLite 无关
 
 生成的演示应用自己用 SQLite（`app.db`），那是**产物内部**的事，跟本目录的 MySQL 建表脚本没有关系。
-删掉 `frontend/` 之后，项目里唯一的迁移历史就是本目录的 `schema/*.sql` 和 `backend/migrations/`。
+`frontend/` 已删除，项目里唯一的迁移历史就是本目录的 `schema/*.sql` 和 `backend/migrations/`。
 
 ## 下一步
 

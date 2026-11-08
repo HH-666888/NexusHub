@@ -1,11 +1,10 @@
 {
   "//": "推荐插件。用 VS Code 打开 源码/ 目录时会自动提示安装。",
   "recommendations": [
-    "dbaeumer.vscode-eslint",
-    "esbenp.prettier-vscode",
-    "bradlc.vscode-tailwindcss",
-    "vitest.explorer",
-    "yoavbls.pretty-ts-errors",
-    "usernamehw.errorlens"
+    "charliermarsh.ruff",
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "editorconfig.editorconfig",
+    "humao.rest-client"
   ]
 }

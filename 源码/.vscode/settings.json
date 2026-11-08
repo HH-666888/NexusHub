@@ -1,86 +1,41 @@
 {
-  "//": "工程约定：这些设置是团队共享的，不是个人偏好。改之前先想清楚对别人的影响。",
-
-  // ---------- 保存即处理 ----------
-  // 保存时自动格式化 + 自动修可修的 lint 问题。
-  // 这样「格式不统一」「有低级 lint 错误」这类问题根本不会进入提交。
+  "//": "工程约定：这些设置是团队共享的，不是个人偏好。",
   "editor.formatOnSave": true,
-  "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "editor.codeActionsOnSave": {
-    "source.fixAll.eslint": "explicit"
+  "editor.rulers": [100],
+
+  // ---------- Python ----------
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
   },
+  "python.analysis.typeCheckingMode": "basic",
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
 
-  // ---------- 用工程自带的 TypeScript ----------
-  // 关键：VS Code 内置的 TypeScript 版本可能和 package.json 里装的不一致，
-  // 不一致会出现「编辑器报错但命令行编译通过」这种最让人困惑的情况。
-  "typescript.tsdk": "node_modules/typescript/lib",
-  "typescript.enablePromptUseWorkspaceTsdk": true,
-  // 保存时不要自动增删 import —— 交给 ESLint 处理，避免两边打架
-  "typescript.updateImportsOnFileMove.enabled": "always",
+  // ---------- 前端（纯静态，没有 prettier/eslint）----------
+  "[html]": { "editor.defaultFormatter": "vscode.html-language-features" },
+  "[css]": { "editor.defaultFormatter": "vscode.css-language-features" },
+  "[javascript]": { "editor.defaultFormatter": "vscode.typescript-language-features" },
 
-  // ---------- 文件格式 ----------
-  // 工程里有大量中文内容，编码必须锁死 UTF-8，
-  // 否则会出现「在我机器上是好的」这类最难查的问题。
-  "files.encoding": "utf8",
+  // ---------- 通用 ----------
   "files.eol": "\n",
   "files.trimTrailingWhitespace": true,
   "files.insertFinalNewline": true,
+  "files.associations": { "*.sql": "sql" },
+  "[bat]": { "files.eol": "\r\n" },
 
-  // ---------- 排除干扰 ----------
-  // 这些目录要么是生成的、要么是运行时数据，不需要被搜索和监听。
-  // 不排除的话，搜索会被 node_modules 淹没，保存时文件监听也会变慢。
+  // 运行产物与依赖不进搜索
   "search.exclude": {
     "**/node_modules": true,
     "**/.next": true,
-    "**/data": true,
-    "**/package-lock.json": true,
-    "**/*.tsbuildinfo": true
+    "源码/backend/data": true,
+    "源码/web/shots": true
   },
   "files.watcherExclude": {
-    "**/node_modules/**": true,
-    "**/.next/**": true,
-    "**/data/**": true
-  },
-
-  // ---------- Tailwind ----------
-  // 让 class 字符串里也有补全和颜色预览
-  "tailwindCSS.classAttributes": ["class", "className", "clsx", "cn"],
-  "editor.quickSuggestions": {
-    "strings": "on"
-  },
-
-  // ---------- 语言级微调 ----------
-  "[typescript]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
-  },
-  "[typescriptreact]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
-  },
-  "[json]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
-  },
-  "[jsonc]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
-  },
-  "[markdown]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
-  },
-
-  // 每天都要改的就是 src 下的代码，打开项目时直接定位过去省一步操作
-  "workbench.startupEditor": "none",
-
-  // ---------- 资源管理器里藏掉「噪音」 ----------
-  // 这两个目录一个是装依赖的、一个是构建产物，加起来几万个文件，
-  // 留在侧边栏里只会淹没真正要看的源码。
-  // 注意：只是「不显示」，文件本身还在，命令行照样能访问。
-  "files.exclude": {
-    "**/node_modules": true,
-    "**/.next": true,
-    "**/*.tsbuildinfo": true
-  },
-
-  // 文件嵌套：把 next.config.ts、tsconfig.json 这些配置文件折叠进 package.json。
-  // 熟练之后很好用，但初学阶段会让「配置文件去哪了」变成一个反复出现的困惑，
-  // 所以先关掉。想开的话把这里改成 true 即可。
-  "explorer.fileNesting.enabled": false
+    "**/源码/backend/data/**": true,
+    "**/源码/web/shots/**": true
+  }
 }

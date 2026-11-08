@@ -7,7 +7,7 @@
 ├─ database/     建表 SQL + 管理员种子
 ├─ docs/         定位、契约、数据库与目录规定
 ├─ tools/        截图等本地小工具
-└─ frontend/     【已废弃】Next.js 旧前端，未入库，可整个删掉
+└─ （frontend/ 已删除：Next.js 旧前端，代码留存在 git 历史里）
 ```
 
 ## 现在是什么状态
@@ -46,6 +46,16 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 前端改动**不用重启**（静态文件每次从磁盘读）；后端 Python 改动需要重启，
 调试时可用 `--reload`。
+
+## 目录里有些“暂时不跑”的模块
+
+以下目录是为接真模型预留的位置，现在没有代码 import 它们，**不是死代码**，是下一步的落点：
+
+```
+backend/app/ai/            模型调用、成本核算、语料检索
+backend/app/pipeline/stages/*/prompts.py   六道工序的提示词
+backend/app/shared/        限流、分页、密码等基础设施
+```
 
 ## 文档
 
