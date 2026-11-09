@@ -8,8 +8,9 @@ if not "%~1"=="" set "PORT=%~1"
 
 echo ============================================
 echo  NexusHub ∫Û∂À
-echo  µÿ÷∑: http://127.0.0.1:%PORT%
-echo  Õ£÷π: ∞¥ Ctrl+C
+echo  v2 µÿ÷∑: http://127.0.0.1:%PORT%/v2/
+echo  æ…’æ:    http://127.0.0.1:%PORT%/
+echo  Õ£÷π:    ∞¥ Ctrl+C
 echo ============================================
 echo.
 
