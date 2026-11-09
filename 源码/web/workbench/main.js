@@ -69,6 +69,7 @@
       /* 真实任务仓库：每道工序下面都可以有任务，不再只有第 3 道 */
       const STAGE_ORDER = ["plan", "design", "build", "assemble", "test", "deliver"];
       const TASK_STORE = { tasks: [] };
+      const PLAY = { speed: 1, maxPct: 0 };
 
       /** 把后端任务转成树上的卡片刻度 */
       function toCard(task) {
@@ -1003,8 +1004,17 @@
         if (tcCurrent) showTaskDetail(tcCurrent);
 
         if (TASK_STORE.tasks.length) {
-          const done = TASK_STORE.tasks.filter(function (task) { return task.state === "done"; }).length;
-          const pct = Math.round((done / TASK_STORE.tasks.length) * 100);
+          // 进度 = (当前道 + 本道完成比) / 6。刚进一道时任务还没派完，
+          // 若只按"已出现的任务"算，会出现 2 个任务全做完就 100% 的假象。
+          const stageIndex = Math.max(0, STAGES.findIndex(function (item) { return item.state === "live"; }));
+          const stageId = STAGE_ORDER[stageIndex];
+          const inStage = TASK_STORE.tasks.filter(function (task) { return task.stage === stageId; });
+          const doneInStage = inStage.filter(function (task) { return task.state === "done"; }).length;
+          const ratio = inStage.length ? doneInStage / inStage.length : 0;
+          const raw = Math.min(99, Math.round(((stageIndex + ratio) / 6) * 100));
+          // 回环修复会真的回到前一道，但进度条不要把用户吓得以为白干了
+          PLAY.maxPct = Math.max(PLAY.maxPct, raw);
+          const pct = PLAY.maxPct;
           const pctEl = document.getElementById("pct");
           const barEl = document.getElementById("bar");
           if (pctEl) pctEl.textContent = pct + "%";
@@ -1012,6 +1022,47 @@
         }
 
         render();
+      }
+
+      /* ───────── 播放速度：0.1–1，1 是真实速度 ───────── */
+      try {
+        const saved = Number(localStorage.getItem("nexus-speed"));
+        if (saved >= 0.1 && saved <= 1) PLAY.speed = saved;
+      } catch (error) {
+        /* 隐私模式读不到就按 1 处理 */
+      }
+
+      const speedInput = document.getElementById("speed");
+      const speedBtn = document.getElementById("speed-btn");
+      const speedPop = document.getElementById("speed-pop");
+
+      function applySpeed(value) {
+        const speed = Math.min(1, Math.max(0.1, Number(value) || 1));
+        PLAY.speed = speed;
+        if (speedBtn) speedBtn.textContent = (speed === 1 ? "1" : speed.toFixed(1)) + "×";
+        if (speedInput && speedInput.value !== String(speed)) speedInput.value = String(speed);
+        document.documentElement.style.setProperty("--node-dur", (0.28 / speed).toFixed(2) + "s");
+        try {
+          localStorage.setItem("nexus-speed", String(speed));
+        } catch (error) {
+          /* 存不了就算了 */
+        }
+      }
+
+      if (speedInput) {
+        applySpeed(PLAY.speed);
+        speedInput.addEventListener("input", function () {
+          applySpeed(speedInput.value);
+        });
+      }
+      if (speedBtn && speedPop) {
+        speedBtn.addEventListener("click", function (event) {
+          event.stopPropagation();
+          speedPop.classList.toggle("open");
+        });
+        document.addEventListener("click", function (event) {
+          if (!speedPop.contains(event.target)) speedPop.classList.remove("open");
+        });
       }
 
       /* ───────── 任务详情卡：点一下就知道它干了什么 ───────── */
@@ -1089,6 +1140,15 @@
 
       window.__wb = {
         isLive: true,
+
+        getSpeed() {
+          return PLAY.speed;
+        },
+
+        setSpeed(value) {
+          applySpeed(value);
+          if (speedInput) speedInput.value = String(PLAY.speed);
+        },
 
         stopTimeline() {
           timelineTimers.forEach(clearTimeout);
@@ -1177,6 +1237,7 @@
 
         clearTasks() {
           TASK_STORE.tasks.length = 0;
+          PLAY.maxPct = 0;
           renderTaskList();
           render();
         },

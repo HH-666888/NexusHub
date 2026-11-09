@@ -46,7 +46,42 @@
     failed: 2,
   };
 
-  const state = { events: [], verdict: null, cost: 0, run: null, timer: null };
+  const state = { events: [], verdict: null, cost: 0, run: null, timer: null, lastSeq: 0 };
+
+  /* 播放层：速度 1 时事件直接落地；小于 1 时进队列，按原始间隔 ÷ 速度 慢慢放。
+     只影响前端呈现，后端与花费完全不变。 */
+  const queue = { items: [], timer: null };
+
+  function speed() {
+    return wb && wb.getSpeed ? wb.getSpeed() : 1;
+  }
+
+  function clearQueue() {
+    queue.items.length = 0;
+    if (queue.timer) {
+      clearTimeout(queue.timer);
+      queue.timer = null;
+    }
+  }
+
+  function drain() {
+    queue.timer = null;
+    const item = queue.items.shift();
+    if (!item) return;
+    apply(item.kind, item.payload, item.at);
+    const next = queue.items[0];
+    const gap = next ? Math.max(24, next.at - item.at) : 120;
+    queue.timer = setTimeout(drain, Math.min(5000, gap / Math.max(0.1, speed())));
+  }
+
+  function enqueue(kind, payload, at) {
+    if (speed() >= 0.99) {
+      apply(kind, payload, at);
+      return;
+    }
+    queue.items.push({ kind, payload, at });
+    if (!queue.timer) queue.timer = setTimeout(drain, 30);
+  }
 
   function timeOf(ms) {
     const d = new Date(ms);
@@ -77,7 +112,7 @@
         wb.setProgress(100);
       } else {
         wb.setStage(index);
-        wb.setProgress(Math.min(96, 12 + index * 15));
+        // 进度由任务层按"道 + 本道完成比"算，这里不抢
       }
       wb.setEvent(timeOf(at) + " · " + (payload.label || payload.phase));
       return;
@@ -186,7 +221,13 @@
       }
       const kind = payload.kind;
       if (!kind) return;
-      apply(kind, payload, Date.now());
+
+      // 打开页面时已经用接口载入过历史事件，SSE 会从第 1 条重放，这里按 seq 去重
+      if (payload.seq) {
+        if (payload.seq <= state.lastSeq) return;
+        state.lastSeq = payload.seq;
+      }
+      enqueue(kind, payload, payload.at || Date.now());
       if (kind === "phase" && payload.phase === "done") {
         wb.setStatus("done");
         source.close();
@@ -408,6 +449,7 @@
 
   function replayAll() {
     stopReplay();
+    clearQueue();
     wb.resetFiles();
     if (wb.clearTasks) wb.clearTasks();
     wb.setStage(0);
@@ -415,7 +457,7 @@
     wb.setStatus("running");
 
     let index = 0;
-    state.timer = setInterval(function () {
+    function step() {
       if (index >= state.events.length) {
         stopReplay();
         wb.setStatus("done");
@@ -424,7 +466,13 @@
       }
       const item = state.events[index++];
       apply(item.kind, item.payload, item.at, false);
-    }, 150);
+
+      // 下一拍的间隔 = 事件原本的间隔 ÷ 当前速度
+      const next = state.events[index];
+      const gap = next ? Math.max(20, next.at - item.at) : 120;
+      state.timer = setTimeout(step, Math.min(4000, gap / Math.max(0.1, speed())));
+    }
+    step();
   }
 
   function replayFile() {
@@ -439,18 +487,24 @@
 
     wb.resetFile(path);
     let index = 0;
-    state.timer = setInterval(function () {
+    function step() {
       if (index >= items.length) {
         stopReplay();
         return;
       }
       const item = items[index++];
       wb.feedFile(item.payload.path, item.payload.lang, item.payload.delta || "", Boolean(item.payload.done));
-    }, 120);
+
+      const next = items[index];
+      const gap = next ? Math.max(20, next.at - item.at) : 100;
+      state.timer = setTimeout(step, Math.min(3000, gap / Math.max(0.1, speed())));
+    }
+    step();
   }
 
   function backToLive() {
     stopReplay();
+    clearQueue();
     wb.resetFiles();
     if (wb.clearTasks) wb.clearTasks();
     state.events.forEach(function (item) {
@@ -482,6 +536,7 @@
     if (Array.isArray(events)) {
       events.forEach(function (item) {
         apply(item.kind, item.payload, item.createdAt || Date.now());
+        if (item.seq) state.lastSeq = Math.max(state.lastSeq, item.seq);
       });
       if (run) applyRun(run); // 回放后再对齐一次状态
     }
