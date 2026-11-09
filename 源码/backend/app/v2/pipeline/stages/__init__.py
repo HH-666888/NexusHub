@@ -37,10 +37,22 @@ def _spec():
     return run
 
 
+def _design():
+    from app.v2.pipeline.stages.design.run import run
+
+    return run
+
+
+def _build():
+    from app.v2.pipeline.stages.build.run import run
+
+    return run
+
+
 STAGES: list[Stage] = [
     Stage("plan", "spec", "需求分析", _spec()),
-    Stage("design", "arch", "架构设计", _not_ready("design")),
-    Stage("build", "building", "并行开发", _not_ready("build")),
+    Stage("design", "arch", "架构设计", _design()),
+    Stage("build", "building", "并行开发", _build()),
     Stage("assemble", "saving", "集成装配", _not_ready("assemble")),
     Stage("test", "checking", "自动测试", _not_ready("test")),
     Stage("deliver", "deliver", "验收交付", _not_ready("deliver")),

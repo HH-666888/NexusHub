@@ -15,14 +15,11 @@ from app.db.models import Run
 from app.shared.time import now_ms
 from app.v2.pipeline import recorder
 from app.v2.pipeline.context import RunContext
+from app.v2.pipeline.errors import BudgetExceeded
 from app.v2.pipeline.stages import STAGES, StageNotReady
 
 _RUNNING: dict[str, threading.Thread] = {}
 _LOCK = threading.Lock()
-
-
-class BudgetExceeded(Exception):
-    """单次预算到顶。"""
 
 
 def create_and_start(db: Session, *, user_id: int, prompt: str) -> Run:
@@ -96,6 +93,10 @@ def _loop(run_id: str, prompt: str) -> None:
 
         try:
             stage.handler(run_id, ctx)
+        except BudgetExceeded:
+            recorder.error(run_id, "预算到顶，运行已暂停", "去设置里调高单次预算")
+            recorder.set_status(run_id, "paused")
+            return
         except StageNotReady as error:
             recorder.error(run_id, str(error))
             recorder.set_status(run_id, "failed")

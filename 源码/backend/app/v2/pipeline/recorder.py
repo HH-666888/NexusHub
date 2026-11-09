@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from sqlalchemy import func, select
@@ -12,6 +13,10 @@ from sqlalchemy import func, select
 from app.db.models import Run, RunEvent
 from app.db.session import SessionLocal
 from app.shared.time import now_ms
+
+
+# 单进程内并发写事件时，seq 必须串行分配，否则会撞主键
+_EMIT_LOCK = threading.Lock()
 
 
 def _next_seq(db, run_id: str) -> int:
@@ -23,15 +28,16 @@ def _next_seq(db, run_id: str) -> int:
 
 def emit(run_id: str, kind: str, payload: dict[str, Any]) -> int:
     """写一条事件，返回 seq。payload 里必须自带 kind（与 SSE 帧一致）。"""
-    db = SessionLocal()
-    try:
-        seq = _next_seq(db, run_id)
-        body = {"kind": kind, **payload}
-        db.add(RunEvent(run_id=run_id, seq=seq, kind=kind, payload=body, created_at=now_ms()))
-        db.commit()
-        return seq
-    finally:
-        db.close()
+    with _EMIT_LOCK:
+        db = SessionLocal()
+        try:
+            seq = _next_seq(db, run_id)
+            body = {"kind": kind, **payload}
+            db.add(RunEvent(run_id=run_id, seq=seq, kind=kind, payload=body, created_at=now_ms()))
+            db.commit()
+            return seq
+        finally:
+            db.close()
 
 
 def phase(run_id: str, value: str, label: str) -> None:

@@ -15,7 +15,9 @@ from app.v2.ai.model.schema import structured
 from app.v2.domain.models import SpecV2
 from app.v2.pipeline import gate, recorder
 from app.db.session import SessionLocal
+from app.config import get_settings
 from app.v2.pipeline.context import RunContext
+from app.v2.pipeline.errors import BudgetExceeded
 
 SYSTEM = """你是软件需求分析师。只做一件事：把用户的一句话变成可执行的软件规格。
 
@@ -41,10 +43,6 @@ SYSTEM = """你是软件需求分析师。只做一件事：把用户的一句�
 
 题型：single（单选）、multi（多选）、text（自由文本）。text 题可以不写 options。
 """
-
-
-class BudgetExceeded(Exception):
-    """预算到顶，停止运行。"""
 
 
 def _task_id(run_id: str, title: str) -> str:
@@ -88,6 +86,9 @@ def run(run_id: str, ctx: RunContext) -> SpecV2:
         cny=amount,
     )
     recorder.cost(run_id, "plan", amount, recorder.total_cost(run_id))
+
+    if recorder.total_cost(run_id) >= get_settings().run_cost_limit_cny:
+        raise BudgetExceeded()
 
     recorder.task(
         run_id,
