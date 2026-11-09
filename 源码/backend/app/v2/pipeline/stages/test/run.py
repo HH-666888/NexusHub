@@ -82,6 +82,41 @@ def _case_task(run_id: str, case_id: str) -> str:
     return "task-test-" + hashlib.sha1(f"{run_id}:test:{case_id}".encode()).hexdigest()[:6]
 
 
+_RESPONSE_FIELDS: dict[tuple[str, str], set[str]] = {}
+
+
+def _response_fields(base: str) -> dict[tuple[str, str], set[str]]:
+    """从 OpenAPI 取出 2xx JSON 响应里的必填字段，用于字段级断言。"""
+    try:
+        doc = httpx.get(base + "/openapi.json", timeout=5).json()
+    except Exception:  # noqa: BLE001
+        return {}
+    components = (doc.get("components") or {}).get("schemas") or {}
+    found: dict[tuple[str, str], set[str]] = {}
+    for path, operations in (doc.get("paths") or {}).items():
+        for method, operation in operations.items():
+            if method not in {"get", "post", "put", "patch", "delete"}:
+                continue
+            for code, response in (operation.get("responses") or {}).items():
+                if not str(code).startswith("2"):
+                    continue
+                media = (response.get("content") or {}).get("application/json") or {}
+                schema = media.get("schema") or {}
+                if "$ref" in schema:
+                    schema = components.get(schema["$ref"].split("/")[-1], {})
+                if schema.get("type") == "array":
+                    item = schema.get("items") or {}
+                    if "$ref" in item:
+                        item = components.get(item["$ref"].split("/")[-1], {})
+                    required = set(item.get("required") or [])
+                else:
+                    required = set(schema.get("required") or [])
+                if required:
+                    found[(method.upper(), path)] = required
+                break
+    return found
+
+
 def _openapi_routes(base: str) -> set[tuple[str, str]]:
     try:
         doc = httpx.get(base + "/openapi.json", timeout=5).json()
@@ -283,6 +318,18 @@ def _run_case(client: httpx.Client, case: Case) -> tuple[bool, str]:
     if contains and contains not in text:
         return False, f"响应里没有 {contains!r}（实际 {text[:160]!r}）"
 
+    required = _RESPONSE_FIELDS.get((case.method.upper(), case.path))
+    if required and response.headers.get("content-type", "").startswith("application/json"):
+        try:
+            body = response.json()
+        except ValueError:
+            return False, f"响应不是 JSON：{text[:120]}"
+        # 只对"列表接口且非空"做字段级断言；单体响应与错误体跳过，避免误判
+        if isinstance(body, list) and body and isinstance(body[0], dict):
+            missing = [key for key in required if key not in body[0]]
+            if missing:
+                return False, f"列表项缺少字段 {missing}（实际 {sorted(body[0])[:8]}）"
+
     expected_json = expect.get("json")
     if expected_json:
         try:
@@ -400,6 +447,8 @@ def run(run_id: str, ctx: RunContext) -> list[dict]:
             tail = runtime.log_tail(process)
             raise StageFailed(f"产物启动失败：{tail[-500:]}")
 
+        global _RESPONSE_FIELDS
+        _RESPONSE_FIELDS = _response_fields(base)
         plan = _gen_plan(run_id, ctx, _openapi_contract(base), base)
         for case in plan.cases:
             recorder.task(
