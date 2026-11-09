@@ -23,11 +23,14 @@ from app.v2.pipeline.errors import BudgetExceeded, StageFailed
 SYSTEM = """你是软件架构师。基于规格设计一个最小可运行的全栈应用。
 
 技术约束（必须遵守）：
-1. 后端 Python 3.12 + sqlite3；如需 Web 框架只能用 FastAPI（已安装）。
-2. 前端原生 HTML/CSS/JS，不引任何 CDN 或第三方库。
-3. 模块 2-4 个，每个模块至少覆盖一条验收标准。
-4. 依赖必须单向，不允许环。
-5. 必须给出文件清单，路径相对工作区：db/…、api/…、web/…。
+1. 固定三个模块，不要多也不要少：db、api、web。
+2. 每个模块只允许一个文件，路径固定：
+   - db  → db/schema.sql
+   - api → api/main.py
+   - web → web/index.html（CSS 和 JS 都内联在这个文件里）
+3. 后端 Python 3.12 + sqlite3 + FastAPI；前端原生 HTML/CSS/JS，不引 CDN。
+4. 每个模块至少覆盖一条验收标准。
+5. 依赖必须单向：web → api → db。
 6. 只输出 JSON。
 
 schema：
@@ -66,8 +69,9 @@ def _validate(arch: ArchV2, acceptance_ids: list[str]) -> list[str]:
     files = [path for module in arch.modules for path in module.files]
     if len(files) != len(set(files)):
         problems.append("同一个文件被多个模块声明")
-    if not files:
-        problems.append("没有声明任何文件")
+    expected = {"db/schema.sql", "api/main.py", "web/index.html"}
+    if set(files) != expected:
+        problems.append(f"文件清单必须是 {sorted(expected)}，实际 {sorted(set(files))}")
     if arch.entry not in files:
         problems.append(f"入口 {arch.entry} 不在文件清单里")
 

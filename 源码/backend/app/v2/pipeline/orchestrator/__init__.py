@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import threading
+import traceback
 import uuid
 
 from sqlalchemy.orm import Session
@@ -102,7 +103,10 @@ def _loop(run_id: str, prompt: str) -> None:
             recorder.set_status(run_id, "failed")
             return
         except Exception as error:  # noqa: BLE001
-            recorder.error(run_id, f"{stage.label}失败：{error}")
+            detail = ""
+            if error.__class__.__name__ not in {"StageFailed", "StageNotReady"}:
+                detail = "\n" + traceback.format_exc(limit=3)[-500:]
+            recorder.error(run_id, f"{stage.label}失败：{error}{detail}")
             recorder.set_status(run_id, "failed")
             return
 

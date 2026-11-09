@@ -19,6 +19,7 @@ class RunContext:
     files: dict[str, str] = field(default_factory=dict)
     workspace: str = ""
     failures: list[str] = field(default_factory=list)
+    checks: list[dict] = field(default_factory=list)
 
     def answer(self, question_id: str, fallback: str = "") -> str:
         for item in self.answers:

@@ -49,11 +49,29 @@ def _build():
     return run
 
 
+def _assemble():
+    from app.v2.pipeline.stages.assemble.run import run
+
+    return run
+
+
+def _test():
+    from app.v2.pipeline.stages.test.run import run
+
+    return run
+
+
+def _deliver():
+    from app.v2.pipeline.stages.deliver.run import run
+
+    return run
+
+
 STAGES: list[Stage] = [
     Stage("plan", "spec", "需求分析", _spec()),
     Stage("design", "arch", "架构设计", _design()),
     Stage("build", "building", "并行开发", _build()),
-    Stage("assemble", "saving", "集成装配", _not_ready("assemble")),
-    Stage("test", "checking", "自动测试", _not_ready("test")),
-    Stage("deliver", "deliver", "验收交付", _not_ready("deliver")),
+    Stage("assemble", "saving", "集成装配", _assemble()),
+    Stage("test", "checking", "自动测试", _test()),
+    Stage("deliver", "deliver", "验收交付", _deliver()),
 ]
