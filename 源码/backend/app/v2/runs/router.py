@@ -6,13 +6,19 @@
 
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Artifact, Run, RunEvent
+from app.db.session import SessionLocal
 from app.deps import get_current_user, get_db
 from app.domain.user import User
+from app.shared.sse import HEARTBEAT_FRAME, HEARTBEAT_SECONDS, SSE_HEADERS, format_event
+from app.v2.pipeline import orchestrator
 from app.v2.runs.schemas import EventOut, RunOut, run_to_dict
 
 router = APIRouter()
@@ -101,3 +107,77 @@ def delete_run(
     db.execute(delete(Run).where(Run.id == run_id))
     db.commit()
     return {"ok": True, "id": run_id}
+
+@router.get("/{run_id}/stream")
+def stream_run(
+    run_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """SSE：与 v1 同样的帧格式，带 seq 与真实落库时间。"""
+    _owned(db, run_id, user)
+
+    def frames():
+        last_seq = 0
+        idle = 0.0
+        while True:
+            session = SessionLocal()
+            try:
+                rows = (
+                    session.execute(
+                        select(RunEvent)
+                        .where(RunEvent.run_id == run_id, RunEvent.seq > last_seq)
+                        .order_by(RunEvent.seq.asc())
+                    )
+                    .scalars()
+                    .all()
+                )
+                run = session.get(Run, run_id)
+                status = run.status if run is not None else "cancelled"
+            finally:
+                session.close()
+
+            if rows:
+                idle = 0.0
+                for row in rows:
+                    last_seq = row.seq
+                    yield format_event({**row.payload, "seq": row.seq, "at": row.created_at})
+            else:
+                idle += 0.3
+                if idle >= HEARTBEAT_SECONDS:
+                    idle = 0.0
+                    yield HEARTBEAT_FRAME
+                if status in {"done", "failed", "cancelled"}:
+                    return
+                if status == "paused" and idle == 0.0:
+                    # 暂停时保持连接，等回答或恢复
+                    pass
+            time.sleep(0.3)
+
+    return StreamingResponse(frames(), headers=SSE_HEADERS)
+
+
+@router.post("/{run_id}/pause")
+def pause_run(run_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _owned(db, run_id, user)
+    run = db.get(Run, run_id)
+    run.status = "paused"
+    db.commit()
+    return {"ok": True, "status": "paused"}
+
+
+@router.post("/{run_id}/resume")
+def resume_run(run_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    run = _owned(db, run_id, user)
+    run.status = "running"
+    db.commit()
+    orchestrator.start(run_id, run.prompt)
+    return {"ok": True, "status": "running"}
+
+
+@router.post("/{run_id}/cancel")
+def cancel_run(run_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    run = _owned(db, run_id, user)
+    run.status = "cancelled"
+    db.commit()
+    return {"ok": True, "status": "cancelled"}

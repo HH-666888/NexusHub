@@ -12,6 +12,7 @@ from app.v2.ai.cost.pricing import cost_cny, price_of, tier_of
 from app.v2.ai.model.client import ModelClient, ModelError, ModelReply
 from app.v2.ai.model.record import RecordedModelClient
 from app.v2.ai.model.schema import parse_json, structured
+from app.v2.domain.models import ArchV2, Question, SpecV2
 from pydantic import BaseModel
 
 
@@ -116,3 +117,23 @@ def test_replay_missing_raises(tmp_path) -> None:
     replay = RecordedModelClient(None, "replay", tmp_path)
     with pytest.raises(ModelError):
         replay.complete([{"role": "user", "content": "missing"}], "deepseek-chat")
+
+def test_question_requires_options_unless_text() -> None:
+    with pytest.raises(Exception):
+        Question(id="q1", type="single", text="选一个")
+    assert Question(id="q2", type="text", text="写点什么", default="无").type == "text"
+
+
+def test_spec_and_arch_validate() -> None:
+    spec = SpecV2(
+        goal="记录待办",
+        audience="个人",
+        acceptance=[{"id": "a1", "text": "能添加一条待办"}],
+    )
+    assert spec.acceptance[0].id == "a1"
+
+    arch = ArchV2(
+        modules=[{"id": "db", "name": "库", "responsibility": "存", "files": ["db/schema.sql"]}],
+        entry="api/main.py",
+    )
+    assert arch.modules[0].files == ["db/schema.sql"]
