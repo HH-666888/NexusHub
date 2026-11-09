@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     # 内部调用的口令：Next 侧带 x-internal-token 才能进；两侧必须一致
     internal_token: str = ""
     # 运行器：docker（默认，有隔离）或 process（开发机没有 docker 时的退路，无隔离）
+    # ── v2 ──
+    pipeline: str = "demo"            # demo | real
+    record_mode: str = "off"          # off | record | replay
+    max_loopback: int = 2
+    ask_max_questions: int = 0        # 0 = 不限
+    ask_max_rounds: int = 0           # 0 = 不限
+    pipeline_v2_concurrency: int = 3
+
     runtime_runner: str = "docker"
 
     # 产物工作区：与前端 WORKSPACE_ROOT 指向同一个目录（容器把它只读挂载进去）

@@ -61,6 +61,10 @@ def create_app() -> FastAPI:
     ):
         app.include_router(router, prefix=API_PREFIX)
 
+    # v2 路由（与 v1 并存，互不影响）
+    from app.v2 import router as v2_router
+    app.include_router(v2_router, prefix="/api/v2")
+
     @app.get(f"{API_PREFIX}/health", tags=["health"], response_model=HealthStatus)
     def health(db: Session = Depends(get_db)) -> HealthStatus:
         return build_health(db)
@@ -92,6 +96,11 @@ def create_app() -> FastAPI:
         if content_type.startswith("text/") or "javascript" in content_type:
             response.headers["Cache-Control"] = "no-cache"
         return response
+
+    # ── v2 双轨：/v2 必须挂在 "/" 之前，否则会被旧站截走 ──
+    web_v2_dir = Path(__file__).resolve().parents[2] / "web-v2"
+    if web_v2_dir.is_dir():
+        app.mount("/v2", StaticFiles(directory=str(web_v2_dir), html=True), name="web_v2")
 
     if web_dir.is_dir():
         app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web")
