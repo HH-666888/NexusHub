@@ -67,7 +67,8 @@ def stream(run_id: str, request: Request, user: User = Depends(get_current_user)
                 idle = 0.0
                 for row in rows:
                     last_seq = row.seq
-                    yield format_event(row.payload)
+                    # 带上序号与落库时间：前端用 seq 去重，用 at 还原真实节奏
+                    yield format_event({**row.payload, "seq": row.seq, "at": row.created_at})
             else:
                 idle += POLL_SECONDS
                 if idle >= HEARTBEAT_SECONDS:
