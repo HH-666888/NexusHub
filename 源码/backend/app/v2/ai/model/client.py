@@ -26,6 +26,7 @@ class ModelReply:
     prompt_tokens: int
     completion_tokens: int
     latency_ms: int
+    finish_reason: str = ""
 
 
 class ModelClient:
@@ -81,6 +82,7 @@ class ModelClient:
                     prompt_tokens=int(usage.get("prompt_tokens") or 0),
                     completion_tokens=int(usage.get("completion_tokens") or 0),
                     latency_ms=_now_ms() - began,
+                    finish_reason=str(data["choices"][0].get("finish_reason") or ""),
                 )
             except ModelError as error:
                 last_error = error

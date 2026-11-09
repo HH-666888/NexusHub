@@ -180,6 +180,17 @@ def run(run_id: str, ctx: RunContext) -> str:
     passed = sum(layer["passed"] for layer in layers)
     total = sum(layer["total"] for layer in layers)
     recorder.emit(run_id, "verdict", {"layers": layers, "passed": passed, "total": total})
+    if passed < total:
+        recorder.task(
+            run_id,
+            "failed",
+            task_id=task_id,
+            stage="deliver",
+            title="起预览与打包",
+            kind="deliver",
+            reason=f"验收未通过：{passed}/{total}",
+        )
+        raise StageFailed(f"验收未通过：{passed}/{total}")
 
     for name in ("index.html", "spec.json", "arch.json", "manifest.json"):
         db = SessionLocal()

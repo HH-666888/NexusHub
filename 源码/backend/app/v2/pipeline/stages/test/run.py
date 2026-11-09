@@ -208,6 +208,25 @@ def _gen_plan(run_id: str, ctx: RunContext, api_contract: str, base: str) -> Tes
         kept.append(case)
     plan.cases = kept or [Case(id="c1", acceptance=spec["acceptance"][0]["id"], type="page", path="/", expect={"status": 200})]
 
+    if not real:
+        for line in _discover_routes(run_id):
+            parts = line.split()
+            if len(parts) >= 2:
+                real.add((parts[0].upper(), parts[1]))
+
+    if real and not any(case.type == "http" for case in plan.cases):
+        get_routes = sorted(path for method, path in real if method == "GET")
+        if get_routes:
+            plan.cases.append(
+                Case(
+                    id="autoapi",
+                    acceptance=spec["acceptance"][0]["id"],
+                    type="http",
+                    path=get_routes[0],
+                    expect={"status": 200},
+                )
+            )
+
     covered = {case.acceptance for case in plan.cases}
     for index, item in enumerate(spec.get("acceptance", []), start=1):
         if item["id"] not in covered:
@@ -216,6 +235,25 @@ def _gen_plan(run_id: str, ctx: RunContext, api_contract: str, base: str) -> Tes
             )
 
     acceptance_ids = {item["id"] for item in spec.get("acceptance", [])}
+    if not real:
+        for line in _discover_routes(run_id):
+            parts = line.split()
+            if len(parts) >= 2:
+                real.add((parts[0].upper(), parts[1]))
+
+    if real and not any(case.type == "http" for case in plan.cases):
+        get_routes = sorted(path for method, path in real if method == "GET")
+        if get_routes:
+            plan.cases.append(
+                Case(
+                    id="autoapi",
+                    acceptance=spec["acceptance"][0]["id"],
+                    type="http",
+                    path=get_routes[0],
+                    expect={"status": 200},
+                )
+            )
+
     covered = {case.acceptance for case in plan.cases}
     missing = acceptance_ids - covered
     if missing:
