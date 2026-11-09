@@ -48,7 +48,7 @@ function safeTheme() {
           eyeBtn.style.color = show ? "var(--primary)" : "";
         });
 
-        document.getElementById("fill-demo").addEventListener("click", function () {
+        document.getElementById("fill-test").addEventListener("click", function () {
           account.value = "admin";
           password.value = "123456";
           tip("account", "");
@@ -71,8 +71,7 @@ function safeTheme() {
             if (window.api) {
               const result = await window.api.login(name, pwd);
               if (result.ok) {
-                if (window.NexusDemo) window.NexusDemo.login(name);
-                location.href = targetUrl();
+                              location.href = targetUrl();
                 return;
               }
               if (!result.offline) {
@@ -82,8 +81,7 @@ function safeTheme() {
             }
 
             // 没有后端时（双击打开 / 纯静态托管）退回演示登录
-            if (window.NexusDemo) window.NexusDemo.login(name);
-            location.href = targetUrl();
+                      location.href = targetUrl();
           } finally {
             submitBtn.disabled = false;
             submitBtn.textContent = "登录";

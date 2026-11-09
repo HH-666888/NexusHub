@@ -181,3 +181,60 @@ def cancel_run(run_id: str, user: User = Depends(get_current_user), db: Session 
     run.status = "cancelled"
     db.commit()
     return {"ok": True, "status": "cancelled"}
+
+
+@router.get("/{run_id}/runtime")
+def get_runtime(
+    run_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """返回真实预览地址；没有就返回 null，不编造。"""
+    _owned(db, run_id, user)
+    from app.db.models import RunRuntime
+
+    row = db.get(RunRuntime, run_id)
+    if row is None:
+        return {"runtime": None}
+    return {
+        "runtime": {
+            "status": row.status,
+            "previewUrl": row.preview_url,
+            "hostPort": row.host_port,
+            "startedAt": row.started_at,
+        }
+    }
+
+
+@router.get("/{run_id}/verdict")
+def get_verdict(
+    run_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    _owned(db, run_id, user)
+    row = db.execute(
+        select(RunEvent)
+        .where(RunEvent.run_id == run_id, RunEvent.kind == "verdict")
+        .order_by(RunEvent.seq.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if row is None:
+        return {"verdict": None}
+    return {"verdict": row.payload}
+
+
+@router.get("/{run_id}/artifacts")
+def list_artifacts(
+    run_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    _owned(db, run_id, user)
+    rows = db.execute(select(Artifact).where(Artifact.run_id == run_id).order_by(Artifact.name)).scalars().all()
+    return {
+        "artifacts": [
+            {"name": row.name, "kind": row.kind, "bytes": row.bytes, "sha256": row.sha256}
+            for row in rows
+        ]
+    }

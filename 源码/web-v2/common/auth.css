@@ -117,7 +117,7 @@ body {
 .auth-submit:disabled { opacity: 0.65; cursor: not-allowed; }
 
 /* 演示账号提示：给评委一条不用注册的路 */
-.demo-hint {
+.test-hint {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -130,8 +130,8 @@ body {
   font-size: 12.5px;
   color: var(--text-2);
 }
-.demo-hint b { color: var(--text); font-weight: 600; }
-.demo-hint button {
+.test-hint b { color: var(--text); font-weight: 600; }
+.test-hint button {
   border: 0;
   background: transparent;
   color: var(--primary);

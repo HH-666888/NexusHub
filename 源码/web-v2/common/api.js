@@ -1,19 +1,20 @@
-/* 前端唯一的接口出口。
+/* v2 前端唯一的接口出口。
    规则：
-   - 页面永远先问后端；后端不在（用 python http.server 单开静态站时）就返回 null，
-     由调用方回退到演示数据，保证原型不白屏。
-   - 会话靠 cookie，所以每个请求都带 credentials。 */
+   - 运行与事件走 /api/v2；登录与设置复用 /api/v1。
+   - 会话靠 cookie，每个请求都带 credentials。
+   - 后端不可用时返回 offline，由调用方显示错误态；不回退任何演示数据。 */
 (function () {
-  const BASE = "/api/v1";
+  const BASE = "/api/v2";
+  const CORE = "/api/v1";
 
-  async function request(path, options) {
+  async function request(path, options, base) {
     const opts = Object.assign(
       { credentials: "include", headers: { "Content-Type": "application/json" } },
       options || {},
     );
     let response;
     try {
-      response = await fetch(BASE + path, opts);
+      response = await fetch((base || BASE) + path, opts);
     } catch (error) {
       return { ok: false, offline: true, status: 0, data: null };
     }
@@ -27,8 +28,7 @@
       data = null;
     }
 
-    // 纯静态托管（python http.server / 双击打开）时，/api/v1 不存在，
-    // 服务器会回一个 HTML 404。这种情况按"没有后端"处理，让调用方回退演示数据。
+    // 后端不在时返回 offline，由页面显示错误态。
     if (!response.ok && data === null) {
       return { ok: false, offline: true, status: response.status, data: null };
     }
@@ -41,7 +41,7 @@
 
     /** 当前登录用户；未登录返回 null。 */
     async me() {
-      const result = await request("/auth/me");
+      const result = await request("/auth/me", null, CORE);
       return result.ok && result.data ? result.data.user : null;
     },
 
@@ -49,7 +49,7 @@
       return request("/auth/login", {
         method: "POST",
         body: JSON.stringify({ username, password }),
-      });
+      }, CORE);
     },
 
     async register(username, password, confirmPassword) {
@@ -60,11 +60,11 @@
           password,
           confirm_password: confirmPassword || password,
         }),
-      });
+      }, CORE);
     },
 
     async logout() {
-      return request("/auth/logout", { method: "POST" });
+      return request("/auth/logout", { method: "POST" }, CORE);
     },
 
     /** 运行列表；offline 时返回 null。 */
@@ -87,18 +87,30 @@
       return result.ok ? result.data : null;
     },
 
+    async gate(runId) {
+      const result = await request("/runs/" + encodeURIComponent(runId) + "/gate");
+      return result.ok ? result.data : null;
+    },
+
+    async answerGate(runId, payload) {
+      return request("/runs/" + encodeURIComponent(runId) + "/answers", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+
     async events(runId) {
       const result = await request("/runs/" + encodeURIComponent(runId) + "/events");
       return result.ok ? result.data : null;
     },
 
     async settings() {
-      const result = await request("/settings");
+      const result = await request("/settings", null, CORE);
       return result.ok ? result.data : null;
     },
 
     async saveSettings(patch) {
-      return request("/settings", { method: "PUT", body: JSON.stringify(patch) });
+      return request("/settings", { method: "PUT", body: JSON.stringify(patch) }, CORE);
     },
 
     /** 真的去探一下提供商；返回 { ok, message } */
@@ -106,7 +118,7 @@
       const result = await request("/settings/test", {
         method: "POST",
         body: JSON.stringify(payload || {}),
-      });
+      }, CORE);
       if (result.ok && result.data) return result.data;
       return { ok: false, message: result.offline ? "后端没启动，测不了" : "测试失败" };
     },

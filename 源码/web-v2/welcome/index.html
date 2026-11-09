@@ -477,7 +477,6 @@
         });
       })();
     </script>
-    <script src="../common/demo.js?v=20261108b"></script>
     <script src="./welcome-long.js?v=20261108b" defer></script>
     <script>
       // 首页输入框：已登录（假登录）直接进工作台，未登录带上需求去登录页
@@ -490,7 +489,7 @@
           const text = (input && input.value ? input.value : "").trim();
           const carry = text ? "&prompt=" + encodeURIComponent(text) : "";
           // 优先问后端有没有会话；没有后端时才看演示标记
-          let loggedIn = Boolean(window.NexusDemo && window.NexusDemo.getUser());
+          let loggedIn = false;
           if (window.api) {
             try {
               loggedIn = Boolean(await window.api.me());
