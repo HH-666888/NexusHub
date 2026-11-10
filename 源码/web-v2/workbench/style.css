@@ -631,3 +631,17 @@
   font-size: 13px;
 }
 .gate-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+
+/* ── 空白工作台：新建项目直接进来，还没有任何运行数据 ── */
+body.is-blank .tasks,
+body.is-blank .task-card,
+body.is-blank .code-pane { display: none; }
+body.is-blank .canvas-controls,
+body.is-blank .canvas-head .layout-switch,
+body.is-blank #speed-pop,
+body.is-blank #replay { display: none; }
+body.is-blank .appbar-right .btn,
+body.is-blank .appbar-right .icon-btn:not(#theme-toggle) { opacity: .35; pointer-events: none; }
+body.is-blank .statusbar .tabs button { opacity: .35; pointer-events: none; }
+body.is-blank .statusbar .cost { opacity: .35; }

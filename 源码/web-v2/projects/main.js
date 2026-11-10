@@ -226,14 +226,6 @@
 
         if (newBtn) newBtn.addEventListener("click", create);
 
-        const newCard = document.querySelector(".card-new");
-        if (newCard && newInput) {
-          newCard.addEventListener("click", function (event) {
-            event.preventDefault();
-            newInput.focus();
-            newInput.scrollIntoView({ behavior: "smooth", block: "center" });
-          });
-        }
         if (newInput) {
           newInput.addEventListener("keydown", function (event) {
             if (event.key === "Enter") create();

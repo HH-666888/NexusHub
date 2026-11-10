@@ -103,7 +103,7 @@
       function taskCountOf(stageIndex) {
         const stage = STAGE_ORDER[stageIndex];
         const mine = TASK_STORE.tasks.filter((task) => task.stage === stage);
-        if (!mine.length && stageIndex === 2 && TASK_STORE.tasks.length === 0) return TASKS.length;
+        if (!mine.length && stageIndex === 2 && TASK_STORE.tasks.length === 0 && !blankMode) return TASKS.length;
         return mine.length;
       }
 
@@ -1292,6 +1292,11 @@
 
       // 带真实 run id 时由 live.js 驱动，不跑演示时间线
       const bootRunId = new URLSearchParams(location.search).get("run") || "";
+      const blankMode = bootRunId === "new";
+      if (blankMode) document.body.classList.add("is-blank");
+      // v2：清掉演示分支与写死的阶段说明，全部等真实事件填充
+      TASKS.length = 0;
+      STAGES.forEach(function (stage) { stage.state = "wait"; stage.note = "—"; });
       // v2：工作台必须带真实 run；没有就回项目页，不展示任何演示时间线
       if (!bootRunId) {
         location.replace("../projects/");

@@ -10,7 +10,9 @@
 
   // 新建：先落库，再把地址换成真实 id 重新进入
   if (id === "new" && !prompt) {
-    location.replace("../projects/");
+    document.body.classList.add("is-blank");
+    const pill = document.querySelector(".appbar-center .pill");
+    if (pill) pill.textContent = "待开始 · 0 / 6 道";
     return;
   }
 
@@ -655,7 +657,13 @@
     }
 
     const run = await window.api.run(id);
-    if (run) applyRun(run);
+    if (!run) {
+      document.body.classList.add("is-blank");
+      wb.setStatus("failed");
+      wb.setEvent("这次运行不存在或已被删除，请回项目页重新开始");
+      return;
+    }
+    applyRun(run);
 
     const events = await window.api.events(id);
     if (Array.isArray(events)) {
