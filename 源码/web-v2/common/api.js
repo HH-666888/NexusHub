@@ -1,11 +1,10 @@
 /* v2 前端唯一的接口出口。
    规则：
-   - 运行与事件走 /api/v2；登录与设置复用 /api/v1。
+   - 所有请求（登录、设置、运行、事件）一律走 /api/v2。
    - 会话靠 cookie，每个请求都带 credentials。
    - 后端不可用时返回 offline，由调用方显示错误态；不回退任何演示数据。 */
 (function () {
   const BASE = "/api/v2";
-  const CORE = "/api/v1";
 
   async function request(path, options, base) {
     const opts = Object.assign(
@@ -41,7 +40,7 @@
 
     /** 当前登录用户；未登录返回 null。 */
     async me() {
-      const result = await request("/auth/me", null, CORE);
+      const result = await request("/auth/me");
       return result.ok && result.data ? result.data.user : null;
     },
 
@@ -49,7 +48,7 @@
       return request("/auth/login", {
         method: "POST",
         body: JSON.stringify({ username, password }),
-      }, CORE);
+      });
     },
 
     async register(username, password, confirmPassword) {
@@ -60,11 +59,11 @@
           password,
           confirm_password: confirmPassword || password,
         }),
-      }, CORE);
+      });
     },
 
     async logout() {
-      return request("/auth/logout", { method: "POST" }, CORE);
+      return request("/auth/logout", { method: "POST" });
     },
 
     /** 运行列表；offline 时返回 null。 */
@@ -105,12 +104,12 @@
     },
 
     async settings() {
-      const result = await request("/settings", null, CORE);
+      const result = await request("/settings");
       return result.ok ? result.data : null;
     },
 
     async saveSettings(patch) {
-      return request("/settings", { method: "PUT", body: JSON.stringify(patch) }, CORE);
+      return request("/settings", { method: "PUT", body: JSON.stringify(patch) });
     },
 
     /** 真的去探一下提供商；返回 { ok, message } */
@@ -118,7 +117,7 @@
       const result = await request("/settings/test", {
         method: "POST",
         body: JSON.stringify(payload || {}),
-      }, CORE);
+      });
       if (result.ok && result.data) return result.data;
       return { ok: false, message: result.offline ? "后端没启动，测不了" : "测试失败" };
     },

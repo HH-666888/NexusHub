@@ -103,6 +103,19 @@ def create_app() -> FastAPI:
         # v2 是默认入口；旧站保留在 /v1/
         return RedirectResponse(url="/v2/", status_code=307)
 
+    # 旧书签里的页面路径统一重定向到 v2，原页面仍可从 /v1/ 打开
+    def _legacy_handler(page: str):
+        def handler(request: Request):
+            query = f"?{request.url.query}" if request.url.query else ""
+            return RedirectResponse(url=f"/v2/{page}/{query}", status_code=307)
+
+        return handler
+
+    for _page in ("welcome", "login", "register", "projects", "settings", "workbench"):
+        _handler = _legacy_handler(_page)
+        app.add_api_route(f"/{_page}", _handler, include_in_schema=False)
+        app.add_api_route(f"/{_page}/", _handler, include_in_schema=False)
+
     # ── v2 双轨：/v2 必须挂在 "/" 之前，否则会被旧站截走 ──
     web_v2_dir = Path(__file__).resolve().parents[2] / "web-v2"
     if web_v2_dir.is_dir():
