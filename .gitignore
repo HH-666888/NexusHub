@@ -103,3 +103,6 @@ backend/.env
 # 设计参考图与临时产出
 .creative-design/
 design-preview/
+
+# v2 工作台是源码，不是运行时产物
+!源码/web-v2/workbench/
