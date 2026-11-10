@@ -576,6 +576,45 @@
       // v2：不预置任何演示文件，全部由事件流注入
       const FILES = [];
 
+        // 代码面板的 DOM 引用（原先夹在演示数据里，清理时一并丢了）
+        const codePane = document.getElementById("code-pane");
+      const codeBody = document.getElementById("code-body");
+      const fileName = document.getElementById("file-name");
+      const fileDot = document.getElementById("file-dot");
+      const streamState = document.getElementById("stream-state");
+      let lineCount = document.getElementById("line-count");
+      const fileTabs = document.getElementById("file-tabs");
+      const reviewBar = document.getElementById("review-bar");
+      const reviewText = document.getElementById("review-text");
+
+      /** 当前在看哪个文件；live 是正在流式写入的那个 */
+      const codeView = { current: "", live: null };
+      let streamTimer = null;
+      let streamedLines = 0;
+
+      function esc(text) {
+        return String(text).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+      }
+
+      /** 极简高亮：注释 / 字符串 / 关键字 / 数字 / HTML 标签 */
+      function hl(text) {
+        const re = /(#[^\n]*|--[^\n]*|\/\/[^\n]*)|('[^']*'|"[^"]*")|(<\/?[a-zA-Z][^>]*>)|(\b(?:import|from|def|return|with|as|class|function|const|let|if|else|for|while|async|await|new|true|false|null|CREATE|TABLE|IF|NOT|EXISTS|PRIMARY|KEY|INDEX|ON|NULL|DEFAULT)\b)|(\b\d+\.?\d*\b)/g;
+        let out = "";
+        let last = 0;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          out += esc(text.slice(last, m.index));
+          if (m[1]) out += `<span class="c">${esc(m[1])}</span>`;
+          else if (m[2]) out += `<span class="s">${esc(m[2])}</span>`;
+          else if (m[3]) out += `<span class="t">${esc(m[3])}</span>`;
+          else if (m[4]) out += `<span class="k">${esc(m[4])}</span>`;
+          else out += `<span class="n">${esc(m[5])}</span>`;
+          last = m.index + m[0].length;
+        }
+        out += esc(text.slice(last));
+        return out;
+      }
+
       function fileOf(path) {
         return FILES.find((f) => f.path === path);
       }
@@ -1184,6 +1223,8 @@
           const map = { running: "运行中", paused: "已暂停", done: "已完成", failed: "已失败", cancelled: "已取消" };
           const label = map[status] || status;
           let done = STAGES.filter((s) => s.state === "done").length;
+      // 暂停在某一 道时，把当前道也算进去，避免出现“第 0 / 6 道”
+      if (STAGES.some((s) => s.state === "live")) done += 1;
           if (status === "done") {
             STAGES.forEach((s) => {
               s.state = "done";

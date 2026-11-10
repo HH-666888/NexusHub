@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>NexusHub · 树型工作流 + 实时代码流</title>
-    <link rel="stylesheet" href="../common/app.css?v=20261110b" />
-    <link rel="stylesheet" href="style.css?v=20261110b" />
+    <link rel="stylesheet" href="../common/app.css?v=20261110d" />
+    <link rel="stylesheet" href="style.css?v=20261110d" />
   </head>
   <body>
     <header class="appbar">
@@ -163,9 +163,9 @@
 
         <div class="code-file">
           <span class="dot" id="file-dot"></span>
-          <span id="file-name">web/index.html</span>
+          <span id="file-name">—</span>
           <span class="grow"></span>
-          <span class="stream" id="stream-state">流式写入 · <b id="line-count">0</b> 行</span>
+          <span class="stream" id="stream-state">等待文件事件<b id="line-count" hidden>0</b></span>
         </div>
 
         <div class="review-bar" id="review-bar">
@@ -190,9 +190,16 @@
     </div>
 
         
-    <script src="main.js?v=20261110b"></script>
-    <script src="../common/api.js?v=20261110b"></script>
-    <script src="./live.js?v=20261110b"></script>
+    <script>
+  window.onerror = function (msg, src, line) {
+    var el = document.getElementById("event-line");
+    if (el) el.textContent = "JS错误：" + msg + " @" + line;
+    document.title = "ERR " + msg;
+  };
+</script>
+<script src="main.js?v=20261110d"></script>
+    <script src="../common/api.js?v=20261110d"></script>
+    <script src="./live.js?v=20261110d"></script>
   
   <!-- 门禁：AI 拿不准时停下来问，任何阶段都可能出现 -->
   <div class="gate-modal" id="gate-modal" hidden>

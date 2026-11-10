@@ -349,6 +349,7 @@
     source.onerror = function () {
       // 已经完成/失败的运行，SSE 正常关闭，不算断线
       if (finished) return;
+      if (state.run && ["done", "failed", "cancelled"].indexOf(state.run.status) >= 0) return;
       wb.setEvent("连接中断，正在重连…");
     };
   }
@@ -639,6 +640,7 @@
   // ───────── 启动 ─────────
 
   (async function boot() {
+    try {
     document.body.classList.add("is-live");
     wb.setEvent("已连接，等待第一个事件…");
 
@@ -675,5 +677,9 @@
       if (data && data.gate) showGate(data.gate);
     });
   }
+    } catch (error) {
+      wb.setEvent("接入失败：" + (error && error.message ? error.message : error));
+      wb.setStatus("failed");
+    }
   })();
 })();
