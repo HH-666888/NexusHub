@@ -435,6 +435,74 @@ def _fix(run_id: str, ctx: RunContext, case: Case, detail: str) -> str | None:
     return path
 
 
+def _fix_startup(run_id: str, ctx: RunContext, traceback_text: str) -> str | None:
+    """启动失败时，让模型按 traceback 修 app.py 或 api/main.py，最多一次。"""
+    candidates = ["app.py", "api/main.py"]
+    snippets = []
+    for path in candidates:
+        try:
+            snippets.append(f"### {path}\n{files.read_file(run_id, path)[:3000]}")
+        except Exception:  # noqa: BLE001
+            continue
+    if not snippets:
+        return None
+
+    system = """你是修复工程师。产物启动失败，请修一个文件让它能起来。
+输出格式：第一行 `FILE: <路径>`，第二行起是完整文件内容。
+只能修 app.py 或 api/main.py。不要输出 JSON，不要 Markdown 围栏。
+"""
+    user = f"""启动报错：
+{traceback_text[-1500:]}
+
+当前文件：
+{chr(10).join(snippets)}
+
+要求：
+- 如果 api/main.py 里 FastAPI 实例不叫 app，请在 app.py 里按真实变量名导入，或改成 from api.main import app 并确保 api/main.py 定义了 app。
+- 保持原有路由与静态挂载逻辑，不要重写业务。
+"""
+    client = build_client("test")
+    model = model_for("test")
+    try:
+        reply = client.complete(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            model,
+            max_tokens=2600,
+            temperature=0.0,
+        )
+    finally:
+        client.close()
+    db = SessionLocal()
+    try:
+        amount = record_cost(db, run_id=run_id, stage="test", reply=reply)
+    finally:
+        db.close()
+    recorder.usage(run_id, model=reply.model, prompt_tokens=reply.prompt_tokens,
+                   completion_tokens=reply.completion_tokens, latency_ms=reply.latency_ms, cny=amount)
+    recorder.cost(run_id, "test", amount, recorder.total_cost(run_id))
+
+    raw = (reply.content or "").strip("\n")
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else ""
+        if raw.rstrip().endswith("```"):
+            raw = raw.rstrip()[:-3]
+    lines = raw.split("\n", 1)
+    if len(lines) != 2 or not lines[0].upper().startswith("FILE:"):
+        return None
+    path = lines[0].split(":", 1)[1].strip().strip("`")
+    content = lines[1]
+    if path not in candidates:
+        return None
+    if path.endswith(".py"):
+        try:
+            compile(content, path, "exec")
+        except SyntaxError:
+            return None
+    files.write_file(run_id, path, content)
+    recorder.emit(run_id, "file", {"path": path, "lang": _lang(path), "delta": "", "done": True, "replace": True})
+    return path
+
+
 def run(run_id: str, ctx: RunContext) -> list[dict]:
     workspace = files.workspace_root(run_id)
     entry = (ctx.arch or {}).get("entry", "app.py")
@@ -445,7 +513,16 @@ def run(run_id: str, ctx: RunContext) -> list[dict]:
     try:
         if not runtime.wait_http(base + "/", timeout=25):
             tail = runtime.log_tail(process)
-            raise StageFailed(f"产物启动失败：{tail[-500:]}")
+            runtime.stop(process)
+            fixed = _fix_startup(run_id, ctx, tail)
+            if not fixed:
+                raise StageFailed(f"产物启动失败：{tail[-500:]}")
+            port = runtime.pick_port()
+            process = runtime.start(workspace, entry, port)
+            base = f"http://127.0.0.1:{port}"
+            if not runtime.wait_http(base + "/", timeout=25):
+                tail = runtime.log_tail(process)
+                raise StageFailed(f"修复后仍未启动：{tail[-500:]}")
 
         global _RESPONSE_FIELDS
         _RESPONSE_FIELDS = _response_fields(base)
