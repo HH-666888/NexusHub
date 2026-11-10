@@ -13,6 +13,20 @@
     document.body.classList.add("is-blank");
     const pill = document.querySelector(".appbar-center .pill");
     if (pill) pill.textContent = "待开始 · 0 / 6 道";
+
+    // 左右两栏保留，但显示空态，不塞任何假数据
+    const child = document.querySelector(".t-child");
+    if (child) {
+      child.innerHTML =
+        '<div class="t-empty">还没有任务<br /><span>在项目页输入一句话后，这里会出现派发记录</span></div>';
+    }
+    const codeBody = document.getElementById("code-body");
+    if (codeBody) {
+      codeBody.innerHTML =
+        '<p class="code-empty">还没有代码<br /><span>运行开始后，生成的文件会在这里逐行出现</span></p>';
+    }
+    const reviewBar = document.getElementById("review-bar");
+    if (reviewBar) reviewBar.hidden = true;
     return;
   }
 
