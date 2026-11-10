@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import Request, Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -97,13 +98,18 @@ def create_app() -> FastAPI:
             response.headers["Cache-Control"] = "no-cache"
         return response
 
+    @app.get("/", include_in_schema=False)
+    def _root_to_v2():
+        # v2 是默认入口；旧站保留在 /v1/
+        return RedirectResponse(url="/v2/", status_code=307)
+
     # ── v2 双轨：/v2 必须挂在 "/" 之前，否则会被旧站截走 ──
     web_v2_dir = Path(__file__).resolve().parents[2] / "web-v2"
     if web_v2_dir.is_dir():
         app.mount("/v2", StaticFiles(directory=str(web_v2_dir), html=True), name="web_v2")
 
     if web_dir.is_dir():
-        app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web")
+        app.mount("/v1", StaticFiles(directory=str(web_dir), html=True), name="web_v1")
 
     return app
 
