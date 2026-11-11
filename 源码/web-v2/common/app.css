@@ -562,3 +562,61 @@ a { color: inherit; }
   font-size: 12px;
   color: var(--text-3);
 }
+
+/* ── 顶部两个入口 + 头像菜单（v2 辅助开发） ── */
+.top-tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: 18px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--fill-2, rgba(15, 23, 42, .05));
+}
+.top-tabs a {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--text-2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.top-tabs a.is-on {
+  background: var(--card, #fff);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .10);
+}
+.avatar-menu {
+  position: fixed;
+  z-index: 90;
+  min-width: 140px;
+  padding: 6px;
+  background: var(--card, #fff);
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, .16);
+}
+.avatar-menu a,
+.avatar-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-2);
+  text-decoration: none;
+  cursor: pointer;
+}
+.avatar-menu a:hover,
+.avatar-menu button:hover { background: var(--fill-2, rgba(15, 23, 42, .05)); color: var(--text); }
+
+
+/* 顶栏在窄一点的宽度下不换行 */
+.appbar .avatar { white-space: nowrap; flex: none; }
+.appbar-right { gap: 8px; flex: none; }
+.appbar .crumb { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.appbar .crumb b { overflow: hidden; text-overflow: ellipsis; display: inline-block; max-width: 320px; vertical-align: bottom; }

@@ -15,6 +15,8 @@ from fastapi import APIRouter
 
 from app.features.auth.router import router as auth_router
 from app.features.settings.router import router as settings_router
+from app.v2.assist.router import router as assist_router
+from app.v2.memory.router import router as memory_router
 from app.v2.runs.router import router as runs_router
 from app.v2.gate.router import router as gate_router
 
@@ -24,6 +26,8 @@ router.include_router(auth_router, tags=["v2-auth"])
 router.include_router(settings_router, tags=["v2-settings"])
 router.include_router(runs_router, prefix="/runs", tags=["v2-runs"])
 router.include_router(gate_router, prefix="/runs", tags=["v2-gate"])
+router.include_router(assist_router, prefix="/assist", tags=["v2-assist"])
+router.include_router(memory_router, prefix="/memory", tags=["v2-memory"])
 
 
 @router.get("/health", tags=["v2"])

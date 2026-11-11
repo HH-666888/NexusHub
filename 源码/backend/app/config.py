@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     max_loopback: int = 2
     ask_max_questions: int = 0        # 0 = 不限
     ask_max_rounds: int = 0           # 0 = 不限
+    memory_daily_limit: int = 3       # AI 记忆每天最多写几条
     pipeline_v2_concurrency: int = 3
 
     runtime_runner: str = "docker"

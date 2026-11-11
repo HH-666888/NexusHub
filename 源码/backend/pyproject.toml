@@ -13,6 +13,10 @@ dependencies = [
   "pydantic>=2.9",
   "pydantic-settings>=2.6",
   "python-multipart>=0.0.12",
+  "javalang>=0.13",
+  "esprima>=4.0",
+  "tinycss2>=1.4",
+  "sqlparse>=0.5",
   "httpx>=0.27",
   "numpy>=2.1",
 ]
