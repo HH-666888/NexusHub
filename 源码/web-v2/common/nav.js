@@ -59,9 +59,22 @@
     });
   }
 
+  async function fillAvatar() {
+    const avatar = document.querySelector(".appbar-right .avatar");
+    if (!avatar || !window.api || !window.api.me) return;
+    if (avatar.textContent.trim() !== "—") return;
+    try {
+      const me = await window.api.me();
+      if (me) avatar.textContent = me.displayName || me.username || "—";
+    } catch (error) {
+      /* 保持占位 */
+    }
+  }
+
   function boot() {
     injectTabs();
     injectMenu();
+    fillAvatar();
   }
 
   if (document.readyState === "loading") {

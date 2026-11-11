@@ -63,7 +63,7 @@
       .swatch-preview.dark { background: #12161e; color: #6f7a8c; }
 
       .save-bar {
-        position: sticky; bottom: 0;
+        position: static;
         display: flex; align-items: center; justify-content: space-between; gap: 16px;
         margin-top: 8px; padding: 14px 24px;
         background: var(--card);

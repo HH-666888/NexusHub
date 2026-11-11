@@ -114,7 +114,8 @@
           </div>
         </section>
 
-        <section class="panel section" id="s-theme">
+        
+      <section class="panel section" id="s-theme">
           <h2>外观主题</h2>
           <p class="desc">浅色适合白天与投屏，深色适合夜里盯着看。</p>
 
@@ -130,7 +131,14 @@
           </div>
         </section>
 
-        <div class="save-bar">
+        <section class="panel section" id="s-memory">
+        <h2>AI 记忆</h2>
+        <p style="margin:0 0 10px;font-size:12.5px;color:var(--text-3);">记忆只在“辅助开发”里生效；工作流使用模型的纯粹能力，不读取记忆。</p>
+        <div id="memory-summary" style="font-size:13px;color:var(--text-2);">正在读取…</div>
+        <div style="margin-top:12px;"><a class="btn btn-sm btn-ghost" href="../memory/">打开记忆页</a></div>
+      </section>
+
+      <div class="save-bar">
           <span>上次保存：今天 08:02</span>
           <div style="display: flex; gap: 10px;">
             <button class="btn btn-ghost" type="button">恢复默认</button>
@@ -140,7 +148,19 @@
       </main>
     </div>
 
-        <script src="../common/api.js?v=20261110j"></script>
-        <script src="main.js?v=20261110j"></script>
+        <script src="../common/api.js?v=20261111b"></script>
+  <script src="../common/nav.js?v=20261111b"></script>
+        <script src="main.js?v=20261111b"></script>
+  <script>
+    (async function () {
+      var box = document.getElementById("memory-summary");
+      if (!box || !window.api || !window.api.memoryStats) return;
+      var stats = await window.api.memoryStats();
+      if (!stats) { box.textContent = "暂时读不到记忆统计。"; return; }
+      box.innerHTML =
+        "共 <b>" + stats.total + "</b> 条 · 今日 <b>" + stats.today + "/" + stats.dailyLimit +
+        "</b> · 近 7 天 <b>" + stats.week + "</b> 条";
+    })();
+  </script>
   </body>
 </html>
