@@ -254,3 +254,14 @@
   .assist-work { grid-template-columns: 1fr; }
   .stage-rail { flex-direction: row; flex-wrap: wrap; }
 }
+
+/* CodeMirror 编辑器：跟随页面的圆角与边框 */
+.CodeMirror {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  height: 420px;
+  font-family: var(--mono, ui-monospace, Consolas, monospace);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.CodeMirror-gutters { border-right: 1px solid var(--line); background: transparent; }
