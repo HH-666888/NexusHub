@@ -206,3 +206,68 @@ class RunRuntime(Base):
     started_at: Mapped[int] = mapped_column(BigInteger)
     stopped_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+class AssistProject(Base):
+    """辅助开发项目：用户自己按六阶段推进，AI 在旁辅助。"""
+
+    __tablename__ = "assist_projects"
+
+    id: Mapped[str] = mapped_column(VARCHAR(26, **ASCII_KW), primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(String(120))
+    goal: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stage: Mapped[str] = mapped_column(String(16), default="plan")
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    mode: Mapped[str] = mapped_column(String(16), default="suggest")
+    created_at: Mapped[int] = mapped_column(BigInteger)
+    updated_at: Mapped[int] = mapped_column(BigInteger)
+
+
+class AssistFile(Base):
+    __tablename__ = "assist_files"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[str] = mapped_column(
+        VARCHAR(26, **ASCII_KW), ForeignKey("assist_projects.id", ondelete="CASCADE")
+    )
+    path: Mapped[str] = mapped_column(String(255))
+    lang: Mapped[str] = mapped_column(String(16), default="text")
+    content: Mapped[str] = mapped_column(LONGTEXT)
+    updated_at: Mapped[int] = mapped_column(BigInteger)
+
+    __table_args__ = (UniqueConstraint("project_id", "path", name="uk_assist_files_path"),)
+
+
+class AssistFinding(Base):
+    __tablename__ = "assist_findings"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[str] = mapped_column(
+        VARCHAR(26, **ASCII_KW), ForeignKey("assist_projects.id", ondelete="CASCADE")
+    )
+    file_path: Mapped[str] = mapped_column(String(255))
+    line: Mapped[int] = mapped_column(Integer, default=0)
+    severity: Mapped[str] = mapped_column(String(8), default="warn")
+    rule: Mapped[str] = mapped_column(String(64))
+    message: Mapped[str] = mapped_column(String(500))
+    stage: Mapped[str] = mapped_column(String(16), default="build")
+    status: Mapped[str] = mapped_column(String(16), default="open")
+    created_at: Mapped[int] = mapped_column(BigInteger)
+
+
+class MemoryEntry(Base):
+    """AI 记忆：AI 自己决定记什么，但必须带来源与理由。"""
+
+    __tablename__ = "memory_entries"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"))
+    day: Mapped[str] = mapped_column(CHAR(10, **ASCII_KW))
+    title: Mapped[str] = mapped_column(String(120))
+    body: Mapped[str] = mapped_column(String(500))
+    reason: Mapped[str] = mapped_column(String(255), default="")
+    source_type: Mapped[str] = mapped_column(String(16), default="assist")
+    source_id: Mapped[str] = mapped_column(String(64), default="")
+    confidence: Mapped[str] = mapped_column(String(16), default="single")
+    pinned: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[int] = mapped_column(BigInteger)
