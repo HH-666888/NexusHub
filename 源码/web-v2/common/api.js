@@ -162,6 +162,13 @@
       });
     },
 
+    async applyAssist(id, path, instruction) {
+      return request("/assist/projects/" + encodeURIComponent(id) + "/apply", {
+        method: "POST",
+        body: JSON.stringify({ path, instruction }),
+      });
+    },
+
     async assistCoach(id, message, stage) {
       const result = await request("/assist/projects/" + encodeURIComponent(id) + "/stage/ai", {
         method: "POST",

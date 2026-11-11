@@ -317,6 +317,43 @@ def update_finding(
     return {"ok": True}
 
 
+@router.post("/projects/{project_id}/apply")
+def apply_edit(
+    project_id: str,
+    payload: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    project = _owned(db, project_id, user)
+    path = str(payload.get("path") or "").strip()
+    instruction = str(payload.get("instruction") or "").strip()
+    if not path or not instruction:
+        raise HTTPException(status_code=400, detail="需要文件名与修改要求")
+
+    row = db.execute(
+        select(AssistFile).where(AssistFile.project_id == project_id, AssistFile.path == path)
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    previous = row.content
+    content, note = coach.apply_edit(db, user=user, project=project, path=path, content=previous, instruction=instruction)
+    if content is None:
+        raise HTTPException(status_code=502, detail=note or "AI 没有给出可用的修改")
+
+    if path.endswith(".py"):
+        try:
+            compile(content, path, "exec")
+        except SyntaxError as error:
+            raise HTTPException(status_code=422, detail=f"改完语法不通过：{error}")
+
+    row.content = content
+    row.updated_at = now_ms()
+    project.updated_at = now_ms()
+    db.commit()
+    return {"ok": True, "path": path, "content": content, "previous": previous, "note": note}
+
+
 @router.post("/projects/{project_id}/stage/ai")
 def stage_ai(
     project_id: str,

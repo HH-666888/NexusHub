@@ -72,3 +72,48 @@ def assist(db: Session, *, user: User, project: AssistProject, message: str, sta
         return f"AI 暂时不可用：{error}", citations
 
     return reply.content.strip(), citations
+
+def apply_edit(db: Session, *, user: User, project: AssistProject, path: str, content: str, instruction: str):
+    """自动模式：让模型给出完整新文件内容，返回 (content, note)。"""
+    memory_text, _ = memory_service.prompt_block(db, user.id)
+    system = """你在帮用户修改一个文件。只输出修改后的完整文件内容。
+
+规则：
+1. 第一行输出 `FILE: <路径>`，第二行起是完整内容。
+2. 不要输出 JSON，不要 Markdown 围栏，不要解释。
+3. 只改与要求相关的部分，保持其余代码不变。
+4. 不要引入新的第三方依赖。
+""" + (f"\n{memory_text}" if memory_text else "")
+    user_text = f"""项目：{project.title}
+文件：{path}
+要求：{instruction}
+
+当前内容：
+{content[:6000]}
+"""
+    try:
+        client = build_client("plan")
+        try:
+            reply = client.complete(
+                [{"role": "system", "content": system}, {"role": "user", "content": user_text}],
+                model_for("plan"),
+                max_tokens=4000,
+                temperature=0.1,
+            )
+        finally:
+            client.close()
+    except Exception as error:  # noqa: BLE001
+        return None, f"AI 暂时不可用：{error}"
+
+    raw = (reply.content or "").strip("\n")
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else ""
+        if raw.rstrip().endswith("```"):
+            raw = raw.rstrip()[:-3]
+    lines = raw.split("\n", 1)
+    if len(lines) != 2 or not lines[0].upper().startswith("FILE:"):
+        return None, "模型输出格式不对"
+    new_path = lines[0].split(":", 1)[1].strip().strip("`")
+    if new_path != path:
+        return None, f"模型改了别的文件：{new_path}"
+    return lines[1], "已按你的要求修改"
