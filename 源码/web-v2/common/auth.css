@@ -111,7 +111,7 @@ body {
 .field-tip.checking { color: var(--text-3); }
 
 .row-aux { display: flex; justify-content: flex-end; margin: -2px 0 16px; font-size: 13px; }
-.row-aux a { color: var(--primary); text-decoration: none; }
+.row-aux a { color: var(--primary); }
 
 .auth-submit { width: 100%; height: 46px; font-size: 15px; }
 .auth-submit:disabled { opacity: 0.65; cursor: not-allowed; }
@@ -142,7 +142,7 @@ body {
 }
 
 .auth-foot { margin: 20px 0 0; text-align: center; font-size: 13px; color: var(--text-2); }
-.auth-foot a { color: var(--primary); font-weight: 600; text-decoration: none; }
+.auth-foot a { color: var(--primary); font-weight: 600; }
 .auth-legal { margin: 14px 0 0; text-align: center; font-size: 11.5px; color: var(--text-3); }
 
 /* 返回欢迎页：在登录卡内部，按钮下方居中的小胶囊 */
@@ -159,7 +159,6 @@ body {
   background: transparent;
   color: var(--text-3);
   font-size: 12.5px;
-  text-decoration: none;
   transition: color .18s, border-color .18s, background .18s;
 }
 .back-home svg { width: 15px; height: 15px; }

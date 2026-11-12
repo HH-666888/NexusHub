@@ -66,7 +66,7 @@
         display: grid; place-items: center; gap: 10px;
         min-height: 252px;
         border: 1.5px dashed var(--line-2); border-radius: var(--r-lg);
-        text-decoration: none; color: var(--text-2); background: transparent;
+        color: var(--text-2); background: transparent;
       }
       .card-new:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
       .card-new .plus { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: var(--card); border: 1px solid var(--line-2); color: var(--text-3); }
