@@ -1176,11 +1176,6 @@
         },
 
         setCost(cny) {
-          const budget = document.querySelector(".appbar-right .pill-plain");
-          if (budget) {
-            const limit = (budget.textContent.split("/")[1] || " ¥2.00").trim();
-            budget.textContent = "¥" + Number(cny).toFixed(2) + " / " + limit;
-          }
           const bottom = document.querySelector(".statusbar .cost");
           if (bottom) bottom.textContent = "本轮 ¥" + Number(cny).toFixed(2) + " · " + LIVE.calls + " 次模型调用";
         },

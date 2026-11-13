@@ -660,16 +660,6 @@
     document.body.classList.add("is-live");
     wb.setEvent("已连接，等待第一个事件…");
 
-    // 顶栏预算用设置里的真实上限
-    try {
-      const settings = await window.api.settings();
-      const limit = settings && typeof settings.budgetPerRun === "number" ? settings.budgetPerRun : null;
-      const pill = document.querySelector(".appbar-right .pill-plain");
-      if (pill && limit !== null) pill.textContent = "¥0.00 / ¥" + Number(limit).toFixed(2);
-    } catch (error) {
-      /* 读不到就保持原样 */
-    }
-
     const run = await window.api.run(id);
     if (!run) {
       document.body.classList.add("is-blank");
