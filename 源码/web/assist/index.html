@@ -4,23 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>辅助开发 · NexusHub</title>
-  <link rel="stylesheet" href="../common/app.css?v=20261113d">
-  <link rel="stylesheet" href="./style.css?v=20261113d">
+  <link rel="stylesheet" href="../common/app.css?v=20261113e">
+  <link rel="stylesheet" href="./style.css?v=20261113e">
 </head>
 <body>
-  <header class="appbar">
-    <a class="brand" href="../welcome/" aria-label="NexusHub">
-      <svg viewBox="0 0 24 24" aria-hidden style="width: 22px; height: 22px;"><path class="brand-mark" d="M4 20V4h3.4l9.2 12V4H20v16h-3.4L7.4 8v12H4z" /></svg>
-      <b>NexusHub</b>
-    </a>
-    <nav class="crumb"><span>/</span><b>辅助开发</b></nav>
-    <div class="appbar-right">
-      <a class="icon-btn" href="../settings/" aria-label="设置">
-        <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
-      </a>
-      <button class="avatar" type="button" style="height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--card); color: var(--text-2); font: inherit; font-size: 13px;">—</button>
-    </div>
-  </header>
+  <header class="appbar" id="appbar" data-crumb="辅助开发"></header>
 
   <main class="assist-page">
     <div class="assist-new">
@@ -29,8 +17,8 @@
       <button class="btn btn-primary" type="button" id="create">创建辅助项目</button>
     </div>
 
-    <div class="head" style="display: flex; align-items: center; gap: 10px; margin: 26px 0 14px;">
-      <h1 style="margin: 0; font-size: 20px;">辅助项目 <span id="count" class="pill pill-plain" style="font-size: 11px; padding: 1px 8px;">0</span></h1>
+    <div class="head" style="display: flex; align-items: center; gap: 10px; margin: 0 0 16px;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em;">辅助项目 <span id="count" class="count">0</span></h1>
     </div>
 
     <section class="assist-grid" id="list">
@@ -41,8 +29,8 @@
     </section>
   </main>
 
-  <script src="../common/api.js?v=20261113d"></script>
-  <script src="../common/nav.js?v=20261113d"></script>
-  <script src="./main.js?v=20261113d"></script>
+  <script src="../common/api.js?v=20261113e"></script>
+  <script src="../common/appbar.js?v=20261113e"></script>
+  <script src="./main.js?v=20261113e"></script>
 </body>
 </html>

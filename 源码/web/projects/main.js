@@ -232,21 +232,5 @@
           });
         }
 
-        // 退出登录
-        const right = document.querySelector(".appbar-right");
-        if (right) {
-          const out = document.createElement("button");
-          out.className = "btn btn-ghost";
-          out.type = "button";
-          out.textContent = "退出";
-          out.style.height = "36px";
-          out.style.fontSize = "13px";
-          out.addEventListener("click", async function () {
-            if (window.api) await window.api.logout();
-            location.href = "../login/";
-          });
-          right.insertBefore(out, right.querySelector(".avatar"));
-        }
-
         load();
       })();
