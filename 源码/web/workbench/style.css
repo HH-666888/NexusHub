@@ -474,7 +474,7 @@
       }
       .node-task.chip:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
       .node-task.chip b { font-size: 11.5px; }
-      .crumb a { color: var(--text-3); text-decoration: none; }
+      .crumb a { color: var(--text-3); }
       .crumb a:hover { color: var(--primary); }
       /* 深色下把"加的代码行"调成深绿 */
       [data-theme="dark"] .code-line.add { background: rgba(74, 222, 128, 0.08); }
@@ -594,3 +594,75 @@
 @media (max-width: 1680px) {
   .canvas-head .hint { display: none; }
 }
+
+
+/* ── 门禁弹窗（v2） ── */
+.gate-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: grid;
+  place-items: center;
+  z-index: 80;
+}
+.gate-modal[hidden] { display: none; }
+.gate-card {
+  width: 520px;
+  max-width: calc(100vw - 40px);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--card, #fff);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+}
+.gate-card h4 { margin: 0 0 12px; font-size: 15px; }
+.gate-body { overflow: auto; padding-right: 4px; }
+.gate-q { margin-bottom: 16px; }
+.gate-q p { margin: 0 0 8px; font-size: 13px; color: var(--text-1, #1f2937); }
+.gate-opts { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--text-2, #475569); }
+.gate-opts label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.gate-text {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line, #e2e8f0);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.gate-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+
+/* ── 空白工作台：新建项目直接进来，还没有任何运行数据 ── */
+body.is-blank .task-card { display: none; }
+body.is-blank .canvas-controls,
+body.is-blank .canvas-head .layout-switch,
+body.is-blank #speed-pop,
+body.is-blank #replay { display: none; }
+body.is-blank .appbar-right .btn,
+body.is-blank .appbar-right .icon-btn:not(#theme-toggle) { opacity: .35; pointer-events: none; }
+body.is-blank .statusbar .tabs button { opacity: .35; pointer-events: none; }
+body.is-blank .statusbar .cost { opacity: .35; }
+
+
+/* 空白工作台的左右空态 */
+.t-empty {
+  margin: 8px 12px;
+  padding: 18px 12px;
+  border: 1px dashed var(--line-2);
+  border-radius: 12px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 1.8;
+  text-align: center;
+}
+.t-empty span { font-size: 11.5px; opacity: .8; }
+.code-empty {
+  margin: 0;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 13px;
+  line-height: 1.9;
+}
+.code-empty span { font-size: 12px; opacity: .8; }

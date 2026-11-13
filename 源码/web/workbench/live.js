@@ -1,6 +1,6 @@
-/* 工作台实时接入层。
-   职责：把真实接口（run 快照 + 事件流）翻译成页面动作，页面本身不知道数据从哪来。
-   没有 run id、或后端不可用时什么都不做，页面继续用它自带的演示时间线。 */
+/* 工作台实时接入层（v2）。
+   职责：把真实接口（run 快照 + 事件流）翻译成页面动作。
+   没有 run id 或后端不可用时显示空态/错误态，不回退任何演示数据。 */
 (function () {
   const params = new URLSearchParams(location.search);
   const id = params.get("run") || "";
@@ -9,6 +9,27 @@
   if (!window.api) return;
 
   // 新建：先落库，再把地址换成真实 id 重新进入
+  if (id === "new" && !prompt) {
+    document.body.classList.add("is-blank");
+    const pill = document.querySelector(".appbar-center .pill");
+    if (pill) pill.textContent = "待开始 · 0 / 6 道";
+
+    // 左右两栏保留，但显示空态，不塞任何假数据
+    const child = document.querySelector(".t-child");
+    if (child) {
+      child.innerHTML =
+        '<div class="t-empty">还没有任务<br /><span>在项目页输入一句话后，这里会出现派发记录</span></div>';
+    }
+    const codeBody = document.getElementById("code-body");
+    if (codeBody) {
+      codeBody.innerHTML =
+        '<p class="code-empty">还没有代码<br /><span>运行开始后，生成的文件会在这里逐行出现</span></p>';
+    }
+    const reviewBar = document.getElementById("review-bar");
+    if (reviewBar) reviewBar.hidden = true;
+    return;
+  }
+
   if (id === "new" && prompt) {
     window.api.createRun(prompt, params.get("fast") === "1").then(function (result) {
       if (result && result.ok && result.data) {
@@ -23,13 +44,17 @@
     return;
   }
 
-  if (!id || /^demo\d+$/.test(id)) return;
+  if (!id) return;
 
   const wb = window.__wb;
   if (!wb) return;
+  document.documentElement.dataset.live = "1";
 
   wb.stopTimeline();
   if (wb.resetFiles) wb.resetFiles();
+  // 真实运行：没有文件事件之前，代码区保持空，不预置任何示例文件
+  const codeBody = document.getElementById("code-body");
+  if (codeBody) codeBody.innerHTML = "";
 
   const STAGE_OF = { plan: 0, design: 1, build: 2, assemble: 3, test: 4, deliver: 5 };
   const PHASE_OF = {
@@ -124,6 +149,16 @@
       return;
     }
 
+    if (kind === "gate") {
+      showGate(payload);
+      return;
+    }
+
+    if (kind === "gate.answered") {
+      hideGate();
+      return;
+    }
+
     if (kind === "spec" || kind === "arch") {
       wb.setEvent(timeOf(at) + " · " + (kind === "spec" ? "需求分析完成" : "架构设计完成"));
       return;
@@ -209,9 +244,102 @@
 
   // ───────── 订阅 ─────────
 
+  // ───────── 门禁 ─────────
+
+  function showGate(gate) {
+    const box = document.getElementById("gate-modal");
+    if (!box) return;
+    const questions = gate.questions || [];
+    const title = box.querySelector(".gate-title");
+    if (title) title.textContent = "需要你确认（第 " + (gate.round || 1) + " 轮 · " + questions.length + " 个问题）";
+    const body = box.querySelector(".gate-body");
+    if (!body) return;
+    body.innerHTML = questions
+      .map(function (q, index) {
+        let control;
+        if (q.type === "text") {
+          control =
+            '<input class="gate-text" name="' +
+            q.id +
+            '" placeholder="' +
+            (q.default || "") +
+            '">';
+        } else if (q.type === "multi") {
+          control = (q.options || [])
+            .map(function (option) {
+              return (
+                '<label><input type="checkbox" name="' +
+                q.id +
+                '" value="' +
+                option +
+                '"> ' +
+                option +
+                "</label>"
+              );
+            })
+            .join("");
+        } else {
+          control = (q.options || [])
+            .map(function (option) {
+              return (
+                '<label><input type="radio" name="' +
+                q.id +
+                '" value="' +
+                option +
+                '"' +
+                (option === q.default ? " checked" : "") +
+                "> " +
+                option +
+                "</label>"
+              );
+            })
+            .join("");
+        }
+        return (
+          '<div class="gate-q"><p>' + (index + 1) + ". " + q.text + "</p><div class=\"gate-opts\">" + control + "</div></div>"
+        );
+      })
+      .join("");
+    body.scrollTop = 0;
+    box.hidden = false;
+    box.dataset.round = String(gate.round || 1);
+    box.dataset.questions = JSON.stringify(questions);
+  }
+
+  function hideGate() {
+    const box = document.getElementById("gate-modal");
+    if (box) box.hidden = true;
+  }
+
+  async function submitGate(auto) {
+    const box = document.getElementById("gate-modal");
+    if (!box) return;
+    const questions = JSON.parse(box.dataset.questions || "[]");
+    const answers = questions.map(function (q) {
+      if (q.type === "multi") {
+        const checked = Array.from(box.querySelectorAll('input[name="' + q.id + '"]:checked')).map(function (input) {
+          return input.value;
+        });
+        return { id: q.id, value: checked.join(",") || q.default || "" };
+      }
+      const input = box.querySelector('.gate-text[name="' + q.id + '"]');
+      if (input) return { id: q.id, value: input.value || q.default || "" };
+      const checked = box.querySelector('input[name="' + q.id + '"]:checked');
+      return { id: q.id, value: checked ? checked.value : q.default || "" };
+    });
+    await window.api.answerGate(id, { round: Number(box.dataset.round || 1), answers: answers, auto: Boolean(auto) });
+    hideGate();
+  }
+
+  document.addEventListener("click", function (event) {
+    if (event.target && event.target.id === "gate-submit") submitGate(false);
+    if (event.target && event.target.id === "gate-skip") submitGate(true);
+  });
+
   function subscribe() {
     if (typeof EventSource === "undefined") return;
-    const source = new EventSource("/api/v1/runs/" + encodeURIComponent(id) + "/stream");
+    let finished = false;
+    const source = new EventSource("/api/v2/runs/" + encodeURIComponent(id) + "/stream");
     source.onmessage = function (message) {
       let payload;
       try {
@@ -229,12 +357,15 @@
       }
       enqueue(kind, payload, payload.at || Date.now());
       if (kind === "phase" && payload.phase === "done") {
+        finished = true;
         wb.setStatus("done");
         source.close();
       }
     };
     source.onerror = function () {
-      // 浏览器会自己重连；这里只更新状态文案
+      // 已经完成/失败的运行，SSE 正常关闭，不算断线
+      if (finished) return;
+      if (state.run && ["done", "failed", "cancelled"].indexOf(state.run.status) >= 0) return;
       wb.setEvent("连接中断，正在重连…");
     };
   }
@@ -251,7 +382,7 @@
       pause.addEventListener("click", async function () {
         const paused = pause.getAttribute("aria-label") === "继续";
         const path = paused ? "/resume" : "/pause";
-        const result = await fetch("/api/v1/runs/" + encodeURIComponent(id) + path, {
+        const result = await fetch("/api/v2/runs/" + encodeURIComponent(id) + path, {
           method: "POST",
           credentials: "include",
         });
@@ -273,7 +404,7 @@
       cancel.textContent = "取消";
       cancel.addEventListener("click", async function () {
         cancel.disabled = true;
-        await fetch("/api/v1/runs/" + encodeURIComponent(id) + "/cancel", {
+        await fetch("/api/v2/runs/" + encodeURIComponent(id) + "/cancel", {
           method: "POST",
           credentials: "include",
         });
@@ -337,18 +468,26 @@
     pane.dataset.ready = "1";
     pane.innerHTML = '<p style="color:var(--text-3);font-size:13px;">正在启动预览…</p>';
 
-    let src = "/api/v1/runs/" + encodeURIComponent(id) + "/artifact";
+    let src = "";
     try {
-      const response = await fetch("/api/v1/runs/" + encodeURIComponent(id) + "/runtime", {
-        method: "POST",
+      const response = await fetch("/api/v2/runs/" + encodeURIComponent(id) + "/runtime", {
         credentials: "include",
       });
       if (response.ok) {
         const info = await response.json();
-        if (info.previewUrl) src = info.previewUrl;
+        const runtime = info.runtime || info;
+        if (runtime && runtime.previewUrl) src = runtime.previewUrl;
       }
     } catch (error) {
-      /* 起不来就用产物 HTML */
+      src = "";
+    }
+
+    if (!src) {
+      pane.dataset.ready = "0";
+      pane.dataset.ready = "0";
+      pane.innerHTML =
+        '<p style="color:var(--text-3);font-size:13px;">预览还没有启动：流程走到"验收交付"后会在这里打开真实产物。</p>';
+      return;
     }
 
     const frame = document.createElement("iframe");
@@ -408,18 +547,19 @@
           Array.from(bottom.children).forEach((b) => b.classList.toggle("is-on", b === btn));
           const which = btn.textContent.trim();
           if (which === "终端") {
-            wb.setEvent("容器未启动：产物已生成，但还没有跑运行时");
+            wb.setEvent("预览由交付阶段启动；当前没有运行中的进程");
             return;
           }
           if (which === "验收") {
-            const result = await fetch("/api/v1/runs/" + encodeURIComponent(id) + "/verdict", {
+            const result = await fetch("/api/v2/runs/" + encodeURIComponent(id) + "/verdict", {
               credentials: "include",
             });
             if (!result.ok) {
               wb.setEvent("还没有验收结果");
               return;
             }
-            const verdict = await result.json();
+            const body = await result.json();
+            const verdict = body.verdict || body;
             state.verdict = verdict;
             wb.setEvent("验收：" + (verdict.passed || 0) + " / " + (verdict.total || 0) + " 通过");
             return;
@@ -516,6 +656,7 @@
   // ───────── 启动 ─────────
 
   (async function boot() {
+    try {
     document.body.classList.add("is-live");
     wb.setEvent("已连接，等待第一个事件…");
 
@@ -530,7 +671,13 @@
     }
 
     const run = await window.api.run(id);
-    if (run) applyRun(run);
+    if (!run) {
+      document.body.classList.add("is-blank");
+      wb.setStatus("failed");
+      wb.setEvent("这次运行不存在或已被删除，请回项目页重新开始");
+      return;
+    }
+    applyRun(run);
 
     const events = await window.api.events(id);
     if (Array.isArray(events)) {
@@ -547,5 +694,14 @@
     rebind("replay-file", replayFile);
     rebind("back-live", backToLive);
     subscribe();
+  if (state.run && state.run.status === "paused" && window.api.gate) {
+    window.api.gate(id).then(function (data) {
+      if (data && data.gate) showGate(data.gate);
+    });
+  }
+    } catch (error) {
+      wb.setEvent("接入失败：" + (error && error.message ? error.message : error));
+      wb.setStatus("failed");
+    }
   })();
 })();

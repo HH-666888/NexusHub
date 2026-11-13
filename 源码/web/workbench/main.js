@@ -103,7 +103,7 @@
       function taskCountOf(stageIndex) {
         const stage = STAGE_ORDER[stageIndex];
         const mine = TASK_STORE.tasks.filter((task) => task.stage === stage);
-        if (!mine.length && stageIndex === 2 && TASK_STORE.tasks.length === 0) return TASKS.length;
+        if (!mine.length && stageIndex === 2 && TASK_STORE.tasks.length === 0 && !blankMode) return TASKS.length;
         return mine.length;
       }
 
@@ -573,90 +573,11 @@
          面板只有一个：换文件时只换内容与标题，框不消失；
          生成过的文件留在页签里，随时点回去看，也能重播它那一次的生成过程。 */
 
-      const FILES = [
-        {
-          path: "db/schema.sql",
-          lang: "sql",
-          state: "done",
-          lines: [
-            "-- 番茄钟：一个会话一张表就够了",
-            "CREATE TABLE IF NOT EXISTS sessions (",
-            "  id          BIGINT PRIMARY KEY AUTO_INCREMENT,",
-            "  started_at  BIGINT NOT NULL,",
-            "  planned_sec INT NOT NULL DEFAULT 1500,",
-            "  ended_at    BIGINT NULL,",
-            "  created_at  BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP() * 1000)",
-            ");",
-            "",
-            "CREATE INDEX idx_sessions_started ON sessions (started_at);",
-          ],
-        },
-        {
-          path: "api/main.py",
-          lang: "python",
-          state: "done",
-          lines: [
-            "import os",
-            "from fastapi import FastAPI",
-            "from fastapi.responses import HTMLResponse",
-            "from sqlalchemy import create_engine, text",
-            "",
-            "app = FastAPI()",
-            "engine = create_engine(os.environ['DATABASE_URL'])",
-            "",
-            "@app.get('/health')",
-            "def health():",
-            "    return {'ok': True}",
-            "",
-            "@app.get('/api/sessions')",
-            "def list_sessions():",
-            "    with engine.connect() as conn:",
-            "        rows = conn.execute(text('SELECT * FROM sessions')).all()",
-            "    return {'items': [dict(r._mapping) for r in rows]}",
-            "",
-            "@app.post('/api/sessions')",
-            "def add_session(payload: dict):",
-            "    with engine.begin() as conn:",
-            "        conn.execute(text('INSERT INTO sessions (started_at) VALUES (:s)'), {'s': payload['started_at']})",
-            "    return {'ok': True}",
-          ],
-        },
-        {
-          path: "web/index.html",
-          lang: "html",
-          state: "live",
-          lines: [
-            "<!doctype html>",
-            '<html lang="zh-CN">',
-            "<head>",
-            '  <meta charset="utf-8" />',
-            "  <title>番茄钟</title>",
-            "  ",
-            "</head>",
-            "<body>",
-            "  <div class=\"dial\" id=\"dial\"></div>",
-            "  <div class=\"row\">",
-            "    <button id=\"start\">开始</button>",
-            "    <button id=\"reset\">重置</button>",
-            "  </div>",
-            "  <script>",
-            "    let left = 1500, timer = null;",
-            "    function paint() {",
-            "      dial.style.setProperty('--p', (1 - left / 1500) * 100 + '%');",
-            "    }",
-            "    start.onclick = () => {",
-            "      timer = setInterval(() => { left--; paint(); }, 1000);",
-            "    };",
-            "    reset.onclick = () => { clearInterval(timer); left = 1500; paint(); };",
-            "    paint();",
-            "  <\/script>",
-            "</body>",
-            "</html>",
-          ],
-        },
-      ];
+      // v2：不预置任何演示文件，全部由事件流注入
+      const FILES = [];
 
-      const codePane = document.getElementById("code-pane");
+        // 代码面板的 DOM 引用（原先夹在演示数据里，清理时一并丢了）
+        const codePane = document.getElementById("code-pane");
       const codeBody = document.getElementById("code-body");
       const fileName = document.getElementById("file-name");
       const fileDot = document.getElementById("file-dot");
@@ -667,7 +588,7 @@
       const reviewText = document.getElementById("review-text");
 
       /** 当前在看哪个文件；live 是正在流式写入的那个 */
-      const codeView = { current: "db/schema.sql", live: null };
+      const codeView = { current: "", live: null };
       let streamTimer = null;
       let streamedLines = 0;
 
@@ -849,7 +770,7 @@
 
       document.getElementById("toggle-code").addEventListener("click", function () {
         work.classList.toggle("no-code");
-        if (!work.classList.contains("no-code") && !codeView.current) showFile("db/schema.sql");
+        if (!work.classList.contains("no-code") && !codeView.current && !document.documentElement.dataset.live) showFile("db/schema.sql");
         setTimeout(render, 60);
       });
       document.getElementById("hide-code").addEventListener("click", function () {
@@ -858,7 +779,7 @@
       });
       document.getElementById("show-code").addEventListener("click", function () {
         work.classList.remove("no-code");
-        if (!codeView.current) showFile("db/schema.sql");
+        if (!codeView.current && !document.documentElement.dataset.live) showFile("db/schema.sql");
         setTimeout(render, 60);
       });
 
@@ -873,18 +794,11 @@
       });
 
       // 事件条：轮流滚几条真实感的事件
-      const EVENTS = [
-        "12:03:21 · 生成前端页面（首次通过校验）",
-        "12:03:08 · 生成后端接口：4 条路由",
-        "12:02:47 · 架构已定型：4 个模块",
-        "12:01:10 · 需求分析完成：5 条验收标准",
-      ];
+      const EVENTS = [];
       let ev = 0;
       const eventLine = document.getElementById("event-line");
-      setInterval(function () {
-        ev = (ev + 1) % EVENTS.length;
-        eventLine.textContent = EVENTS[ev];
-      }, 2600);
+      // v2：没有演示事件；只在真实事件到来时由 live.js 更新
+      EVENTS.length = 0;
 
       /* ── 演示时间线：先给一个"已经写完的"看回看，再依次流式写两个新文件 ── */
       let timelineTimers = [];
@@ -912,7 +826,7 @@
         timelineTimers.push(setTimeout(() => startFile("web/index.html"), fast ? 2200 : 5400));
       }
       // ?branches=12 模拟"分支很多"，用来看行距 / 列宽怎么被自动撑开
-      seedBranches(Number(new URLSearchParams(location.search).get("branches")) || 0);
+      seedBranches(0);
 
       // ?focus=3 直接进"聚焦第 3 道"（1 起算），方便演示与截图
       const focusParam = Number(new URLSearchParams(location.search).get("focus"));
@@ -1309,6 +1223,8 @@
           const map = { running: "运行中", paused: "已暂停", done: "已完成", failed: "已失败", cancelled: "已取消" };
           const label = map[status] || status;
           let done = STAGES.filter((s) => s.state === "done").length;
+      // 暂停在某一 道时，把当前道也算进去，避免出现“第 0 / 6 道”
+      if (STAGES.some((s) => s.state === "live")) done += 1;
           if (status === "done") {
             STAGES.forEach((s) => {
               s.state = "done";
@@ -1376,12 +1292,21 @@
 
       // 带真实 run id 时由 live.js 驱动，不跑演示时间线
       const bootRunId = new URLSearchParams(location.search).get("run") || "";
-      const liveMode = Boolean(bootRunId) && !/^(new|demo\d+)$/.test(bootRunId);
+      const blankMode = bootRunId === "new";
+      if (blankMode) document.body.classList.add("is-blank");
+      // v2：清掉演示分支与写死的阶段说明，全部等真实事件填充
+      TASKS.length = 0;
+      STAGES.forEach(function (stage) { stage.state = "wait"; stage.note = "—"; });
+      // v2：工作台必须带真实 run；没有就回项目页，不展示任何演示时间线
+      if (!bootRunId) {
+        location.replace("../projects/");
+      }
+      const liveMode = Boolean(bootRunId) && bootRunId !== "new";
       window.__wb.isLive = liveMode;
 
       // 首屏：先树，再代码流（实时模式不演）
       render();
-      if (!liveMode) runTimeline();
+      if (!liveMode && !bootRunId && FILES.length) runTimeline();
       window.__treeDone = true;
 
 // 从首页带过来的需求：显示在面包屑上，演示时能看出"刚才输入的那句话"

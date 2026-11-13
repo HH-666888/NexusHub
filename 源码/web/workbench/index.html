@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>NexusHub · 树型工作流 + 实时代码流</title>
-    <link rel="stylesheet" href="../common/app.css?v=20261108b" />
-    <link rel="stylesheet" href="style.css?v=20261108b" />
+    <link rel="stylesheet" href="../common/app.css?v=20261113c" />
+    <link rel="stylesheet" href="style.css?v=20261113c" />
   </head>
   <body>
     <header class="appbar">
@@ -13,14 +13,14 @@
         <svg viewBox="0 0 24 24" aria-hidden><path class="brand-mark" d="M4 20V4h3.4l9.2 12V4H20v16h-3.4L7.4 8v12H4z" /></svg>
         NexusHub
       </a>
-      <nav class="crumb"><a href="../projects/">我的项目</a><span>/</span><b>极简番茄钟</b></nav>
+      <nav class="crumb"><a href="../projects/">我的项目</a><span>/</span><b>运行详情</b></nav>
 
       <div class="appbar-center">
-        <span class="pill pill-live"><i class="pulse-dot"></i>运行中 · 第 3 / 6 道</span>
+        <span class="pill pill-plain">等待开始 · 0 / 6 道</span>
       </div>
 
       <div class="appbar-right">
-        <span class="pill pill-plain" style="font-family: var(--mono); font-size: 12px;">¥1.24 / ¥2.00</span>
+        <span class="pill pill-plain" style="font-family: var(--mono); font-size: 12px;">¥0.00 / ¥0.00</span>
         <button class="btn btn-sm btn-ghost" type="button" id="toggle-tasks">
           <svg viewBox="0 0 24 24" aria-hidden style="width: 15px; height: 15px;"><path d="M4 6h6M4 12h6M4 18h6M14 6h6M14 12h6" /></svg>
           清单
@@ -42,11 +42,11 @@
       <!-- ───────── 左上：任务点清单（依次生成） ───────── -->
       <aside class="tasks">
         <div class="tasks-head">
-          <h2>任务清单 <span class="pill pill-plain" style="font-weight: 500; font-size: 11px; padding: 1px 8px;">13 项</span></h2>
+          <h2>任务清单 <span class="pill pill-plain" style="font-weight: 500; font-size: 11px; padding: 1px 8px;">0 项</span></h2>
           <p>主控一边分析一边往下派活</p>
           <div class="stage-progress">
-            <div class="label"><span>第 3 道 · 并行开发</span><span id="pct">46%</span></div>
-            <div class="bar"><i id="bar" style="width: 46%"></i></div>
+            <div class="label"><span>等待开始</span><span id="pct">0%</span></div>
+            <div class="bar"><i id="bar" style="width: 0%"></i></div>
           </div>
         </div>
 
@@ -56,34 +56,29 @@
             <div class="t-item is-live" style="animation-delay: .05s">
               <span class="no">L1</span>
               <span class="name">主控 Agent</span>
-              <span class="state">调度中</span>
+              <span class="state">待命</span>
             </div>
           </div>
 
           <!-- 二级：六道 -->
           <div class="t-group">
-            <div class="t-item" style="animation-delay: .25s"><span class="no">01</span><span class="name">需求分析</span><span class="state">完成</span></div>
-            <div class="t-item" style="animation-delay: .40s"><span class="no">02</span><span class="name">架构设计</span><span class="state">完成</span></div>
-            <div class="t-item is-live" style="animation-delay: .55s"><span class="no">03</span><span class="name">并行开发</span><span class="state">进行中</span></div>
+            <div class="t-item" style="animation-delay: .25s"><span class="no">01</span><span class="name">需求分析</span><span class="state">等待</span></div>
+            <div class="t-item" style="animation-delay: .40s"><span class="no">02</span><span class="name">架构设计</span><span class="state">等待</span></div>
+            <div class="t-item" style="animation-delay: .55s"><span class="no">03</span><span class="name">并行开发</span><span class="state">等待</span></div>
             <div class="t-item" style="animation-delay: .70s"><span class="no">04</span><span class="name">集成装配</span><span class="state">等待</span></div>
             <div class="t-item" style="animation-delay: .85s"><span class="no">05</span><span class="name">自动测试</span><span class="state">等待</span></div>
             <div class="t-item" style="animation-delay: 1s"><span class="no">06</span><span class="name">验收交付</span><span class="state">等待</span></div>
           </div>
 
           <!-- 三级：主控分析出来的活 -->
-          <div class="t-group t-child">
-            <div class="t-item" style="animation-delay: 1.3s"><span class="name">数据库 · schema.sql</span><span class="state">完成</span></div>
-            <div class="t-item" style="animation-delay: 1.45s"><span class="name">后端 · api/main.py</span><span class="state">完成</span></div>
-            <div class="t-item is-live" style="animation-delay: 1.6s"><span class="name">前端 · web/index.html</span><span class="state">写入中</span></div>
-            <div class="t-item" style="animation-delay: 1.75s; opacity: 1; transform: none; border: 1px dashed var(--line-2); justify-items: center;"><span class="name" style="color: var(--text-3);">主控正在分析下一步…</span></div>
-          </div>
-        </div>
-      </aside>
+          <div class="t-group t-child"></div>
+      </div>
+    </aside>
 
       <!-- 任务详情：点树上或侧栏的任务卡出现，展示"它干了什么" -->
       <aside class="task-card" id="task-card" hidden>
         <header>
-          <span class="tc-stage" id="tc-stage">第 3 道</span>
+          <span class="tc-stage" id="tc-stage">第 — 道</span>
           <button type="button" class="tc-close" id="tc-close" aria-label="关闭">×</button>
         </header>
         <h4 id="tc-title">任务</h4>
@@ -163,9 +158,9 @@
 
         <div class="code-file">
           <span class="dot" id="file-dot"></span>
-          <span id="file-name">web/index.html</span>
+          <span id="file-name">—</span>
           <span class="grow"></span>
-          <span class="stream" id="stream-state">流式写入 · <b id="line-count">0</b> 行</span>
+          <span class="stream" id="stream-state">等待文件事件<b id="line-count" hidden>0</b></span>
         </div>
 
         <div class="review-bar" id="review-bar">
@@ -184,14 +179,34 @@
           <button type="button">终端</button>
           <button type="button">验收</button>
         </div>
-        <span class="line-text" id="event-line">12:03:21 · 生成前端页面（首次通过校验）</span>
-        <span class="cost">本轮 ¥1.24 · 4 次模型调用</span>
+        <span class="line-text" id="event-line">等待事件…</span>
+        <span class="cost">本轮 ¥0.00 · 0 次模型调用</span>
       </div>
     </div>
 
         
-    <script src="main.js?v=20261108b"></script>
-    <script src="../common/api.js?v=20261108b"></script>
-    <script src="./live.js?v=20261108b"></script>
-  </body>
+    <script>
+  window.onerror = function (msg, src, line) {
+    var el = document.getElementById("event-line");
+    if (el) el.textContent = "JS错误：" + msg + " @" + line;
+    document.title = "ERR " + msg;
+  };
+</script>
+<script src="main.js?v=20261113c"></script>
+    <script src="../common/api.js?v=20261113c"></script>
+    <script src="./live.js?v=20261113c"></script>
+  
+  <!-- 门禁：AI 拿不准时停下来问，任何阶段都可能出现 -->
+  <div class="gate-modal" id="gate-modal" hidden>
+    <div class="gate-card">
+      <h4 class="gate-title">需要你确认</h4>
+      <div class="gate-body"></div>
+      <div class="gate-actions">
+        <button type="button" class="btn btn-sm btn-ghost" id="gate-skip">按默认继续</button>
+        <button type="button" class="btn btn-sm btn-primary" id="gate-submit">提交</button>
+      </div>
+    </div>
+  </div>
+  <script src="../common/nav.js?v=20261113c"></script>
+</body>
 </html>

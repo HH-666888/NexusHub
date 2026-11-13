@@ -17,7 +17,7 @@
         });
       })();
 
-// 设置页：所有控件都真的读写 /api/v1/settings
+// 设置页：所有控件都真的读写 /api/v2/settings
       (function () {
         const DEFAULT = {
           provider: "deepseek",

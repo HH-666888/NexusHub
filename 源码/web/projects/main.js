@@ -17,21 +17,6 @@
         });
       })();
 
-// 项目卡 → 工作台（原型串联：没有真实数据，统一进同一页）
-      (function () {
-        const cards = Array.from(document.querySelectorAll(".card"));
-        const open = (i) => { location.href = "../workbench/?run=demo" + (i + 1); };
-
-        cards.forEach(function (card, i) {
-          card.style.cursor = "pointer";
-          card.addEventListener("click", function (event) {
-            if (event.target.closest("button, a")) return;
-            open(i);
-          });
-          const btn = card.querySelector(".actions button");
-          if (btn) btn.addEventListener("click", function (event) { event.stopPropagation(); open(i); });
-        });
-      })();
 
 // 头像显示真实用户名（不在顶栏另插一个演示用的 chip）
       (async function () {
@@ -119,7 +104,7 @@
           return card;
         }
 
-        function clearDemoCards() {
+        function clearCards() {
           if (!grid) return;
           Array.from(grid.querySelectorAll(".card")).forEach((el) => el.remove());
           const empty = grid.querySelector(".empty-state");
@@ -142,7 +127,7 @@
         const segButtons = Array.from(document.querySelectorAll(".seg button"));
 
         function renderList() {
-          clearDemoCards();
+          clearCards();
           const list = filter === "all" ? allRuns : allRuns.filter((run) => run.status === filter);
           if (count) count.textContent = String(list.length);
           if (list.length === 0) {
@@ -183,7 +168,7 @@
           if (!Array.isArray(runs)) return; // 没有后端 / 未登录：保留演示卡片
 
           allRuns = runs;
-          clearDemoCards();
+          clearCards();
           paintFilters();
           renderList();
           updateStats(runs);
@@ -240,6 +225,7 @@
         }
 
         if (newBtn) newBtn.addEventListener("click", create);
+
         if (newInput) {
           newInput.addEventListener("keydown", function (event) {
             if (event.key === "Enter") create();
@@ -257,7 +243,6 @@
           out.style.fontSize = "13px";
           out.addEventListener("click", async function () {
             if (window.api) await window.api.logout();
-            if (window.NexusDemo) window.NexusDemo.logout();
             location.href = "../login/";
           });
           right.insertBefore(out, right.querySelector(".avatar"));

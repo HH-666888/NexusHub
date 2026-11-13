@@ -83,8 +83,7 @@ function safeTheme() {
             if (window.api) {
               const result = await window.api.register(name, pwd, pwd2);
               if (result.ok) {
-                if (window.NexusDemo) window.NexusDemo.login(name);
-                location.href = targetUrl();
+                              location.href = targetUrl();
                 return;
               }
               if (!result.offline) {
@@ -96,8 +95,7 @@ function safeTheme() {
             }
 
             // 没有后端时退回演示登录
-            if (window.NexusDemo) window.NexusDemo.login(name);
-            location.href = targetUrl();
+                      location.href = targetUrl();
           } finally {
             submitBtn.disabled = false;
             submitBtn.textContent = "注册并开始";

@@ -1,19 +1,19 @@
-/* 前端唯一的接口出口。
+/* v2 前端唯一的接口出口。
    规则：
-   - 页面永远先问后端；后端不在（用 python http.server 单开静态站时）就返回 null，
-     由调用方回退到演示数据，保证原型不白屏。
-   - 会话靠 cookie，所以每个请求都带 credentials。 */
+   - 所有请求（登录、设置、运行、事件）一律走 /api/v2。
+   - 会话靠 cookie，每个请求都带 credentials。
+   - 后端不可用时返回 offline，由调用方显示错误态；不回退任何演示数据。 */
 (function () {
-  const BASE = "/api/v1";
+  const BASE = "/api/v2";
 
-  async function request(path, options) {
+  async function request(path, options, base) {
     const opts = Object.assign(
       { credentials: "include", headers: { "Content-Type": "application/json" } },
       options || {},
     );
     let response;
     try {
-      response = await fetch(BASE + path, opts);
+      response = await fetch((base || BASE) + path, opts);
     } catch (error) {
       return { ok: false, offline: true, status: 0, data: null };
     }
@@ -27,8 +27,7 @@
       data = null;
     }
 
-    // 纯静态托管（python http.server / 双击打开）时，/api/v1 不存在，
-    // 服务器会回一个 HTML 404。这种情况按"没有后端"处理，让调用方回退演示数据。
+    // 后端不在时返回 offline，由页面显示错误态。
     if (!response.ok && data === null) {
       return { ok: false, offline: true, status: response.status, data: null };
     }
@@ -87,9 +86,121 @@
       return result.ok ? result.data : null;
     },
 
+    async gate(runId) {
+      const result = await request("/runs/" + encodeURIComponent(runId) + "/gate");
+      return result.ok ? result.data : null;
+    },
+
+    async answerGate(runId, payload) {
+      return request("/runs/" + encodeURIComponent(runId) + "/answers", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+
     async events(runId) {
       const result = await request("/runs/" + encodeURIComponent(runId) + "/events");
       return result.ok ? result.data : null;
+    },
+
+
+    // ── 辅助开发 ──
+    async assistProjects() {
+      const result = await request("/assist/projects");
+      return result.ok ? result.data : null;
+    },
+
+    async createAssist(goal) {
+      return request("/assist/projects", { method: "POST", body: JSON.stringify({ goal }) });
+    },
+
+    async assistProject(id) {
+      const result = await request("/assist/projects/" + encodeURIComponent(id));
+      return result.ok ? result.data : null;
+    },
+
+    async updateAssist(id, patch) {
+      return request("/assist/projects/" + encodeURIComponent(id), {
+        method: "PATCH",
+        body: JSON.stringify(patch || {}),
+      });
+    },
+
+    async deleteAssist(id) {
+      return request("/assist/projects/" + encodeURIComponent(id), { method: "DELETE" });
+    },
+
+    async saveAssistFile(id, path, content) {
+      return request("/assist/projects/" + encodeURIComponent(id) + "/files", {
+        method: "POST",
+        body: JSON.stringify({ path, content }),
+      });
+    },
+
+    async assistFile(id, path) {
+      const result = await request(
+        "/assist/projects/" + encodeURIComponent(id) + "/file?path=" + encodeURIComponent(path),
+      );
+      return result.ok ? result.data : null;
+    },
+
+    async analyzeAssist(id) {
+      return request("/assist/projects/" + encodeURIComponent(id) + "/analyze", { method: "POST" });
+    },
+
+    async assistFindings(id, status) {
+      const result = await request(
+        "/assist/projects/" + encodeURIComponent(id) + "/findings?status=" + (status || "open"),
+      );
+      return result.ok ? result.data.findings : null;
+    },
+
+    async updateFinding(id, status) {
+      return request("/assist/findings/" + encodeURIComponent(id), {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+    },
+
+    async applyAssist(id, path, instruction) {
+      return request("/assist/projects/" + encodeURIComponent(id) + "/apply", {
+        method: "POST",
+        body: JSON.stringify({ path, instruction }),
+      });
+    },
+
+    async assistCoach(id, message, stage) {
+      const result = await request("/assist/projects/" + encodeURIComponent(id) + "/stage/ai", {
+        method: "POST",
+        body: JSON.stringify({ message, stage }),
+      });
+      return result.ok ? result.data : null;
+    },
+
+    // ── AI 记忆 ──
+    async memory(days) {
+      const result = await request("/memory?days=" + (days || 30));
+      return result.ok ? result.data : null;
+    },
+
+    async memoryStats() {
+      const result = await request("/memory/stats");
+      return result.ok ? result.data : null;
+    },
+
+    async updateMemory(id, pinned) {
+      return request("/memory/" + encodeURIComponent(id), {
+        method: "PATCH",
+        body: JSON.stringify({ pinned }),
+      });
+    },
+
+    async deleteMemory(id) {
+      return request("/memory/" + encodeURIComponent(id), { method: "DELETE" });
+    },
+
+    async clearMemory() {
+      return request("/memory", { method: "DELETE" });
     },
 
     async settings() {
