@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db.models import AssistFile, AssistFinding, AssistProject
+from app.db.session import SessionLocal
 from app.deps import get_current_user, get_db
 from app.domain.user import User
 from app.shared.time import now_ms
@@ -27,6 +29,19 @@ STAGE_LABELS = {
     "test": "自动测试",
     "deliver": "验收交付",
 }
+
+
+def _record_memory_bg(project_id: str, stage: str) -> None:
+    db = SessionLocal()
+    try:
+        project = db.get(AssistProject, project_id)
+        if project is not None:
+            memory_service.record_from_stage(db, project, stage)
+    except Exception:  # noqa: BLE001
+        # 记忆失败不影响主流程
+        pass
+    finally:
+        db.close()
 
 
 def _owned(db: Session, project_id: str, user: User) -> AssistProject:
@@ -144,7 +159,13 @@ def update_project(
         old_stage = project.stage
         project.stage = stage
         if STAGES.index(stage) > STAGES.index(old_stage):
-            memory_service.record_from_stage(db, project, stage)
+            # 记忆沉淀要调模型，放到后台，别让阶段推进卡在请求里
+            threading.Thread(
+                target=_record_memory_bg,
+                args=(project.id, stage),
+                daemon=True,
+                name=f"memory-{project.id}",
+            ).start()
     project.updated_at = now_ms()
     db.commit()
     return _project_out(db, project)
