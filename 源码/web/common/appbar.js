@@ -92,7 +92,7 @@
     if (!avatar || !window.api || !window.api.me) return;
     try {
       const me = await window.api.me();
-      if (me) avatar.textContent = me.displayName || me.username || "—";
+      if (me) avatar.textContent = me.username || "—";
     } catch (error) {
       /* 保持占位 */
     }

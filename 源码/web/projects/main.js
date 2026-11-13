@@ -1,11 +1,3 @@
-// 头像显示真实用户名（不在顶栏另插一个演示用的 chip）
-      (async function () {
-        if (!window.api) return;
-        const user = await window.api.me();
-        const avatar = document.querySelector(".avatar");
-        if (avatar) avatar.textContent = user ? user.username || "我" : "未登录";
-      })();
-
 // 项目页真数据：列表、空状态、新建、退出登录
       (function () {
         const grid = document.querySelector(".grid");

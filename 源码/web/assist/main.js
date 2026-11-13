@@ -83,11 +83,6 @@
   });
 
   (async function boot() {
-    if (window.api) {
-      const me = await window.api.me();
-      const avatar = document.querySelector(".avatar");
-      if (avatar && me) avatar.textContent = me.displayName || me.username || "—";
-    }
     load();
   })();
 })();
