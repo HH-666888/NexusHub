@@ -5,6 +5,8 @@
   const path = location.pathname;
   const isAssist = path.indexOf("/assist") === 0 || path.indexOf("/memory") === 0;
   const isWorkflow = path.indexOf("/projects") === 0 || path.indexOf("/workbench") === 0;
+  const host = document.getElementById("appbar");
+  const activeTab = (host && host.dataset.tab) || (isAssist ? "assist" : isWorkflow ? "workflow" : "");
 
   const ICON = {
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>',
@@ -119,7 +121,6 @@
   }
 
   function render() {
-    const host = document.getElementById("appbar");
     if (!host) return;
 
     const crumb = host.dataset.crumb || "";
@@ -136,8 +137,8 @@
         "<b>NexusHub</b>" +
       "</a>" +
       '<nav class="top-tabs">' +
-        '<a href="/projects/" class="' + (isWorkflow ? "is-on" : "") + '">工作流</a>' +
-        '<a href="/assist/" class="' + (isAssist ? "is-on" : "") + '">辅助开发</a>' +
+        '<a href="/projects/" class="' + (activeTab === "workflow" ? "is-on" : "") + '">工作流</a>' +
+        '<a href="/assist/" class="' + (activeTab === "assist" ? "is-on" : "") + '">辅助开发</a>' +
       "</nav>" +
       '<nav class="crumb">' +
         ('<span>/</span>' + (parent ? '<a href="' + parentHref + '">' + parent + "</a><span>/</span>" : "")) +

@@ -1,4 +1,11 @@
-.settings-shell { display: flex; min-height: calc(100vh - 60px); }
+.settings-shell {
+  display: flex;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 40px;
+  min-height: calc(100vh - 60px);
+  box-sizing: border-box;
+}
 
       .settings-side {
         width: 240px;
@@ -20,7 +27,7 @@
       .settings-side a:hover { background: var(--card-2); color: var(--text); }
       .settings-side a.is-here { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
 
-      .settings-main { flex: 1; min-width: 0; padding: 30px 40px 40px; }
+      .settings-main { flex: 1; min-width: 0; padding: 28px 0 40px 28px; }
       .settings-main h1 { margin: 0 0 6px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
       .settings-main > p { margin: 0 0 22px; font-size: 13.5px; color: var(--text-2); }
 
