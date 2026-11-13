@@ -4,9 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>NexusHub · 设置</title>
-    <link rel="stylesheet" href="../common/app.css?v=20261113m" />
-    <link rel="stylesheet" href="../common/glass.css?v=20261113m" />
-    <link rel="stylesheet" href="style.css?v=20261113m" />
+    <link rel="stylesheet" href="../common/app.css?v=20261113p" />
+    <link rel="stylesheet" href="../common/glass.css?v=20261113p" />
+    <link rel="stylesheet" href="style.css?v=20261113p" />
   </head>
   <body>
     <header class="appbar" id="appbar" data-tab="" data-crumb="设置"></header>
@@ -15,18 +15,16 @@
       <nav class="settings-side" aria-label="设置分区">
         <a class="is-here" href="#s-model">
           <svg viewBox="0 0 24 24" aria-hidden><rect x="4" y="4" width="16" height="7" rx="2" /><rect x="4" y="14" width="16" height="6" rx="2" /></svg>
-          模型配置
-        </a>
-        <a href="#s-budget">
-          <svg viewBox="0 0 24 24" aria-hidden><rect x="4" y="5" width="16" height="14" rx="3" /><path d="M8 10h8M8 14h5" /></svg>
-          成本预算
+          模型接入
         </a>
         <a href="#s-theme">
           <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="4" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2" /></svg>
           外观主题
         </a>
-        
-        
+        <a href="#s-memory">
+          <svg viewBox="0 0 24 24" aria-hidden><path d="M12 3a7 7 0 0 0-7 7c0 3 2 4 2 6h10c0-2 2-3 2-6a7 7 0 0 0-7-7z" /><path d="M9 20h6" /></svg>
+          AI 记忆
+        </a>
       </nav>
 
       <main class="settings-main">
@@ -34,23 +32,8 @@
         <p>这里改的东西只影响你这台机器上的运行，不会同步到别人的账号。</p>
 
         <section class="panel section" id="s-model">
-          <h2>模型提供商</h2>
-          <p class="desc">决定工厂用谁的大脑。换提供商不影响已经生成过的项目。</p>
-
-          <div class="provider-grid">
-            <div class="provider is-on">
-              <svg viewBox="0 0 24 24" aria-hidden><path d="M4 16c4-8 12-8 16 0" /><circle cx="12" cy="16" r="1.6" /></svg>
-              DeepSeek
-            </div>
-            <div class="provider">
-              <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="8" /><path d="M8 12h8" /></svg>
-              OpenAI 兼容
-            </div>
-            <div class="provider">
-              <svg viewBox="0 0 24 24" aria-hidden><rect x="3" y="5" width="18" height="12" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
-              本地模型
-            </div>
-          </div>
+          <h2>模型接入</h2>
+          <p class="desc">固定使用 DeepSeek。只需填自己的 API Key；不填则用服务端环境变量里的 Key。</p>
 
           <div class="field-row">
             <label>API Key</label>
@@ -59,50 +42,12 @@
                 <input class="input" type="password" value="" placeholder="sk-…（不会回显已保存的 key）" />
                 <button class="btn btn-ghost" type="button">测试连接</button>
               </div>
-              <p class="hintline">保存后不回显；留空表示不修改。留空时用环境变量里的 Key。</p>
-            </div>
-          </div>
-
-          <div class="field-row">
-            <label>决策模型</label>
-            <select class="select">
-              <option value="deepseek-chat">deepseek-chat（快、便宜，适合拆需求与定架构）</option>
-              <option value="deepseek-reasoner">deepseek-reasoner（慢、贵，适合复杂需求）</option>
-            </select>
-          </div>
-
-          <div class="field-row">
-            <label>执行模型</label>
-            <select class="select">
-              <option value="deepseek-chat">deepseek-chat（默认，写代码够用）</option>
-              <option value="deepseek-reasoner">deepseek-reasoner（复杂页面更稳）</option>
-            </select>
-          </div>
-        </section>
-
-        <section class="panel section" id="s-budget">
-          <h2>成本预算</h2>
-          <p class="desc">两道闸门：单次任务到顶就停，每日总额到顶当天不再接新任务。</p>
-
-          <div class="field-row">
-            <label>单次任务上限</label>
-            <div style="display: flex; align-items: center; gap: 20px;">
-              <div class="budget-input"><span>¥</span>2.00</div>
-              <input class="slider" type="range" min="0" max="10" value="2" step="0.5" aria-label="单次任务上限" style="background: linear-gradient(to right, var(--primary) 0 20%, var(--card-3) 20% 100%);" />
-            </div>
-          </div>
-
-          <div class="field-row">
-            <label>每日总预算</label>
-            <div style="display: flex; align-items: center; gap: 20px;">
-              <div class="budget-input"><span>¥</span>20.00</div>
-              <input class="slider" type="range" min="0" max="100" value="20" step="5" aria-label="每日总预算" style="background: linear-gradient(to right, var(--primary) 0 20%, var(--card-3) 20% 100%);" />
+              <p class="hintline">保存后不回显；留空表示不修改。填了会用于之后的工作流和辅助开发。</p>
             </div>
           </div>
         </section>
 
-        
-      <section class="panel section" id="s-theme">
+        <section class="panel section" id="s-theme">
           <h2>外观主题</h2>
           <p class="desc">浅色适合白天与投屏，深色适合夜里盯着看。</p>
 
@@ -119,35 +64,34 @@
         </section>
 
         <section class="panel section" id="s-memory">
-        <h2>AI 记忆</h2>
-        <p style="margin:0 0 10px;font-size:12.5px;color:var(--text-3);">记忆只在“辅助开发”里生效；工作流使用模型的纯粹能力，不读取记忆。</p>
-        <div id="memory-summary" style="font-size:13px;color:var(--text-2);">正在读取…</div>
-        <div style="margin-top:12px;"><a class="btn btn-sm btn-ghost" href="../memory/">打开记忆页</a></div>
-      </section>
+          <h2>AI 记忆</h2>
+          <p style="margin:0 0 10px;font-size:12.5px;color:var(--text-3);">记忆只在“辅助开发”里生效；工作流使用模型的纯粹能力，不读取记忆。</p>
+          <div id="memory-summary" style="font-size:13px;color:var(--text-2);">正在读取…</div>
+          <div style="margin-top:12px;"><a class="btn btn-sm btn-ghost" href="../memory/">打开记忆页</a></div>
+        </section>
 
-      <div class="save-bar">
-          <span>上次保存：今天 08:02</span>
+        <div class="save-bar">
+          <span>尚未保存</span>
           <div style="display: flex; gap: 10px;">
-            <button class="btn btn-ghost" type="button">恢复默认</button>
             <button class="btn btn-primary" type="button">保存更改</button>
           </div>
         </div>
       </main>
     </div>
 
-        <script src="../common/api.js?v=20261113m"></script>
-  <script src="../common/appbar.js?v=20261113m"></script>
-        <script src="main.js?v=20261113m"></script>
-  <script>
-    (async function () {
-      var box = document.getElementById("memory-summary");
-      if (!box || !window.api || !window.api.memoryStats) return;
-      var stats = await window.api.memoryStats();
-      if (!stats) { box.textContent = "暂时读不到记忆统计。"; return; }
-      box.innerHTML =
-        "共 <b>" + stats.total + "</b> 条 · 今日 <b>" + stats.today + "/" + stats.dailyLimit +
-        "</b> · 近 7 天 <b>" + stats.week + "</b> 条";
-    })();
-  </script>
+    <script src="../common/api.js?v=20261113p"></script>
+    <script src="../common/appbar.js?v=20261113p"></script>
+    <script src="main.js?v=20261113p"></script>
+    <script>
+      (async function () {
+        var box = document.getElementById("memory-summary");
+        if (!box || !window.api || !window.api.memoryStats) return;
+        var stats = await window.api.memoryStats();
+        if (!stats) { box.textContent = "暂时读不到记忆统计。"; return; }
+        box.innerHTML =
+          "共 <b>" + stats.total + "</b> 条 · 今日 <b>" + stats.today + "/" + stats.dailyLimit +
+          "</b> · 近 7 天 <b>" + stats.week + "</b> 条";
+      })();
+    </script>
   </body>
 </html>

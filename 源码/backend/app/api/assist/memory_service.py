@@ -9,9 +9,9 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import AssistFile, AssistFinding, AssistProject, MemoryEntry
+from app.db.models import AssistFile, AssistFinding, AssistProject, MemoryEntry, Setting
 from app.shared.time import now_ms
-from app.api.ai.factory import build_client, model_for
+from app.api.ai.factory import build_client, model_for, set_user_api_key
 
 BEIJING = timezone(timedelta(hours=8))
 CONFIDENCE = {"single", "repeat", "confirmed"}
@@ -86,6 +86,9 @@ def record_from_stage(db: Session, project: AssistProject, stage: str) -> None:
 - 不要记敏感信息（密钥、密码、完整代码）。
 - 只输出 JSON：{"remember": true/false, "title": "≤20字", "body": "≤80字", "reason": "为什么记", "confidence": "single/repeat/confirmed"}
 """
+    key_row = db.get(Setting, {"user_id": project.user_id, "key": "apiKey"})
+    if key_row is not None and isinstance(key_row.value, str):
+        set_user_api_key(key_row.value)
     try:
         client = build_client("plan")
         try:

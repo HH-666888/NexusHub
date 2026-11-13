@@ -102,9 +102,8 @@
     const pill = document.getElementById("appbar-budget");
     if (!pill || !window.api) return;
     try {
-      const [settings, runs] = await Promise.all([window.api.settings(), window.api.runs(50)]);
-      const budget = settings && typeof settings.budgetPerDay === "number" ? settings.budgetPerDay : null;
-      if (budget === null || !Array.isArray(runs)) return;
+      const runs = await window.api.runs(50);
+      if (!Array.isArray(runs)) return;
       const start = new Date();
       start.setHours(0, 0, 0, 0);
       const cost = runs
@@ -114,7 +113,7 @@
         .reduce(function (sum, run) {
           return sum + Number(run.totalCostCny || 0);
         }, 0);
-      pill.textContent = "¥" + cost.toFixed(2) + " / ¥" + budget.toFixed(2);
+      pill.textContent = "今日 ¥" + cost.toFixed(2);
     } catch (error) {
       /* 保持占位 */
     }
@@ -147,7 +146,7 @@
       (center ? '<div class="appbar-center">' + center + "</div>" : "") +
       '<div class="appbar-right">' +
         extra +
-        '<span class="pill pill-plain" id="appbar-budget">¥— / ¥—</span>' +
+        '<span class="pill pill-plain" id="appbar-budget">今日 —</span>' +
         '<button class="icon-btn" type="button" id="appbar-theme" aria-label="切换主题">' +
           '<svg viewBox="0 0 24 24" aria-hidden>' + ICON.sun + "</svg>" +
         "</button>" +

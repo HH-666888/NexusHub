@@ -39,6 +39,10 @@ def write_settings(
     now = now_ms()
     for key, value in payload.items():
         row = db.get(Setting, {"user_id": user.id, "key": key})
+        if key == "apiKey" and not str(value or "").strip():
+            if row is not None:
+                db.delete(row)
+            continue
         if row is None:
             db.add(Setting(user_id=user.id, key=key, value=value, updated_at=now))
         else:
@@ -47,8 +51,8 @@ def write_settings(
     db.commit()
     rows = db.execute(select(Setting).where(Setting.user_id == user.id)).scalars()
     data = {row.key: row.value for row in rows}
-    if "apiKey" in data:
-        data.pop("apiKey")
+    key_value = str(data.pop("apiKey", "") or "").strip()
+    if key_value:
         data["apiKeySet"] = True
     return data
 
@@ -58,27 +62,47 @@ def test_connection(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """真的去探一下提供商，不通就说清楚，不假装成功。"""
+    """拿 Key 真去请求一次 /models，验证 Key 是否有效，而不是只 ping 域名。"""
+    import json
+    import urllib.error
     import urllib.request
 
     provider = str(payload.get("provider") or "deepseek")
-    key = str(payload.get("apiKey") or "").strip()
-
-    if not key:
-        row = db.get(Setting, {"user_id": user.id, "key": "apiKey"})
-        key = str((row.value if row else "") or "").strip()
-    if not key:
-        return {"ok": False, "message": "还没有填 API Key"}
-
     base = {
         "deepseek": "https://api.deepseek.com",
         "openai": "https://api.openai.com",
         "local": "http://127.0.0.1:11434",
     }.get(provider, "https://api.deepseek.com")
 
+    key = str(payload.get("apiKey") or "").strip()
+    if not key:
+        row = db.get(Setting, {"user_id": user.id, "key": "apiKey"})
+        key = str((row.value if row else "") or "").strip()
+
+    if provider == "local":
+        return {"ok": False, "message": "本地模型还没有接入，暂不测试"}
+
+    if not key:
+        return {"ok": False, "message": "还没有填 API Key"}
+
+    request = urllib.request.Request(
+        base.rstrip("/") + "/models",
+        headers={"Authorization": f"Bearer {key}"},
+        method="GET",
+    )
     try:
-        request = urllib.request.Request(base, method="GET")
-        with urllib.request.urlopen(request, timeout=4) as response:  # noqa: S310 - 固定域名
-            return {"ok": True, "message": f"{provider} 可达（HTTP {response.status}）"}
+        with urllib.request.urlopen(request, timeout=8) as response:  # noqa: S310 - 固定域名
+            body = response.read(2000).decode("utf-8", errors="replace")
+            try:
+                models = json.loads(body).get("data") or []
+            except Exception:  # noqa: BLE001
+                models = []
+            names = [str(item.get("id")) for item in models if isinstance(item, dict)][:5]
+            suffix = "，可用模型：" + "、".join(names) if names else ""
+            return {"ok": True, "message": f"Key 有效（HTTP {response.status}）{suffix}"}
+    except urllib.error.HTTPError as error:
+        if error.code in (401, 403):
+            return {"ok": False, "message": "Key 无效或没有权限（HTTP 401/403）"}
+        return {"ok": False, "message": f"{provider} 返回 HTTP {error.code}"}
     except Exception as error:  # noqa: BLE001 - 网络错误原样告诉用户
         return {"ok": False, "message": f"连不上 {base}：{error.__class__.__name__}"}

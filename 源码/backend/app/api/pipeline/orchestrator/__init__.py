@@ -12,7 +12,9 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import Run
+from app.db.models import Run, Setting
+from app.db.session import SessionLocal
+from app.api.ai.factory import set_user_api_key
 from app.shared.time import now_ms
 from app.api.pipeline import recorder
 from app.api.pipeline.context import RunContext
@@ -72,7 +74,21 @@ def _guard(run_id: str, prompt: str) -> None:
             _RUNNING.pop(run_id, None)
 
 
+def _load_user_api_key(run_id: str) -> None:
+    db = SessionLocal()
+    try:
+        run = db.get(Run, run_id)
+        if run is None:
+            return
+        row = db.get(Setting, {"user_id": run.user_id, "key": "apiKey"})
+        if row is not None and isinstance(row.value, str):
+            set_user_api_key(row.value)
+    finally:
+        db.close()
+
+
 def _loop(run_id: str, prompt: str) -> None:
+    _load_user_api_key(run_id)
     settings = get_settings()
     ctx = RunContext(run_id=run_id, prompt=prompt)
 

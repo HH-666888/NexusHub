@@ -95,7 +95,7 @@
 
         let allRuns = [];
         let filter = "all";
-        const state = { budgetPerDay: 20 };
+        const state = {};
         const segButtons = Array.from(document.querySelectorAll(".seg button"));
 
         function renderList() {
@@ -131,13 +131,9 @@
 
         async function load() {
           if (!window.api) return;
-          const settings = await window.api.settings();
-          if (settings && typeof settings.budgetPerDay === "number") {
-            state.budgetPerDay = settings.budgetPerDay;
-          }
 
           const runs = await window.api.runs(24);
-          if (!Array.isArray(runs)) return; // 没有后端 / 未登录：保留演示卡片
+          if (!Array.isArray(runs)) return; // 没有后端 / 未登录：保留空态
 
           allRuns = runs;
           clearCards();
@@ -154,15 +150,14 @@
             .filter((run) => new Date(run.createdAt) >= start)
             .reduce((sum, run) => sum + Number(run.totalCostCny || 0), 0);
 
-          const budget = state.budgetPerDay;
-          const headPill = document.querySelector(".appbar-right .pill-plain");
-          if (headPill) headPill.textContent = "¥" + todayCost.toFixed(2) + " / ¥" + budget.toFixed(2);
+                    const headPill = document.querySelector(".appbar-right .pill-plain");
+          if (headPill) headPill.textContent = "今日 ¥" + todayCost.toFixed(2);
 
           const footCount = document.getElementById("foot-count");
-          if (footCount) footCount.textContent = "共 " + runs.length + " 个项目 · 今日花费 ¥" + todayCost.toFixed(2);
+          if (footCount) footCount.textContent = "共 " + runs.length + " 个项目";
 
           const footBudget = document.getElementById("foot-budget");
-          if (footBudget) footBudget.textContent = "剩余预算 ¥" + Math.max(0, budget - todayCost).toFixed(2);
+          if (footBudget) footBudget.textContent = "今日花费 ¥" + todayCost.toFixed(2);
         }
 
         async function create() {

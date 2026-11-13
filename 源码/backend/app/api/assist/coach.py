@@ -5,9 +5,9 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import AssistFile, AssistFinding, AssistProject
+from app.db.models import AssistFile, AssistFinding, AssistProject, Setting
 from app.domain.user import User
-from app.api.ai.factory import build_client, model_for
+from app.api.ai.factory import build_client, model_for, set_user_api_key
 from app.api.assist import memory_service
 
 STAGE_GUIDE = {
@@ -27,6 +27,10 @@ def assist(db: Session, *, user: User, project: AssistProject, message: str, sta
         .where(AssistFinding.project_id == project.id, AssistFinding.status == "open")
         .limit(12)
     ).scalars().all()
+
+    key_row = db.get(Setting, {"user_id": user.id, "key": "apiKey"})
+    if key_row is not None and isinstance(key_row.value, str):
+        set_user_api_key(key_row.value)
 
     memory_text, citations = memory_service.prompt_block(db, user.id)
 
