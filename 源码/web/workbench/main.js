@@ -869,27 +869,78 @@
         lineCount = document.getElementById("line-count");
       }
 
-      function renderTaskList() {
-        const list = document.querySelector(".t-child");
-        if (!list || !TASK_STORE.tasks.length) return;
-        const order = STAGE_ORDER;
-        const sorted = TASK_STORE.tasks.slice().sort(function (a, b) {
-          return order.indexOf(a.stage) - order.indexOf(b.stage);
+      function setStageOpen(group, open) {
+        if (!group) return;
+        group.classList.toggle("is-open", open);
+        const sub = group.querySelector(".t-sub");
+        if (sub) sub.hidden = !open;
+      }
+
+      function openStage(stageId, open) {
+        const group = document.querySelector('.t-stage[data-stage="' + stageId + '"]');
+        if (group) setStageOpen(group, open);
+      }
+
+      function renderStageGroups() {
+        const host = document.getElementById("stage-groups");
+        if (!host) return;
+        host.innerHTML = STAGES.map(function (stage, i) {
+          const id = STAGE_ORDER[i];
+          return '<div class="t-stage" data-stage="' + id + '">' +
+            '<button type="button" class="t-item t-stage-row" data-stage="' + id + '">' +
+              '<span class="no">' + stage.no + "</span>" +
+              '<span class="name">' + stage.name + "</span>" +
+              '<span class="state">等待</span>' +
+              '<span class="chev">▸</span>' +
+            "</button>" +
+            '<div class="t-sub" data-stage="' + id + '" hidden></div>' +
+          "</div>";
+        }).join("");
+
+        host.querySelectorAll(".t-stage-row").forEach(function (row) {
+          row.addEventListener("click", function () {
+            const group = row.closest(".t-stage");
+            setStageOpen(group, !group.classList.contains("is-open"));
+          });
         });
-        list.innerHTML = sorted
-          .map(function (task) {
-            const stateText =
-              task.state === "done" ? "完成"
-                : task.state === "running" ? "进行中"
-                  : task.state === "failed" ? "失败" : "等待";
-            const cls = task.state === "running" ? " is-live" : task.state === "failed" ? " is-fail" : "";
-            const short = String(task.file || "").split("/").pop();
-            const label = task.title + (short ? " · " + short : task.note ? " · " + task.note : "");
-            return '<div class="t-item' + cls + '" data-task="' + task.id + '">' +
+
+        const master = document.getElementById("t-master");
+        if (master) {
+          master.addEventListener("click", function () {
+            const groups = Array.from(host.querySelectorAll(".t-stage"));
+            const anyOpen = groups.some(function (g) { return g.classList.contains("is-open"); });
+            groups.forEach(function (g) { setStageOpen(g, !anyOpen); });
+          });
+        }
+      }
+
+      function renderTaskList() {
+        const host = document.getElementById("stage-groups");
+        if (!host) return;
+
+        STAGE_ORDER.forEach(function (id) {
+          const sub = host.querySelector('.t-sub[data-stage="' + id + '"]');
+          if (sub) sub.innerHTML = "";
+        });
+
+        TASK_STORE.tasks.forEach(function (task) {
+          const sub = host.querySelector('.t-sub[data-stage="' + task.stage + '"]');
+          if (!sub) return;
+          const stateText =
+            task.state === "done" ? "完成"
+              : task.state === "running" ? "进行中"
+                : task.state === "failed" ? "失败" : "等待";
+          const cls = task.state === "running" ? " is-live" : task.state === "failed" ? " is-fail" : "";
+          const short = String(task.file || "").split("/").pop();
+          const label = task.title + (short ? " · " + short : task.note ? " · " + task.note : "");
+          sub.insertAdjacentHTML(
+            "beforeend",
+            '<div class="t-item' + cls + '" data-task="' + task.id + '">' +
               '<span class="name">' + label + "</span>" +
-              '<span class="state">' + stateText + "</span></div>";
-          })
-          .join("");
+              '<span class="state">' + stateText + "</span></div>"
+          );
+          if (task.state === "running") openStage(task.stage, true);
+        });
 
         const count = document.querySelector(".tasks-head h2 .pill");
         if (count) count.textContent = TASK_STORE.tasks.length + " 项";
@@ -1058,15 +1109,15 @@
             // 带数字的说明（5 条验收标准 / 3 个分支并行）保留，其它换成完成
             if (i < index && !/^\d/.test(s.note)) s.note = "完成";
           });
-          const groups = document.querySelectorAll("#task-list .t-group");
-          const rows = groups[1];
-          if (rows) {
-            rows.querySelectorAll(".t-item").forEach((row, i) => {
-              row.classList.toggle("is-live", i === index);
-              const state = row.querySelector(".state");
-              if (state) state.textContent = i < index ? "完成" : i === index ? "进行中" : "等待";
-            });
-          }
+          document.querySelectorAll("#stage-groups .t-stage").forEach(function (group) {
+            setStageOpen(group, false);
+          });
+          document.querySelectorAll("#stage-groups .t-stage-row").forEach(function (row, i) {
+            row.classList.toggle("is-live", i === index);
+            const state = row.querySelector(".state");
+            if (state) state.textContent = i < index ? "完成" : i === index ? "进行中" : "等待";
+          });
+          if (STAGE_ORDER[index]) openStage(STAGE_ORDER[index], true);
           const label = document.querySelector(".stage-progress .label span:first-child");
           if (label && STAGES[index]) label.textContent = "第 " + (index + 1) + " 道 · " + STAGES[index].name;
           render();
@@ -1097,7 +1148,7 @@
             });
           });
 
-          const list = document.querySelector(".t-child");
+          const list = document.querySelector('.t-sub[data-stage="build"]');
           if (list) {
             list.innerHTML = items
               .map((it) => {
@@ -1245,7 +1296,7 @@
             task.state = "done";
             task.progress = 100;
           }
-          const rows = Array.from(document.querySelectorAll(".t-child .t-item"));
+          const rows = Array.from(document.querySelectorAll(".t-sub .t-item"));
           rows.forEach((row) => {
             const name = row.querySelector(".name");
             if (name && String(name.textContent).includes(String(path).split("/").pop())) {
@@ -1281,6 +1332,7 @@
       const liveMode = Boolean(bootRunId) && bootRunId !== "new";
       window.__wb.isLive = liveMode;
 
+      renderStageGroups();
       // 首屏：先树，再代码流（实时模式不演）
       render();
       if (!liveMode && !bootRunId && FILES.length) runTimeline();

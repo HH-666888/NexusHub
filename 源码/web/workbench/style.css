@@ -666,3 +666,33 @@ body.is-blank .statusbar .cost { opacity: .35; }
   line-height: 1.9;
 }
 .code-empty span { font-size: 12px; opacity: .8; }
+
+
+/* 任务清单：每一道可单独收放 */
+.t-master,
+.t-stage-row {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  grid-template-columns: 18px minmax(0, 1fr) auto 14px;
+  cursor: pointer;
+}
+.t-master:hover,
+.t-stage-row:hover { background: var(--card-2); }
+.t-stage-row .chev,
+.t-master .chev {
+  font-size: 10px;
+  color: var(--text-3);
+  transition: transform .15s ease;
+}
+.t-stage.is-open > .t-stage-row .chev { transform: rotate(90deg); }
+.t-sub {
+  margin-left: 14px;
+  padding-left: 10px;
+  border-left: 1px dashed var(--line-2);
+}
+.t-sub[hidden] { display: none; }
+
+.t-sub .t-item { grid-template-columns: minmax(0, 1fr) auto; font-size: 12px; }
