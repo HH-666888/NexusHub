@@ -2,8 +2,8 @@
    工作流 / 辅助开发 是同一产品的两个功能；AI 记忆在头像菜单里。 */
 (function () {
   const path = location.pathname;
-  const inAssist = path.indexOf("/v2/assist") === 0;
-  const inMemory = path.indexOf("/v2/memory") === 0;
+  const inAssist = path.indexOf("/assist") === 0;
+  const inMemory = path.indexOf("/memory") === 0;
 
   function injectTabs() {
     const header = document.querySelector("header.appbar");
@@ -12,8 +12,8 @@
     const tabs = document.createElement("nav");
     tabs.className = "top-tabs";
     tabs.innerHTML =
-      '<a href="/v2/projects/" class="' + (!inAssist && !inMemory ? "is-on" : "") + '">工作流</a>' +
-      '<a href="/v2/assist/" class="' + (inAssist ? "is-on" : "") + '">辅助开发</a>';
+      '<a href="/projects/" class="' + (!inAssist && !inMemory ? "is-on" : "") + '">工作流</a>' +
+      '<a href="/assist/" class="' + (inAssist ? "is-on" : "") + '">辅助开发</a>';
     if (brand && brand.parentNode === header) {
       header.insertBefore(tabs, brand.nextSibling);
     } else {
@@ -31,8 +31,8 @@
     menu.className = "avatar-menu";
     menu.hidden = true;
     menu.innerHTML =
-      '<a href="/v2/settings/">设置</a>' +
-      '<a href="/v2/memory/">AI 记忆</a>' +
+      '<a href="/settings/">设置</a>' +
+      '<a href="/memory/">AI 记忆</a>' +
       '<button type="button" data-action="logout">退出</button>';
     document.body.appendChild(menu);
 
@@ -51,7 +51,7 @@
         } catch (error) {
           /* 忽略 */
         }
-        location.href = "/v2/login/";
+        location.href = "/login/";
       }
     });
     document.addEventListener("click", function () {

@@ -1,7 +1,7 @@
 # web
 
 纯静态前端：**HTML + CSS + 原生 JS，无构建、无依赖、无框架**。
-页面由 FastAPI 同源托管，接口走 `/api/v1/*`。
+页面由 FastAPI 同源托管，接口走 `/api/*`。
 
 ## 目录
 
@@ -14,14 +14,12 @@ web/
 │  ├─ glass.css        玻璃态外观（?style=glass）
 │  ├─ auth.css         登录/注册页样式
 │  ├─ api.js           唯一的 fetch 出口（me / login / runs / events / settings…）
-│  └─ demo.js          没有后端时的本地演示态
 ├─ welcome/            index.html + welcome.css + welcome-long.css + welcome-long.js
 ├─ login/              index.html + main.js
 ├─ register/           index.html + main.js
 ├─ projects/           index.html + style.css + main.js
-├─ workbench/          index.html + style.css + main.js（演示）+ live.js（真实数据）
+├─ workbench/          index.html + style.css + main.js + live.js（真实数据）
 ├─ settings/           index.html + style.css + main.js
-├─ shots/              截图留档
 ├─ README.md
 └─ DESIGN-SPEC.md      设计说明（数值、动效、坑）
 ```
@@ -55,7 +53,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```powershell
 cd 源码
 node tools/shot.mjs "http://127.0.0.1:8000/welcome/?theme=light" `
-  "web/shots/xx.png" "nexus_session=dummy" 960 1440
+  "docs/screenshots/xx.png" "nexus_session=dummy" 960 1440
 ```
 
 参数：URL、输出路径、cookie、宽、高。截图工具走 Edge CDP，会等 2.5 秒再拍。

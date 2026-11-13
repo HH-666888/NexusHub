@@ -1,10 +1,10 @@
-/* v2 前端唯一的接口出口。
+/* 前端唯一的接口出口。
    规则：
-   - 所有请求（登录、设置、运行、事件）一律走 /api/v2。
+   - 所有请求（登录、设置、运行、事件）一律走 /api。
    - 会话靠 cookie，每个请求都带 credentials。
    - 后端不可用时返回 offline，由调用方显示错误态；不回退任何演示数据。 */
 (function () {
-  const BASE = "/api/v2";
+  const BASE = "/api";
 
   async function request(path, options, base) {
     const opts = Object.assign(

@@ -339,7 +339,7 @@
   function subscribe() {
     if (typeof EventSource === "undefined") return;
     let finished = false;
-    const source = new EventSource("/api/v2/runs/" + encodeURIComponent(id) + "/stream");
+    const source = new EventSource("/api/runs/" + encodeURIComponent(id) + "/stream");
     source.onmessage = function (message) {
       let payload;
       try {
@@ -382,7 +382,7 @@
       pause.addEventListener("click", async function () {
         const paused = pause.getAttribute("aria-label") === "继续";
         const path = paused ? "/resume" : "/pause";
-        const result = await fetch("/api/v2/runs/" + encodeURIComponent(id) + path, {
+        const result = await fetch("/api/runs/" + encodeURIComponent(id) + path, {
           method: "POST",
           credentials: "include",
         });
@@ -404,7 +404,7 @@
       cancel.textContent = "取消";
       cancel.addEventListener("click", async function () {
         cancel.disabled = true;
-        await fetch("/api/v2/runs/" + encodeURIComponent(id) + "/cancel", {
+        await fetch("/api/runs/" + encodeURIComponent(id) + "/cancel", {
           method: "POST",
           credentials: "include",
         });
@@ -470,7 +470,7 @@
 
     let src = "";
     try {
-      const response = await fetch("/api/v2/runs/" + encodeURIComponent(id) + "/runtime", {
+      const response = await fetch("/api/runs/" + encodeURIComponent(id) + "/runtime", {
         credentials: "include",
       });
       if (response.ok) {
@@ -551,7 +551,7 @@
             return;
           }
           if (which === "验收") {
-            const result = await fetch("/api/v2/runs/" + encodeURIComponent(id) + "/verdict", {
+            const result = await fetch("/api/runs/" + encodeURIComponent(id) + "/verdict", {
               credentials: "include",
             });
             if (!result.ok) {

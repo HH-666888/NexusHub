@@ -105,4 +105,3 @@ backend/.env
 design-preview/
 
 # v2 工作台是源码，不是运行时产物
-!源码/web-v2/workbench/
