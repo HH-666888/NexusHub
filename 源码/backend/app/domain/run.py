@@ -46,7 +46,7 @@ class Run(ApiModel):
     usage: TokenUsage = TokenUsage()
     created_at: int
     updated_at: int
-    workflow_version: str = "v1"
+    workflow_version: str = "1.0"
 
 
 class RunSummary(ApiModel):

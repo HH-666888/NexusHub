@@ -19,12 +19,12 @@ class Skill:
 
 
 SKILLS: dict[str, Skill] = {
-    "plan": Skill("spec.writing", "plan", "v1", "app.api.pipeline.stages.spec.run"),
-    "design": Skill("arch.design", "design", "v1", "app.api.pipeline.stages.design.run"),
-    "build": Skill("code.file", "build", "v1", "app.api.pipeline.stages.build.run"),
-    "assemble": Skill("assemble.entry", "assemble", "v1", "app.api.pipeline.stages.assemble.run"),
-    "test": Skill("test.cases", "test", "v1", "app.api.pipeline.stages.test.run"),
-    "deliver": Skill("deliver.package", "deliver", "v1", "app.api.pipeline.stages.deliver.run"),
+    "plan": Skill("spec.writing", "plan", "1.0", "app.api.pipeline.stages.spec.run"),
+    "design": Skill("arch.design", "design", "1.0", "app.api.pipeline.stages.design.run"),
+    "build": Skill("code.file", "build", "1.0", "app.api.pipeline.stages.build.run"),
+    "assemble": Skill("assemble.entry", "assemble", "1.0", "app.api.pipeline.stages.assemble.run"),
+    "test": Skill("test.cases", "test", "1.0", "app.api.pipeline.stages.test.run"),
+    "deliver": Skill("deliver.package", "deliver", "1.0", "app.api.pipeline.stages.deliver.run"),
 }
 
 

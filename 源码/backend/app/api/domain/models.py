@@ -1,7 +1,7 @@
-"""v2 自己的数据形状。
+"""接口的数据形状。
 
-不复用 v1 的 AppSpec：v1 的 questions 是字符串列表，
-v2 需要题型、选项与默认值。两套并存，互不影响。
+不复用旧版 AppSpec：旧版的 questions 是字符串列表，
+门禁需要题型、选项与默认值。
 """
 
 from __future__ import annotations

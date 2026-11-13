@@ -56,7 +56,7 @@ class Run(Base):
     prompt: Mapped[str] = mapped_column(Text)
     stage: Mapped[str] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16))
-    workflow_version: Mapped[str] = mapped_column(String(8), default="v1")
+    workflow_version: Mapped[str] = mapped_column(String(8), default="1.0")
     total_cost_cny: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)

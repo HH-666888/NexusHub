@@ -1,4 +1,4 @@
-"""v2 运行接口。
+"""运行接口。
 
 只做真实读写，不返回任何示例数据。
 编排器尚未接入时，创建运行会明确返回 503，而不是假装成功。
@@ -23,12 +23,12 @@ from app.api.runs.schemas import EventOut, RunOut, run_to_dict
 
 router = APIRouter()
 
-V2_PREFIX = "r2-"
+RUN_PREFIX = "r-"
 
 
 def _owned(db: Session, run_id: str, user: User) -> Run:
     run = db.get(Run, run_id)
-    if run is None or run.user_id != user.id or not run.id.startswith(V2_PREFIX):
+    if run is None or run.user_id != user.id or not run.id.startswith(RUN_PREFIX):
         raise HTTPException(status_code=404, detail="run not found")
     return run
 
@@ -41,7 +41,7 @@ def list_runs(
 ) -> list[dict]:
     rows = db.execute(
         select(Run)
-        .where(Run.user_id == user.id, Run.id.like(V2_PREFIX + "%"))
+        .where(Run.user_id == user.id, Run.id.like(RUN_PREFIX + "%"))
         .order_by(Run.created_at.desc())
         .limit(max(1, min(limit, 100)))
     ).scalars()
@@ -114,7 +114,7 @@ def stream_run(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """SSE：与 v1 同样的帧格式，带 seq 与真实落库时间。"""
+    """SSE：与旧版同样的帧格式，带 seq 与真实落库时间。"""
     _owned(db, run_id, user)
 
     def frames():

@@ -1,4 +1,4 @@
-"""v2 编排器：创建运行、跑六道工序、收口。
+"""编排器：创建运行、跑六道工序、收口。
 
 真实执行；任何一步失败都如实记录，不伪造成功。
 """
@@ -24,7 +24,7 @@ _LOCK = threading.Lock()
 
 
 def create_and_start(db: Session, *, user_id: int, prompt: str) -> Run:
-    run_id = "r2-" + uuid.uuid4().hex[:20]
+    run_id = "r-" + uuid.uuid4().hex[:20]
     stamp = now_ms()
     run = Run(
         id=run_id,
@@ -32,7 +32,7 @@ def create_and_start(db: Session, *, user_id: int, prompt: str) -> Run:
         prompt=prompt,
         stage="plan",
         status="running",
-        workflow_version="v2",
+        workflow_version="1.0",
         total_cost_cny=0,
         created_at=stamp,
         updated_at=stamp,
@@ -55,7 +55,7 @@ def start(run_id: str, prompt: str) -> bool:
 
 
 def _start_thread(run_id: str, prompt: str) -> None:
-    thread = threading.Thread(target=_guard, args=(run_id, prompt), daemon=True, name=f"v2-{run_id}")
+    thread = threading.Thread(target=_guard, args=(run_id, prompt), daemon=True, name=f"run-{run_id}")
     with _LOCK:
         _RUNNING[run_id] = thread
     thread.start()

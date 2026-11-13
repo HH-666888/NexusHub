@@ -1,4 +1,4 @@
-"""v2 门禁接口。
+"""门禁接口。
 
 提问不设数量上限（配置项默认 0 = 不限）；
 本阶段（骨架）只提供查询与回答入口，真正的暂停/恢复在阶段 D 接入编排器。
@@ -16,12 +16,12 @@ from app.domain.user import User
 
 router = APIRouter()
 
-V2_PREFIX = "r2-"
+RUN_PREFIX = "r-"
 
 
 def _owned(db: Session, run_id: str, user: User) -> Run:
     run = db.get(Run, run_id)
-    if run is None or run.user_id != user.id or not run.id.startswith(V2_PREFIX):
+    if run is None or run.user_id != user.id or not run.id.startswith(RUN_PREFIX):
         raise HTTPException(status_code=404, detail="run not found")
     return run
 
