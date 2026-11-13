@@ -28,8 +28,9 @@
   }
 
   function initTheme() {
-    const param = new URLSearchParams(location.search).get("theme");
-    document.documentElement.dataset.theme = param || safeGet("nexus-theme") || "light";
+    const query = new URLSearchParams(location.search);
+    document.documentElement.dataset.theme = query.get("theme") || safeGet("nexus-theme") || "light";
+    document.documentElement.dataset.style = query.get("style") || "";
   }
 
   function toggleTheme() {

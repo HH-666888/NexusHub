@@ -1,22 +1,3 @@
-// file:// 下有些浏览器禁用 localStorage：读写都兜底，别把整段脚本带崩
-      function safeTheme() {
-        try { return localStorage.getItem("nexus-theme"); } catch (e) { return null; }
-      }
-      function saveTheme(value) {
-        try { localStorage.setItem("nexus-theme", value); } catch (e) { /* 忽略 */ }
-      }
-      (function () {
-        const param = new URLSearchParams(location.search).get("theme");
-        document.documentElement.dataset.theme = param || safeTheme() || "light";
-        document.documentElement.dataset.style = new URLSearchParams(location.search).get("style") || "";
-        document.addEventListener("click", function (event) {
-          if (!event.target.closest("#theme-toggle")) return;
-          const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-          document.documentElement.dataset.theme = next;
-          saveTheme(next);
-        });
-      })();
-
 // 设置页：所有控件都真的读写 /api/settings
       (function () {
         const DEFAULT = {
@@ -66,7 +47,7 @@
         function apply(saved) {
           const data = Object.assign({}, DEFAULT, saved || {});
           setProvider(data.provider);
-          setTheme(data.theme === "dark" ? "dark" : "light");
+          setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 
           [selects[0], selects[1]].forEach(function (select, i) {
             if (!select) return;

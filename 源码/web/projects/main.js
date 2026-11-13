@@ -1,23 +1,3 @@
-// file:// 下有些浏览器禁用 localStorage：读写都兜底，别把整段脚本带崩
-      function safeTheme() {
-        try { return localStorage.getItem("nexus-theme"); } catch (e) { return null; }
-      }
-      function saveTheme(value) {
-        try { localStorage.setItem("nexus-theme", value); } catch (e) { /* 忽略 */ }
-      }
-      (function () {
-        const param = new URLSearchParams(location.search).get("theme");
-        document.documentElement.dataset.theme = param || safeTheme() || "light";
-        document.documentElement.dataset.style = new URLSearchParams(location.search).get("style") || "";
-        document.addEventListener("click", function (event) {
-          if (!event.target.closest("#theme-toggle")) return;
-          const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-          document.documentElement.dataset.theme = next;
-          saveTheme(next);
-        });
-      })();
-
-
 // 头像显示真实用户名（不在顶栏另插一个演示用的 chip）
       (async function () {
         if (!window.api) return;

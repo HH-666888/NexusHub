@@ -1,21 +1,3 @@
-// file:// 下有些浏览器禁用 localStorage：读写都兜底，别把整段脚本带崩
-      function safeTheme() {
-        try { return localStorage.getItem("nexus-theme"); } catch (e) { return null; }
-      }
-      function saveTheme(value) {
-        try { localStorage.setItem("nexus-theme", value); } catch (e) { /* 忽略 */ }
-      }
-      (function () {
-        const query = new URLSearchParams(location.search);
-        document.documentElement.dataset.theme = query.get("theme") || safeTheme() || "light";
-        document.addEventListener("click", function (event) {
-          if (!event.target.closest("#theme-toggle")) return;
-          const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-          document.documentElement.dataset.theme = next;
-          saveTheme(next);
-        });
-      })();
-
 /* ───────────────── 树的布局与动画 ─────────────────
          核心：行距不固定，按"这一道工序的子树有多大"单独算。
          谁的分支多，它和下一道之间的空隙就自动变长；别的间距不受影响。

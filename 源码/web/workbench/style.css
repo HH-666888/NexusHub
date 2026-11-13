@@ -640,7 +640,7 @@ body.is-blank .canvas-head .layout-switch,
 body.is-blank #speed-pop,
 body.is-blank #replay { display: none; }
 body.is-blank .appbar-right .btn,
-body.is-blank .appbar-right .icon-btn:not(#theme-toggle) { opacity: .35; pointer-events: none; }
+body.is-blank .appbar-right .icon-btn:not(#appbar-theme) { opacity: .35; pointer-events: none; }
 body.is-blank .statusbar .tabs button { opacity: .35; pointer-events: none; }
 body.is-blank .statusbar .cost { opacity: .35; }
 
