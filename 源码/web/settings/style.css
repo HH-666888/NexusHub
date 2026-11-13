@@ -1,8 +1,9 @@
 .settings-shell {
   display: flex;
-  max-width: 1280px;
+  width: 84%;
+  max-width: none;
   margin: 0 auto;
-  padding: 0 40px;
+  padding: 0;
   min-height: calc(100vh - 60px);
   box-sizing: border-box;
 }
