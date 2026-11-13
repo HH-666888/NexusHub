@@ -27,6 +27,14 @@
     }
   }
 
+  function migrateLegacyTheme() {
+    // 旧设置页曾把服务端 theme 写进 localStorage，导致点一次设置全站变黑。
+    // 只修一次；之后用户自己选的主题不再被覆盖。
+    if (safeGet("nexus-theme-repaired") === "1") return;
+    if (safeGet("nexus-theme") === "dark") safeSet("nexus-theme", "light");
+    safeSet("nexus-theme-repaired", "1");
+  }
+
   function initTheme() {
     const query = new URLSearchParams(location.search);
     document.documentElement.dataset.theme = query.get("theme") || safeGet("nexus-theme") || "light";
@@ -156,6 +164,7 @@
     refreshBudget();
   }
 
+  migrateLegacyTheme();
   initTheme();
   render();
 })();
