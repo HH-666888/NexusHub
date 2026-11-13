@@ -183,6 +183,11 @@
       return result.ok ? result.data : null;
     },
 
+    async usageToday() {
+      const result = await request("/usage/today");
+      return result.ok ? result.data : null;
+    },
+
     async memoryStats() {
       const result = await request("/memory/stats");
       return result.ok ? result.data : null;

@@ -98,22 +98,19 @@
     }
   }
 
+  function money(value) {
+    const amount = Number(value || 0);
+    return amount > 0 && amount < 0.01 ? amount.toFixed(4) : amount.toFixed(2);
+  }
+
   async function refreshBudget() {
     const pill = document.getElementById("appbar-budget");
     if (!pill || !window.api) return;
     try {
-      const runs = await window.api.runs(50);
-      if (!Array.isArray(runs)) return;
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-      const cost = runs
-        .filter(function (run) {
-          return new Date(run.createdAt) >= start;
-        })
-        .reduce(function (sum, run) {
-          return sum + Number(run.totalCostCny || 0);
-        }, 0);
-      pill.textContent = "今日 ¥" + cost.toFixed(2);
+      const usage = await window.api.usageToday();
+      if (!usage) return;
+      pill.textContent = "今日估算 ¥" + money(usage.totalCny);
+      pill.title = "按模型返回的 token × 单价估算，含工作流与辅助开发";
     } catch (error) {
       /* 保持占位 */
     }
@@ -146,7 +143,7 @@
       (center ? '<div class="appbar-center">' + center + "</div>" : "") +
       '<div class="appbar-right">' +
         extra +
-        '<span class="pill pill-plain" id="appbar-budget">今日 —</span>' +
+        '<span class="pill pill-plain" id="appbar-budget">今日估算 —</span>' +
         '<button class="icon-btn" type="button" id="appbar-theme" aria-label="切换主题">' +
           '<svg viewBox="0 0 24 24" aria-hidden>' + ICON.sun + "</svg>" +
         "</button>" +

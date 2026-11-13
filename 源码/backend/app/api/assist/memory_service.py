@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.db.models import AssistFile, AssistFinding, AssistProject, MemoryEntry, Setting
 from app.shared.time import now_ms
 from app.api.ai.factory import build_client, model_for, set_user_api_key
+from app.api.ai.cost.ledger import record_usage
 
 BEIJING = timezone(timedelta(hours=8))
 CONFIDENCE = {"single", "repeat", "confirmed"}
@@ -104,6 +105,7 @@ def record_from_stage(db: Session, project: AssistProject, stage: str) -> None:
             )
         finally:
             client.close()
+        record_usage(db, user_id=project.user_id, project_id=project.id, kind="memory", reply=reply)
         data = json.loads(reply.content)
     except Exception:  # noqa: BLE001
         return

@@ -14,6 +14,7 @@ from app.features.auth.router import router as auth_router
 from app.features.settings.router import router as settings_router
 from app.api.assist.router import router as assist_router
 from app.api.memory.router import router as memory_router
+from app.api.usage.router import router as usage_router
 from app.api.runs.router import router as runs_router
 from app.api.gate.router import router as gate_router
 
@@ -25,6 +26,7 @@ router.include_router(runs_router, prefix="/runs", tags=["runs"])
 router.include_router(gate_router, prefix="/runs", tags=["gate"])
 router.include_router(assist_router, prefix="/assist", tags=["assist"])
 router.include_router(memory_router, prefix="/memory", tags=["memory"])
+router.include_router(usage_router, prefix="/usage", tags=["usage"])
 
 
 @router.get("/health", tags=["health"])

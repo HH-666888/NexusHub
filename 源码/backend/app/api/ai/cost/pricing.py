@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 BEIJING = ZoneInfo("Asia/Shanghai")
 
-# DeepSeek 官方价（示例口径，按实际账单可调）
+# DeepSeek 公开价估算；实际扣费以厂商账单为准
 PRICES: dict[str, dict[str, dict[str, float]]] = {
     "deepseek-chat": {
         "input": {"peak": 2.0, "offpeak": 1.0},

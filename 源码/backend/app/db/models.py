@@ -271,3 +271,19 @@ class MemoryEntry(Base):
     confidence: Mapped[str] = mapped_column(String(16), default="single")
     pinned: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[int] = mapped_column(BigInteger)
+
+
+class UsageRecord(Base):
+    """辅助开发的模型用量；工作流仍记 cost_records。"""
+
+    __tablename__ = "usage_records"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"))
+    project_id: Mapped[str | None] = mapped_column(VARCHAR(26, **ASCII_KW), nullable=True)
+    kind: Mapped[str] = mapped_column(String(16), default="coach")
+    model: Mapped[str] = mapped_column(String(64))
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_cny: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
+    created_at: Mapped[int] = mapped_column(BigInteger)

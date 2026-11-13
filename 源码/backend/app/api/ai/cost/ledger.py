@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.db.models import CostRecord, Run
+from app.db.models import CostRecord, Run, UsageRecord
 from app.shared.time import now_ms
 from app.api.ai.cost.pricing import cost_cny, price_of
 from app.api.ai.model.client import ModelReply
@@ -42,5 +42,30 @@ def record_cost(
     if run is not None:
         run.total_cost_cny = float(run.total_cost_cny or 0) + amount
         run.updated_at = now_ms()
+    db.commit()
+    return amount
+
+def record_usage(
+    db: Session,
+    *,
+    user_id: int,
+    project_id: str | None,
+    kind: str,
+    reply: ModelReply,
+) -> float:
+    """辅助开发没有 run，单独记一条 usage_records。"""
+    amount = cost_cny(reply.model, reply.prompt_tokens, reply.completion_tokens)
+    db.add(
+        UsageRecord(
+            user_id=user_id,
+            project_id=project_id,
+            kind=kind,
+            model=reply.model,
+            prompt_tokens=reply.prompt_tokens,
+            completion_tokens=reply.completion_tokens,
+            cost_cny=amount,
+            created_at=now_ms(),
+        )
+    )
     db.commit()
     return amount

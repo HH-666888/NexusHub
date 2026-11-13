@@ -92,8 +92,8 @@
           box.innerHTML = "还没有项目。<br />在上面输入一句话，就能开始第一个构建。";
           grid.appendChild(box);
         }
-
-        let allRuns = [];
+          let allRuns = [];
+          let usageToday = null;
         let filter = "all";
         const state = {};
         const segButtons = Array.from(document.querySelectorAll(".seg button"));
@@ -139,26 +139,34 @@
           clearCards();
           paintFilters();
           renderList();
-          updateStats(runs);
+            usageToday = await window.api.usageToday();
+            updateStats(runs);
         }
 
         /** 顶栏预算与页脚统计：都按「今天」算，不写死 */
-        function updateStats(runs) {
-          const start = new Date();
-          start.setHours(0, 0, 0, 0);
-          const todayCost = runs
-            .filter((run) => new Date(run.createdAt) >= start)
-            .reduce((sum, run) => sum + Number(run.totalCostCny || 0), 0);
+          function money(value) {
+            const amount = Number(value || 0);
+            return amount > 0 && amount < 0.01 ? amount.toFixed(4) : amount.toFixed(2);
+          }
 
-                    const headPill = document.querySelector(".appbar-right .pill-plain");
-          if (headPill) headPill.textContent = "今日 ¥" + todayCost.toFixed(2);
+          function updateStats(runs) {
+            const start = new Date();
+            start.setHours(0, 0, 0, 0);
+            const todayCost = usageToday
+              ? Number(usageToday.totalCny || 0)
+              : runs
+                  .filter((run) => new Date(run.createdAt) >= start)
+                  .reduce((sum, run) => sum + Number(run.totalCostCny || 0), 0);
 
-          const footCount = document.getElementById("foot-count");
-          if (footCount) footCount.textContent = "共 " + runs.length + " 个项目";
+            const headPill = document.querySelector(".appbar-right .pill-plain");
+            if (headPill) headPill.textContent = "今日估算 ¥" + money(todayCost);
 
-          const footBudget = document.getElementById("foot-budget");
-          if (footBudget) footBudget.textContent = "今日花费 ¥" + todayCost.toFixed(2);
-        }
+            const footCount = document.getElementById("foot-count");
+            if (footCount) footCount.textContent = "共 " + runs.length + " 个项目";
+
+            const footBudget = document.getElementById("foot-budget");
+            if (footBudget) footBudget.textContent = "今日估算 ¥" + money(todayCost);
+          }
 
         async function create() {
           const prompt = (newInput && newInput.value ? newInput.value : "").trim();

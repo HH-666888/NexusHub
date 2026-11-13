@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.models import AssistFile, AssistFinding, AssistProject, Setting
 from app.domain.user import User
 from app.api.ai.factory import build_client, model_for, set_user_api_key
+from app.api.ai.cost.ledger import record_usage
 from app.api.assist import memory_service
 
 STAGE_GUIDE = {
@@ -75,6 +76,7 @@ def assist(db: Session, *, user: User, project: AssistProject, message: str, sta
     except Exception as error:  # noqa: BLE001
         return f"AI 暂时不可用：{error}", citations
 
+    record_usage(db, user_id=user.id, project_id=project.id, kind="coach", reply=reply)
     return reply.content.strip(), citations
 
 def apply_edit(db: Session, *, user: User, project: AssistProject, path: str, content: str, instruction: str):
@@ -109,6 +111,7 @@ def apply_edit(db: Session, *, user: User, project: AssistProject, path: str, co
     except Exception as error:  # noqa: BLE001
         return None, f"AI 暂时不可用：{error}"
 
+    record_usage(db, user_id=user.id, project_id=project.id, kind="apply", reply=reply)
     raw = (reply.content or "").strip("\n")
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1] if "\n" in raw else ""
