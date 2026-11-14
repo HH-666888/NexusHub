@@ -1,3 +1,13 @@
+export interface WorkbenchStage {
+  id: string;
+  no: string;
+  name: string;
+  short?: string;
+  note: string;
+  state: string;
+  icon?: string;
+}
+
 export interface WorkbenchTask {
   id: string;
   title: string;

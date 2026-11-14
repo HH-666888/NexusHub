@@ -1,4 +1,4 @@
-﻿/* ───────────────── 树的布局与动画 ─────────────────
+/* ───────────────── 树的布局与动画 ─────────────────
          核心：行距不固定，按"这一道工序的子树有多大"单独算。
          谁的分支多，它和下一道之间的空隙就自动变长；别的间距不受影响。
          - lr：根在左，六道竖排，子树在右边向下铺
@@ -40,6 +40,21 @@
       const inner = document.getElementById("canvas-inner");
       const svg = document.getElementById("tree-svg");
       const work = document.getElementById("work");
+
+      function syncStore(extra) {
+        const store = window.__wbStore;
+        if (!store) return;
+        const liveIndex = STAGES.findIndex((stage) => stage.state === "live");
+        const doneIndex = STAGES.filter((stage) => stage.state === "done").length - 1;
+        store.sync(Object.assign({
+          stages: STAGES.map((stage, index) => Object.assign({ id: STAGE_ORDER[index] }, stage)),
+          tasks: TASK_STORE.tasks,
+          progress: PLAY.maxPct,
+          stageIndex: liveIndex >= 0 ? liveIndex : Math.max(0, doneIndex),
+          cost: LIVE.cost || 0,
+          calls: LIVE.calls || 0,
+        }, extra || {}));
+      }
 
       /** 视图状态：排布 + 聚焦哪一道 + 哪些分支被折叠（展开过的记在 expanded 里） */
       const view = { layout: "lr", edges: "curve", focus: null, expanded: new Set() };
@@ -842,7 +857,7 @@
       }
 
       /* ───────── 真实数据桥：live.js 通过它驱动这一页 ───────── */
-      const LIVE = { buf: new Map(), calls: 0 };
+      const LIVE = { buf: new Map(), calls: 0, cost: 0 };
 
       function liveEnsureFile(path, lang) {
         let file = fileOf(path);
@@ -879,68 +894,11 @@
       }
 
       function renderStageGroups() {
-        const host = document.getElementById("stage-groups");
-        if (!host) return;
-        host.innerHTML = STAGES.map(function (stage, i) {
-          const id = STAGE_ORDER[i];
-          return '<div class="t-stage" data-stage="' + id + '">' +
-            '<button type="button" class="t-item t-stage-row" data-stage="' + id + '">' +
-              '<span class="no">' + stage.no + "</span>" +
-              '<span class="name">' + stage.name + "</span>" +
-              '<span class="state">等待</span>' +
-              '<span class="chev">▸</span>' +
-            "</button>" +
-            '<div class="t-sub" data-stage="' + id + '" hidden></div>' +
-          "</div>";
-        }).join("");
-
-        host.querySelectorAll(".t-stage-row").forEach(function (row) {
-          row.addEventListener("click", function () {
-            const group = row.closest(".t-stage");
-            setStageOpen(group, !group.classList.contains("is-open"));
-          });
-        });
-
-        const master = document.getElementById("t-master");
-        if (master) {
-          master.addEventListener("click", function () {
-            const groups = Array.from(host.querySelectorAll(".t-stage"));
-            const anyOpen = groups.some(function (g) { return g.classList.contains("is-open"); });
-            groups.forEach(function (g) { setStageOpen(g, !anyOpen); });
-          });
-        }
+        syncStore();
       }
 
       function renderTaskList() {
-        const host = document.getElementById("stage-groups");
-        if (!host) return;
-
-        STAGE_ORDER.forEach(function (id) {
-          const sub = host.querySelector('.t-sub[data-stage="' + id + '"]');
-          if (sub) sub.innerHTML = "";
-        });
-
-        TASK_STORE.tasks.forEach(function (task) {
-          const sub = host.querySelector('.t-sub[data-stage="' + task.stage + '"]');
-          if (!sub) return;
-          const stateText =
-            task.state === "done" ? "完成"
-              : task.state === "running" ? "进行中"
-                : task.state === "failed" ? "失败" : "等待";
-          const cls = task.state === "running" ? " is-live" : task.state === "failed" ? " is-fail" : "";
-          const short = String(task.file || "").split("/").pop();
-          const label = task.title + (short ? " · " + short : task.note ? " · " + task.note : "");
-          sub.insertAdjacentHTML(
-            "beforeend",
-            '<div class="t-item' + cls + '" data-task="' + task.id + '">' +
-              '<span class="name">' + label + "</span>" +
-              '<span class="state">' + stateText + "</span></div>"
-          );
-          if (task.state === "running") openStage(task.stage, true);
-        });
-
-        const count = document.querySelector(".tasks-head h2 .pill");
-        if (count) count.textContent = TASK_STORE.tasks.length + " 项";
+        syncStore();
       }
 
       function refreshTaskViews() {
@@ -1106,30 +1064,19 @@
             // 带数字的说明（5 条验收标准 / 3 个模块）保留，其它换成完成
             if (i < index && !/^\d/.test(s.note)) s.note = "完成";
           });
-          document.querySelectorAll("#stage-groups .t-stage").forEach(function (group) {
-            setStageOpen(group, false);
-          });
-          document.querySelectorAll("#stage-groups .t-stage-row").forEach(function (row, i) {
-            row.classList.toggle("is-live", i === index);
-            const state = row.querySelector(".state");
-            if (state) state.textContent = i < index ? "完成" : i === index ? "进行中" : "等待";
-          });
-          if (STAGE_ORDER[index]) openStage(STAGE_ORDER[index], true);
-          const label = document.querySelector(".stage-progress .label span:first-child");
-          if (label && STAGES[index]) label.textContent = "第 " + (index + 1) + " 道 · " + STAGES[index].name;
+          syncStore({ stageIndex: index });
           render();
         },
 
         setProgress(pct) {
-          const pctEl = document.getElementById("pct");
-          const barEl = document.getElementById("bar");
-          if (pctEl) pctEl.textContent = pct + "%";
-          if (barEl) barEl.style.width = pct + "%";
+          PLAY.maxPct = pct;
+          syncStore({ progress: pct });
         },
 
         /** 只更新道次说明；节点由真实 task 事件逐个长出 */
         setBranches(items) {
           if (STAGES[2]) STAGES[2].note = items.length + " 个开发任务";
+          syncStore();
           render();
         },
 
@@ -1194,22 +1141,17 @@
         },
 
         setCost(cny) {
-          const bottom = document.querySelector(".statusbar .cost");
-          if (bottom) bottom.textContent = "本轮 ¥" + Number(cny).toFixed(2) + " · " + LIVE.calls + " 次模型调用";
+          LIVE.cost = Number(cny) || 0;
+          syncStore({ cost: LIVE.cost });
         },
 
         addCall() {
           LIVE.calls += 1;
-          const bottom = document.querySelector(".statusbar .cost");
-          if (bottom) {
-            const cny = (bottom.textContent.match(/¥([\d.]+)/) || [])[1] || "0.00";
-            bottom.textContent = "本轮 ¥" + cny + " · " + LIVE.calls + " 次模型调用";
-          }
+          syncStore({ calls: LIVE.calls });
         },
 
         setEvent(text) {
-          const line = document.getElementById("event-line");
-          if (line) line.textContent = text;
+          syncStore({ eventLine: text });
         },
 
         setStatus(status) {
@@ -1226,14 +1168,6 @@
               if (!/^\d/.test(s.note) && s.note !== "完成") s.note = "完成";
             });
             done = 6;
-            const rows = document.querySelectorAll("#task-list .t-group")[1];
-            if (rows) {
-              rows.querySelectorAll(".t-item").forEach((row) => {
-                row.classList.remove("is-live");
-                const st = row.querySelector(".state");
-                if (st) st.textContent = "完成";
-              });
-            }
           }
           pill.dataset.lock = "1"; // 别让 updateHeader 把它覆盖回「运行中」
           if (status === "running") delete pill.dataset.lock;
@@ -1242,6 +1176,7 @@
             (status === "running" ? '<i class="pulse-dot"></i>' : "") +
             label +
             " · 第 " + done + " / 6 道";
+          syncStore({ status });
           if (status === "done") render();
         },
 
