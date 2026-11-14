@@ -7,13 +7,15 @@ import CodePane from "./components/CodePane.vue";
 import StatusBar from "./components/StatusBar.vue";
 import GateModal from "./components/GateModal.vue";
 import { workbenchStore } from "./useWorkbenchStore";
+import { useWorkbenchRun } from "./useWorkbenchRun";
 
 window.__wbStore = workbenchStore;
+const run = useWorkbenchRun();
 
 onMounted(async () => {
-  // 树布局与 SSE 是独立的图形/数据引擎，生命周期绑定在页面挂载之后。
+  // 树模型先就绪，SSE 数据层再把 run/事件写进 store 与模型。
   await import("./engine/tree.js");
-  await import("./engine/live.js");
+  await run.boot();
 });
 </script>
 

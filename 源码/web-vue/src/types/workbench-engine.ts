@@ -1,3 +1,18 @@
+export interface WorkbenchRun {
+  id: string;
+  prompt?: string;
+  stage: string;
+  status: string;
+  totalCostCny?: number;
+}
+
+export interface WorkbenchEvent {
+  kind: string;
+  payload: Record<string, any>;
+  createdAt?: number;
+  seq?: number;
+}
+
 export interface WorkbenchStage {
   id: string;
   no: string;
