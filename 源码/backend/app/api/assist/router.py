@@ -24,7 +24,7 @@ STAGES = ["plan", "design", "build", "assemble", "test", "deliver"]
 STAGE_LABELS = {
     "plan": "需求分析",
     "design": "架构设计",
-    "build": "并行开发",
+    "build": "自主开发",
     "assemble": "集成装配",
     "test": "自动测试",
     "deliver": "验收交付",

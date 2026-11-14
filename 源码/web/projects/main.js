@@ -8,7 +8,7 @@
 
         // 与后端 StageId 对应：plan / design / build / assemble / test / deliver
         const stageLabel = {
-          plan: "需求分析", design: "架构设计", build: "并行开发",
+          plan: "需求分析", design: "架构设计", build: "自主开发",
           assemble: "集成装配", test: "自动测试", deliver: "验收交付",
         };
         const statusLabel = {

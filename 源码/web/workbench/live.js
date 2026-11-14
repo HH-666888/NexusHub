@@ -172,7 +172,7 @@
     if (kind === "modules") {
       const items = (payload.batch && payload.batch.modules) || [];
       if (items.length) wb.setBranches(items);
-      wb.setEvent(timeOf(at) + " · 拆出 " + items.length + " 条分支，并行开写");
+      wb.setEvent(timeOf(at) + " · 拆出 " + items.length + " 个开发任务，逐个写");
       return;
     }
 

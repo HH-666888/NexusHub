@@ -5,10 +5,10 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>NexusHub · 说一句话，造一个能跑起来的软件</title>
-    <link rel="stylesheet" href="../common/app.css?v=20261114e" />
-    <link rel="stylesheet" href="../common/glass.css?v=20261114e" />
-    <link rel="stylesheet" href="./welcome.css?v=20261114e" />
-    <link rel="stylesheet" href="./welcome-long.css?v=20261114e" />
+    <link rel="stylesheet" href="../common/app.css?v=20261114f" />
+    <link rel="stylesheet" href="../common/glass.css?v=20261114f" />
+    <link rel="stylesheet" href="./welcome.css?v=20261114f" />
+    <link rel="stylesheet" href="./welcome-long.css?v=20261114f" />
     <script>
       /* 刷新 → 回到顶部；浏览器后退/前进 → 保留原来的位置。
          必须在 <head> 里执行：等脚本加载完再滚，用户会先看到闪一下。 */
@@ -92,7 +92,7 @@
               <span class="flow-icon">
                 <svg viewBox="0 0 24 24" aria-hidden><path d="M4 18V6l6 3 4-3 6 3v9" /><path d="M4 18h16" /></svg>
               </span>
-              <b>并行开发</b>
+              <b>自主开发</b>
             </li>
             <li class="sep" aria-hidden></li>
             <li>
@@ -136,7 +136,7 @@
         <span class="nav-compact" id="nav-compact">01 / 06</span>
         <a href="#s-spec" data-nav="0" style="--stage-hue: #0ea5a5"><b>01</b><span>需求分析</span></a>
         <a href="#s-arch" data-nav="1" style="--stage-hue: #2f6fed"><b>02</b><span>架构设计</span></a>
-        <a href="#s-build" data-nav="2" style="--stage-hue: #7c4dff"><b>03</b><span>并行开发</span></a>
+        <a href="#s-build" data-nav="2" style="--stage-hue: #7c4dff"><b>03</b><span>自主开发</span></a>
         <a href="#s-assemble" data-nav="3" style="--stage-hue: #db2777"><b>04</b><span>集成装配</span></a>
         <a href="#s-test" data-nav="4" style="--stage-hue: #a855f7"><b>05</b><span>自动测试</span></a>
         <a href="#s-deliver" data-nav="5" style="--stage-hue: #10b981"><b>06</b><span>验收交付</span></a>
@@ -234,7 +234,7 @@
           </div>
         </section>
 
-        <!-- 03 并行开发 -->
+        <!-- 03 自主开发 -->
         <section class="stage" id="s-build" data-index="2" style="--stage-hue: #7c4dff">
           <span class="ghost" aria-hidden>03</span>
           <div class="stage-inner">
@@ -245,21 +245,21 @@
                   <svg viewBox="0 0 24 24" aria-hidden><path pathLength="1" d="M7 4v16M12 4v16M17 4v16" /></svg>
                 </span>
               </div>
-              <h2>并行开发</h2>
+              <h2>自主开发</h2>
               <p class="lead">数据库、后端、前端，三路同时开工</p>
               <ul class="stage-points">
                 <li>三条分支各自推进，互不阻塞</li>
                 <li>每条分支有独立进度与产物</li>
-                <li>按模块并行，不按文件并行</li>
+                <li>按依赖决定先写哪个文件</li>
               </ul>
-              <span class="stage-file">3 条分支 · 并行中</span>
+              <span class="stage-file">3 个文件 · 逐个写入</span>
             </div>
 
             <div class="stage-art">
               <div class="art-head">
                 <span class="dots"><i></i><i></i><i></i></span>
                 三路同时写入
-                <span class="tag">并行</span>
+                <span class="tag">自主</span>
               </div>
               <div class="build-cols">
                 <div class="build-col" data-file="db/schema.sql" data-speed="46">
@@ -478,7 +478,7 @@
         });
       })();
     </script>
-    <script src="./welcome-long.js?v=20261114e" defer></script>
+    <script src="./welcome-long.js?v=20261114f" defer></script>
     <script>
       // 首页输入框：已登录（假登录）直接进工作台，未登录带上需求去登录页
       (function () {

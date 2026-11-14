@@ -70,7 +70,7 @@ def _deliver():
 STAGES: list[Stage] = [
     Stage("plan", "spec", "需求分析", _spec()),
     Stage("design", "arch", "架构设计", _design()),
-    Stage("build", "building", "并行开发", _build()),
+    Stage("build", "building", "自主开发", _build()),
     Stage("assemble", "saving", "集成装配", _assemble()),
     Stage("test", "checking", "自动测试", _test()),
     Stage("deliver", "deliver", "验收交付", _deliver()),

@@ -8,7 +8,7 @@
       const STAGES = [
         { no: "01", name: "需求分析", short: "需求", note: "5 条验收标准", state: "done", icon: "M6 4h9l3 3v13H6z M9 11h6 M9 15h4" },
         { no: "02", name: "架构设计", short: "架构", note: "4 个模块", state: "done", icon: "M4 5h16v5H4z M4 14h9v5H4z M17 14h3v5h-3z" },
-        { no: "03", name: "并行开发", short: "并行", note: "2 个分支并行", state: "live", icon: "M4 18V6l6 3 4-3 6 3v9 M4 18h16" },
+        { no: "03", name: "自主开发", short: "自主", note: "按依赖逐个写", state: "live", icon: "M4 18V6l6 3 4-3 6 3v9 M4 18h16" },
         { no: "04", name: "集成装配", short: "装配", note: "等待上游", state: "wait", icon: "M7 3h10v7H7z M3 14h8v7H3z M13 14h8v7h-8z" },
         { no: "05", name: "自动测试", short: "测试", note: "等待上游", state: "wait", icon: "M11 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12 M15.5 15.5L20 20" },
         { no: "06", name: "验收交付", short: "验收", note: "等待上游", state: "wait", icon: "M12 3l8 4.5v9L12 21l-8-4.5v-9z M9 12l2 2 4-4" },
@@ -18,8 +18,8 @@
          这里用 TASKS 作为"第 3 道"的子节点；?branches=N 可模拟几十个分支。 */
       const TASKS = [
         { title: "数据库", file: "db/schema.sql", state: "done", progress: 100 },
-        { title: "后端接口", file: "api/main.py", state: "live", progress: 72, parallel: true },
-        { title: "前端页面", file: "web/index.html", state: "live", progress: 38, parallel: true },
+        { title: "后端接口", file: "api/main.py", state: "live", progress: 72 },
+        { title: "前端页面", file: "web/index.html", state: "live", progress: 38 },
       ];
 
       // 演示用：按 ?branches=N 造出 N 个同级分支，看行距怎么被撑开
@@ -33,7 +33,6 @@
             file: `modules/${String(i + 1).padStart(2, "0")}/index.js`,
             state: i % 3 === 0 ? "done" : "live",
             progress: 20 + ((i * 17) % 70),
-            parallel: i % 3 !== 0,
           });
         }
       }
@@ -66,7 +65,6 @@
           note: task.note || "",
           state,
           progress: state === "done" ? 100 : state === "live" ? 45 : 0,
-          parallel: state === "live",
         };
       }
 
@@ -457,7 +455,7 @@
 
           if (item.kind === "task") {
             const t = item.data;
-            el.className = `node-task ${t.state}${t.parallel ? " parallel" : ""}${item.dense ? " dense" : ""}`;
+            el.className = `node-task ${t.state}${item.dense ? " dense" : ""}`;
             el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px;height:${item.h}px`;
             if (t.id) el.dataset.task = t.id;
             el.innerHTML = `<b>${t.title}</b>${item.dense ? "" : `<code>${t.file}</code>`}
@@ -491,14 +489,13 @@
       /* ───────── 顶部状态与聚焦条 ───────── */
 
       function updateHeader() {
-        const parallel = TASKS.filter((t) => t.parallel).length;
         const pill = document.querySelector(".appbar-center .pill");
         if (pill && !pill.dataset.lock) {
           const liveIndex = STAGES.findIndex((s) => s.state === "live");
           const doneCount = STAGES.filter((s) => s.state === "done").length;
           const current = liveIndex >= 0 ? liveIndex + 1 : Math.max(doneCount, 1);
           const total = TASK_STORE.tasks.length || TASKS.length;
-          pill.innerHTML = `<i class="pulse-dot"></i>运行中 · 第 ${current} / 6 道 · ${total} 个任务（${parallel} 个并行）`;
+          pill.innerHTML = `<i class="pulse-dot"></i>运行中 · 第 ${current} / 6 道 · ${total} 个任务`;
         }
         const name = document.getElementById("focus-name");
         if (view.focus !== null) {
@@ -1106,7 +1103,7 @@
         setStage(index) {
           STAGES.forEach((s, i) => {
             s.state = i < index ? "done" : i === index ? "live" : "wait";
-            // 带数字的说明（5 条验收标准 / 3 个分支并行）保留，其它换成完成
+            // 带数字的说明（5 条验收标准 / 3 个模块）保留，其它换成完成
             if (i < index && !/^\d/.test(s.note)) s.note = "完成";
           });
           document.querySelectorAll("#stage-groups .t-stage").forEach(function (group) {
@@ -1130,39 +1127,9 @@
           if (barEl) barEl.style.width = pct + "%";
         },
 
-        /** 用真实任务替换第 3 道下面的分支卡与侧栏子项 */
+        /** 只更新道次说明；节点由真实 task 事件逐个长出 */
         setBranches(items) {
-          if (TASK_STORE.tasks.length) {
-            // 已经有真实任务了，这里只更新道次说明，别把侧栏/树覆盖回演示数据
-            if (STAGES[2]) STAGES[2].note = items.length + " 个任务并行";
-            return;
-          }
-          TASKS.length = 0;
-          items.forEach((it) => {
-            TASKS.push({
-              title: it.title || it.name || it.moduleId || "任务",
-              file: it.file || "",
-              state: it.state === "done" ? "done" : "live",
-              progress: it.progress || 0,
-              parallel: it.parallel !== false,
-            });
-          });
-
-          const list = document.querySelector('.t-sub[data-stage="build"]');
-          if (list) {
-            list.innerHTML = items
-              .map((it) => {
-                const state = it.state === "done" ? "完成" : it.state === "live" ? "写入中" : "等待";
-                const label = it.title || it.name || it.moduleId || "任务";
-                const short = String(it.file || "").split("/").pop();
-                return `<div class="t-item${it.state === "live" ? " is-live" : ""}"><span class="name">${label} · ${short}</span><span class="state">${state}</span></div>`;
-              })
-              .join("");
-          }
-
-          const count = document.querySelector(".tasks-head h2 .pill");
-          if (count) count.textContent = items.length + " 项";
-          if (STAGES[2]) STAGES[2].note = items.length + " 个任务并行";
+          if (STAGES[2]) STAGES[2].note = items.length + " 个开发任务";
           render();
         },
 

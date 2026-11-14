@@ -238,7 +238,7 @@
     // 06 的数字只滚一次，复位时不做任何事
   }
 
-  /* 03 并行开发：三列同时写入 */
+  /* 03 自主开发：按顺序逐个写入 */
   const BUILD = {
     "db/schema.sql": [
       "CREATE TABLE shifts (",
@@ -275,31 +275,49 @@
   };
 
   function typeBuild(stage) {
-    $$(".build-col", stage).forEach((col) => {
-      const pre = $("pre", col);
-      const lines = BUILD[col.dataset.file] || [];
-      if (!pre || !lines.length) return;
-      if (reduce) {
-        pre.textContent = lines.join("\n");
+    const cols = Array.from(stage.querySelectorAll(".build-col"));
+    if (reduce) {
+      cols.forEach((col) => {
+        const pre = col.querySelector("pre");
+        const lines = BUILD[col.dataset.file] || [];
+        if (pre) pre.textContent = lines.join("\n");
+      });
+      return;
+    }
+
+    cols.forEach((col) => {
+      if (col._timer) clearInterval(col._timer);
+      col._timer = null;
+      const pre = col.querySelector("pre");
+      if (pre) pre.textContent = "";
+    });
+
+    // 一次只写一个文件，写完再切下一个：和真实流水线一致
+    let index = 0;
+    function next() {
+      while (index < cols.length) {
+        const col = cols[index++];
+        const pre = col.querySelector("pre");
+        const lines = BUILD[col.dataset.file] || [];
+        if (!pre || !lines.length) continue;
+        const speed = Number(col.dataset.speed || 60);
+        let i = 0;
+        col._timer = setInterval(() => {
+          if (i >= lines.length) {
+            clearInterval(col._timer);
+            col._timer = null;
+            next();
+            return;
+          }
+          pre.textContent += (i ? "\n" : "") + lines[i];
+          i += 1;
+        }, speed);
         return;
       }
-      const speed = Number(col.dataset.speed || 60);
-      if (col._timer) clearInterval(col._timer);
-      pre.textContent = "";
-      let i = 0;
-      col._timer = setInterval(() => {
-        if (i >= lines.length) {
-          clearInterval(col._timer);
-          col._timer = null;
-          return;
-        }
-        pre.textContent += (i ? "\n" : "") + lines[i];
-        i += 1;
-      }, speed);
-    });
+    }
+    next();
   }
 
-  /* 05 自动测试：逐条打勾，中间一条先失败再修复 */
   function runChecks(stage) {
     const list = $("#checks", stage);
     if (!list) return;

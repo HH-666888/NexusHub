@@ -23,9 +23,8 @@ class Settings(BaseSettings):
     model_decide: str = "deepseek-chat"
     model_execute: str = "deepseek-chat"
 
-    # 运行预算与并行
+    # 运行预算
     run_cost_limit_cny: float = 5.0
-    max_parallel_build: int = 3
 
     # 语料目录（相对 backend/ 根）
     playbook_dir: str = "content/playbook"
@@ -53,7 +52,6 @@ class Settings(BaseSettings):
     ask_max_questions: int = 0        # 0 = 不限
     ask_max_rounds: int = 0           # 0 = 不限
     memory_daily_limit: int = 3       # AI 记忆每天最多写几条
-    pipeline_v2_concurrency: int = 3
 
     runtime_runner: str = "docker"
 
