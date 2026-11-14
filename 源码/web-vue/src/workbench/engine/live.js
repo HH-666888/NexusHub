@@ -1,4 +1,4 @@
-﻿/* 工作台实时接入层（v2）。
+/* 工作台实时接入层（v2）。
    职责：把真实接口（run 快照 + 事件流）翻译成页面动作。
    没有 run id 或后端不可用时显示空态/错误态，不回退任何演示数据。 */
 (function () {
@@ -53,8 +53,7 @@
   wb.stopTimeline();
   if (wb.resetFiles) wb.resetFiles();
   // 真实运行：没有文件事件之前，代码区保持空，不预置任何示例文件
-  const codeBody = document.getElementById("code-body");
-  if (codeBody) codeBody.innerHTML = "";
+  // 代码区现在由 Vue 的 CodePane 根据 store 渲染，这里不再清 DOM。
 
   const STAGE_OF = { plan: 0, design: 1, build: 2, assemble: 3, test: 4, deliver: 5 };
   const PHASE_OF = {

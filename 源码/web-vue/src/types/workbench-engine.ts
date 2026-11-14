@@ -8,6 +8,14 @@ export interface WorkbenchStage {
   icon?: string;
 }
 
+export interface WorkbenchFile {
+  path: string;
+  lang: string;
+  state: string;
+  lines: string[];
+  written?: number;
+}
+
 export interface WorkbenchTask {
   id: string;
   title: string;
@@ -40,6 +48,7 @@ export interface WorkbenchEngineApi {
   resetFile(path: string): void;
   markBranchDone(path: string): void;
   resetFiles(): void;
+  showFile(path: string): void;
 }
 
 declare global {

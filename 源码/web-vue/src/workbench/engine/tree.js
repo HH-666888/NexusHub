@@ -613,23 +613,28 @@
         return FILES.find((f) => f.path === path);
       }
 
-      function renderTabs() {
-        fileTabs.innerHTML = FILES.map((f) => {
-          const live = codeView.live === f.path;
-          const on = codeView.current === f.path;
-          const cls = [on ? "is-on" : "", f.state === "done" ? "done" : "", live ? "live" : ""].join(" ").trim();
-          const mark = live ? "写入中" : f.state === "done" ? "✓" : "待生成";
-          return `<button type="button" class="${cls}" data-path="${f.path}">${f.path.split("/").pop()}<i>${mark}</i></button>`;
-        }).join("");
+      function syncFiles(extra) {
+        const store = window.__wbStore;
+        if (!store) return;
+        const active = codeView.current;
+        store.sync(Object.assign({
+          files: FILES.map((file) => ({
+            path: file.path,
+            lang: file.lang,
+            state: file.state,
+            lines: file.lines,
+          })),
+          activePath: active,
+          livePath: codeView.live || "",
+        }, extra || {}));
       }
 
-      function addLine(index, text) {
-        const line = document.createElement("div");
-        line.className = "code-line";
-        line.innerHTML = `<span class="ln">${index + 1}</span><pre>${hl(text)}</pre>`;
-        codeBody.appendChild(line);
-        codeBody.scrollTop = codeBody.scrollHeight;
-        lineCount.textContent = String(index + 1);
+      function renderTabs() {
+        syncFiles();
+      }
+
+      function addLine() {
+        syncFiles();
       }
 
       /** 切到某个文件：面板不消失，只换内容；生成过的进回看态，正在写的接着写 */
@@ -644,35 +649,13 @@
         }
 
         const streaming = codeView.live === path && !options.review;
-        fileName.textContent = path;
-        fileDot.style.background = streaming ? "var(--warn)" : "var(--ok)";
-        // 两种状态都要保留 #line-count 节点：addLine 每次都要写它，缺了会在第 2 行抛错
-        streamState.innerHTML = streaming
-          ? `流式写入 · <b id="line-count">0</b> 行`
-          : `已生成 · <b id="line-count">${file.lines.length}</b> 行`;
-        lineCount = document.getElementById("line-count");
-
-        codeBody.innerHTML = "";
-        codeBody.classList.remove("swap");
-        void codeBody.offsetWidth;
-        codeBody.classList.add("swap");
-
-        reviewBar.classList.toggle("is-on", !streaming);
-        reviewText.textContent = streaming ? "正在写这个文件" : `回看 · ${path} 已生成完毕`;
-
-        codePane.classList.remove("flash");
-        void codePane.offsetWidth;
-        codePane.classList.add("flash");
-
-        renderTabs();
-
-        if (streaming) {
-          // 已经写过的行先补齐，再接着往后写 —— 切走再切回不会丢进度
-          for (let i = 0; i < file.written; i += 1) addLine(i, file.lines[i]);
-          // 实时模式下代码由事件驱动，不能再开本地打字机，否则会写两遍
-          if (!(window.__wb && window.__wb.isLive)) streamLines(path);
-        } else {
-          file.lines.forEach((text, i) => addLine(i, text));
+        syncFiles({
+          reviewMode: !streaming,
+          reviewText: streaming ? "正在写这个文件" : "回看 · " + path + " 已生成完毕",
+          dotWarn: streaming,
+        });
+        if (!window.__wb || !window.__wb.isLive) {
+          if (streaming) streamLines(path);
         }
       }
 
@@ -713,11 +696,7 @@
         codeView.live = path;
         showFile(path);
       }
-      fileTabs.addEventListener("click", function (event) {
-        const btn = event.target.closest("button[data-path]");
-        if (!btn) return;
-        showFile(btn.dataset.path);
-      });
+
 
       document.getElementById("replay-file").addEventListener("click", function () {
         const path = codeView.current;
@@ -870,15 +849,7 @@
       }
 
       function liveRenderCurrent() {
-        const file = fileOf(codeView.current);
-        if (!file) return;
-        codeBody.innerHTML = "";
-        file.lines.forEach((text, i) => addLine(i, text));
-        streamState.innerHTML =
-          file.state === "done"
-            ? `已生成 · <b id="line-count">${file.lines.length}</b> 行`
-            : `流式写入 · <b id="line-count">${file.lines.length}</b> 行`;
-        lineCount = document.getElementById("line-count");
+        syncFiles();
       }
 
       function setStageOpen(group, open) {
@@ -1213,10 +1184,13 @@
         /** 实时模式开始时清掉页面自带的演示文件，避免和真内容叠在一起 */
         resetFiles() {
           FILES.length = 0;
-          codeView.current = null;
+          codeView.current = "";
           codeView.live = null;
-          codeBody.innerHTML = "";
-          renderTabs();
+          syncFiles();
+        },
+
+        showFile(path) {
+          showFile(path);
         },
       };
 

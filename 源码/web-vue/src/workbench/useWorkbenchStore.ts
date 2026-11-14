@@ -1,5 +1,5 @@
 import { reactive } from "vue";
-import type { WorkbenchStage, WorkbenchTask } from "../types/workbench-engine";
+import type { WorkbenchFile, WorkbenchStage, WorkbenchTask } from "../types/workbench-engine";
 
 export interface WorkbenchSync {
   stages?: WorkbenchStage[];
@@ -10,6 +10,12 @@ export interface WorkbenchSync {
   calls?: number;
   status?: string;
   stageIndex?: number;
+  files?: WorkbenchFile[];
+  activePath?: string;
+  livePath?: string;
+  reviewMode?: boolean;
+  reviewText?: string;
+  dotWarn?: boolean;
 }
 
 export interface WorkbenchStoreApi {
@@ -21,6 +27,12 @@ export interface WorkbenchStoreApi {
   calls: number;
   status: string;
   stageIndex: number;
+  files: WorkbenchFile[];
+  activePath: string;
+  livePath: string;
+  reviewMode: boolean;
+  reviewText: string;
+  dotWarn: boolean;
   openStages: string[];
   sync(payload: WorkbenchSync): void;
   isOpen(stageId: string): boolean;
@@ -37,6 +49,12 @@ export const workbenchStore: WorkbenchStoreApi = reactive({
   calls: 0,
   status: "running",
   stageIndex: 0,
+  files: [] as WorkbenchFile[],
+  activePath: "",
+  livePath: "",
+  reviewMode: false as boolean,
+  reviewText: "",
+  dotWarn: false as boolean,
   openStages: [] as string[],
   sync(payload: WorkbenchSync) {
     if (payload.stages) this.stages = payload.stages.map((stage) => ({ ...stage }));
@@ -46,6 +64,14 @@ export const workbenchStore: WorkbenchStoreApi = reactive({
     if (typeof payload.cost === "number") this.cost = payload.cost;
     if (typeof payload.calls === "number") this.calls = payload.calls;
     if (typeof payload.status === "string") this.status = payload.status;
+    if (payload.files) {
+      this.files = payload.files.map((file) => ({ ...file, lines: file.lines.slice() }));
+    }
+    if (typeof payload.activePath === "string") this.activePath = payload.activePath;
+    if (typeof payload.livePath === "string") this.livePath = payload.livePath;
+    if (typeof payload.reviewMode === "boolean") this.reviewMode = payload.reviewMode;
+    if (typeof payload.reviewText === "string") this.reviewText = payload.reviewText;
+    if (typeof payload.dotWarn === "boolean") this.dotWarn = payload.dotWarn;
     if (typeof payload.stageIndex === "number") {
       this.stageIndex = payload.stageIndex;
       const current = this.stages[payload.stageIndex];
