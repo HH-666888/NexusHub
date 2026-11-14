@@ -1,6 +1,14 @@
-<script setup>
+﻿<script setup lang="ts">
 import { computed, nextTick, reactive, ref } from "vue";
 import "../theme.js";
+
+type TipKey = "account" | "password";
+type TipState = "" | "ok" | "error";
+
+interface Tip {
+  text: string;
+  state: TipState;
+}
 
 const api = window.api;
 const params = new URLSearchParams(location.search);
@@ -11,7 +19,7 @@ const account = ref("");
 const password = ref("");
 const showPassword = ref(false);
 const loading = ref(false);
-const tips = reactive({
+const tips = reactive<Record<TipKey, Tip>>({
   account: { text: "", state: "" },
   password: { text: "", state: "" },
 });
@@ -31,16 +39,16 @@ function targetUrl() {
   return "../projects/";
 }
 
-function tip(name, message, state) {
-  tips[name].text = message || "";
-  tips[name].state = state || "";
+function tip(name: TipKey, message = "", state: TipState = "") {
+  tips[name].text = message;
+  tips[name].state = state;
 }
 
-function clearTip(name) {
+function clearTip(name: TipKey) {
   tip(name, "", "");
 }
 
-function fieldClass(name) {
+function fieldClass(name: TipKey) {
   return (
     "auth-field" +
     (tips[name].state === "error" ? " is-error" : "") +
@@ -48,7 +56,7 @@ function fieldClass(name) {
   );
 }
 
-function tipClass(name) {
+function tipClass(name: TipKey) {
   return "field-tip" + (tips[name].state ? " " + tips[name].state : "");
 }
 
@@ -78,7 +86,7 @@ async function submit() {
 
   loading.value = true;
   try {
-    if (api && api.login) {
+    if (api) {
       const result = await api.login(name, pwd);
       if (result.ok) {
         location.href = targetUrl();

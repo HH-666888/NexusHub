@@ -1,19 +1,20 @@
-<script setup>
+﻿<script setup lang="ts">
 import { onMounted, ref } from "vue";
+import type { AssistProject, AssistProjectList } from "../types/api";
 
 const api = window.api;
 const goal = ref("");
-const projects = ref([]);
+const projects = ref<AssistProject[]>([]);
 const error = ref("");
 const creating = ref(false);
 
-function open(project) {
+function open(project: AssistProject) {
   location.href = "./workspace/?id=" + encodeURIComponent(project.id);
 }
 
-async function remove(project) {
+async function remove(project: AssistProject) {
   if (!confirm("删除这个辅助项目？")) return;
-  if (!api || !api.deleteAssist) {
+  if (!api) {
     alert("后端没启动，删不了");
     return;
   }
@@ -22,11 +23,11 @@ async function remove(project) {
 }
 
 async function load() {
-  if (!api || !api.assistProjects) {
+  if (!api) {
     error.value = "加载失败，请刷新重试。";
     return;
   }
-  const data = await api.assistProjects();
+  const data: AssistProjectList | null = await api.assistProjects();
   if (!data) {
     error.value = "加载失败，请刷新重试。";
     return;
@@ -41,7 +42,7 @@ async function create() {
     document.getElementById("goal")?.focus();
     return;
   }
-  if (!api || !api.createAssist) {
+  if (!api) {
     alert("后端没启动，创建不了");
     return;
   }
@@ -53,7 +54,7 @@ async function create() {
       location.href = "./workspace/?id=" + encodeURIComponent(result.data.id);
       return;
     }
-    alert(result.data && result.data.error ? result.data.error.message : "创建失败，请重试");
+    alert(result.data?.error?.message || "创建失败，请重试");
   } finally {
     creating.value = false;
   }

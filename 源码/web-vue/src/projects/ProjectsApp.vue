@@ -1,16 +1,19 @@
-<script setup>
+﻿<script setup lang="ts">
 import { computed, ref } from "vue";
+import type { ApiResult, Run, TodayUsage } from "../types/api";
+
+type FilterKey = "all" | "running" | "done" | "failed";
 
 const api = window.api;
-const runs = ref([]);
-const filter = ref("all");
-const usageToday = ref(null);
+const runs = ref<Run[]>([]);
+const filter = ref<FilterKey>("all");
+const usageToday = ref<TodayUsage | null>(null);
 const prompt = ref("");
 const creating = ref(false);
 const deletingId = ref("");
 const loaded = ref(false);
 
-const stageLabel = {
+const stageLabel: Record<string, string> = {
   plan: "需求分析",
   design: "架构设计",
   build: "自主开发",
@@ -18,21 +21,25 @@ const stageLabel = {
   test: "自动测试",
   deliver: "验收交付",
 };
-const statusLabel = {
+const statusLabel: Record<string, string> = {
   running: "运行中",
   paused: "已暂停",
   done: "已完成",
   failed: "失败",
   cancelled: "已取消",
 };
-const filterKeys = ["all", "running", "done", "failed"];
-const filterNames = { all: "全部", running: "进行中", done: "已完成", failed: "未通过" };
+const filterKeys: FilterKey[] = ["all", "running", "done", "failed"];
+const filterNames: Record<FilterKey, string> = {
+  all: "全部",
+  running: "进行中",
+  done: "已完成",
+  failed: "未通过",
+};
 
-const counts = computed(() => {
-  const byStatus = { running: 0, done: 0, failed: 0 };
+const counts = computed<Record<string, number>>(() => {
+  const byStatus: Record<string, number> = { running: 0, done: 0, failed: 0 };
   runs.value.forEach((run) => {
-    if (byStatus[run.status] === undefined) byStatus[run.status] = 0;
-    byStatus[run.status] += 1;
+    byStatus[run.status] = (byStatus[run.status] || 0) + 1;
   });
   return byStatus;
 });
@@ -41,11 +48,11 @@ const filters = computed(() =>
   filterKeys.map((key) => ({
     key,
     label: filterNames[key] + (key === "all" ? "" : " " + (counts.value[key] || 0)),
-  }))
+  })),
 );
 
 const filteredRuns = computed(() =>
-  filter.value === "all" ? runs.value : runs.value.filter((run) => run.status === filter.value)
+  filter.value === "all" ? runs.value : runs.value.filter((run) => run.status === filter.value),
 );
 
 const todayCost = computed(() => {
@@ -58,20 +65,20 @@ const todayCost = computed(() => {
 });
 
 const footCountText = computed(() =>
-  loaded.value ? "共 " + runs.value.length + " 个项目" : "共 0 个项目"
+  loaded.value ? "共 " + runs.value.length + " 个项目" : "共 0 个项目",
 );
 const footBudgetText = computed(() =>
-  loaded.value ? "今日估算 ¥" + money(todayCost.value) : "今日估算 ¥—"
+  loaded.value ? "今日估算 ¥" + money(todayCost.value) : "今日估算 ¥—",
 );
 
-function money(value) {
+function money(value?: number | null) {
   const amount = Number(value || 0);
   return amount > 0 && amount < 0.01 ? amount.toFixed(4) : amount.toFixed(2);
 }
 
-function fmtTime(ms) {
+function fmtTime(ms: number) {
   const d = new Date(ms);
-  const pad = (n) => String(n).padStart(2, "0");
+  const pad = (n: number) => String(n).padStart(2, "0");
   return (
     pad(d.getMonth() + 1) +
     "-" +
@@ -83,30 +90,33 @@ function fmtTime(ms) {
   );
 }
 
-function statusText(status) {
+function statusText(status: string) {
   return statusLabel[status] || status;
 }
 
-function stageText(stage) {
+function stageText(stage: string) {
   return stageLabel[stage] || stage;
 }
 
-function pillClass(status) {
+function pillClass(status: string) {
   if (status === "running") return "pill-live";
   if (status === "failed" || status === "paused" || status === "cancelled") return "pill-warn";
   return "pill";
 }
 
-function openRun(run) {
+function openRun(run: Run) {
   location.href = "../workbench/?run=" + encodeURIComponent(run.id);
 }
 
-async function removeRun(run) {
+async function removeRun(run: Run) {
   const name = run.prompt || "这次运行";
   if (!window.confirm("删除「" + name + "」？删除后不能恢复。")) return;
 
   deletingId.value = run.id;
-  const result = api && api.deleteRun ? await api.deleteRun(run.id) : { ok: false, offline: true };
+  let result: ApiResult<null> = { ok: false, offline: true, status: 0, data: null };
+  if (api) {
+    result = await api.deleteRun(run.id);
+  }
   if (!result.ok) {
     deletingId.value = "";
     alert(result.offline ? "后端没启动，删不了" : "删除失败，请重试");
@@ -124,7 +134,7 @@ function updateChrome() {
 }
 
 async function load() {
-  if (!api || !api.runs) return;
+  if (!api) return;
 
   const data = await api.runs(24);
   if (!Array.isArray(data)) return;
@@ -133,22 +143,21 @@ async function load() {
   loaded.value = true;
   updateChrome();
 
-  if (api.usageToday) {
-    usageToday.value = await api.usageToday();
-    updateChrome();
-  }
+  usageToday.value = await api.usageToday();
+  updateChrome();
 }
 
 async function create() {
   const text = prompt.value.trim();
   if (!text) {
-    document.querySelector(".new-bar input")?.focus();
+    const input = document.querySelector(".new-bar input") as HTMLInputElement | null;
+    input?.focus();
     return;
   }
 
   creating.value = true;
   try {
-    if (api && api.createRun) {
+    if (api) {
       const result = await api.createRun(text);
       if (result.ok && result.data) {
         location.href = "../workbench/?run=" + encodeURIComponent(result.data.id);
@@ -163,7 +172,7 @@ async function create() {
   }
 }
 
-load();
+void load();
 </script>
 
 <template>

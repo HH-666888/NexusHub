@@ -1,5 +1,6 @@
-<script setup>
+﻿<script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import type { MemoryStats, SettingsInfo, TestConnectionResult } from "../types/api";
 
 const api = window.api;
 
@@ -9,27 +10,29 @@ const testing = ref(false);
 const saving = ref(false);
 const hintText = ref("保存后不回显；留空表示不修改。填了会用于之后的工作流和辅助开发。");
 const hintColor = ref("");
-const theme = ref(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
-const memory = ref(null);
-const memoryState = ref("loading");
+const theme = ref<"light" | "dark">(
+  document.documentElement.dataset.theme === "dark" ? "dark" : "light",
+);
+const memory = ref<MemoryStats | null>(null);
+const memoryState = ref<"loading" | "ready" | "error">("loading");
 const saveHint = ref("尚未保存");
 const saveLabel = ref("保存 API Key");
 
-const themes = [
+const themes: Array<{ value: "light" | "dark"; label: string; preview: string }> = [
   { value: "light", label: "浅色", preview: "浅色预览" },
   { value: "dark", label: "深色", preview: "深色预览" },
 ];
 
 const keyPlaceholder = computed(() =>
-  apiKeySet.value ? "已配置（留空表示不修改）" : "sk-…"
+  apiKeySet.value ? "已配置（留空表示不修改）" : "sk-…",
 );
 
-function setTheme(value) {
+function setTheme(value: "light" | "dark") {
   theme.value = value;
   document.documentElement.dataset.theme = value;
   try {
     localStorage.setItem("nexus-theme", value);
-  } catch (error) {
+  } catch {
     /* 无痕模式忽略 */
   }
 }
@@ -37,14 +40,14 @@ function setTheme(value) {
 async function testConnection() {
   if (testing.value) return;
   testing.value = true;
-  let message = { ok: false, message: "后端没启动" };
-  if (api && api.testConnection) {
+  let message: TestConnectionResult = { ok: false, message: "后端没启动" };
+  if (api) {
     try {
       message = await api.testConnection({
         provider: "deepseek",
         apiKey: apiKey.value.trim(),
       });
-    } catch (error) {
+    } catch {
       message = { ok: false, message: "测试失败" };
     }
   }
@@ -70,11 +73,11 @@ async function save() {
 
   saving.value = true;
   saveLabel.value = "保存中…";
-  let result = { ok: false };
-  if (api && api.saveSettings) {
+  let result: { ok: boolean } = { ok: false };
+  if (api) {
     try {
       result = await api.saveSettings({ apiKey: key });
-    } catch (error) {
+    } catch {
       result = { ok: false };
     }
   }
@@ -98,10 +101,10 @@ onMounted(async () => {
   }
 
   try {
-    const tasks = [];
-    if (api.settings) tasks.push(api.settings());
-    if (api.memoryStats) tasks.push(api.memoryStats());
-    const [saved, stats] = await Promise.all(tasks);
+    const [saved, stats] = (await Promise.all([
+      api.settings(),
+      api.memoryStats(),
+    ])) as [SettingsInfo | null, MemoryStats | null];
 
     if (saved) {
       apiKeySet.value = Boolean(saved.apiKeySet);
@@ -112,7 +115,7 @@ onMounted(async () => {
     } else {
       memoryState.value = "error";
     }
-  } catch (error) {
+  } catch {
     memoryState.value = "error";
   }
 });

@@ -1,16 +1,17 @@
-<script setup>
+﻿<script setup lang="ts">
 import { onMounted, ref } from "vue";
+import type { MemoryData, MemoryEntry, MemoryGroup, MemoryStats } from "../types/api";
 
 const api = window.api;
-const stats = ref(null);
+const stats = ref<MemoryStats | null>(null);
 const statsError = ref("");
-const groups = ref([]);
-const cache = ref(null);
+const groups = ref<MemoryGroup[]>([]);
+const cache = ref<MemoryData | null>(null);
 
-function fmtTime(ms) {
+function fmtTime(ms?: number | null) {
   if (!ms) return "—";
   const date = new Date(ms);
-  const pad = (n) => String(n).padStart(2, "0");
+  const pad = (n: number) => String(n).padStart(2, "0");
   return (
     date.getMonth() +
     1 +
@@ -24,7 +25,7 @@ function fmtTime(ms) {
 }
 
 async function load() {
-  if (!api || !api.memory) {
+  if (!api) {
     statsError.value = "加载失败，请刷新重试。";
     return;
   }
@@ -39,13 +40,15 @@ async function load() {
   groups.value = data.groups || [];
 }
 
-async function togglePin(entry) {
+async function togglePin(entry: MemoryEntry) {
+  if (!api) return;
   await api.updateMemory(entry.id, !entry.pinned);
   await load();
 }
 
-async function remove(entry) {
+async function remove(entry: MemoryEntry) {
   if (!confirm("删除这条记忆？")) return;
+  if (!api) return;
   await api.deleteMemory(entry.id);
   await load();
 }
@@ -62,6 +65,7 @@ function exportMemory() {
 
 async function clearAll() {
   if (!confirm("清空全部 AI 记忆？此操作不可恢复。")) return;
+  if (!api) return;
   await api.clearMemory();
   await load();
 }

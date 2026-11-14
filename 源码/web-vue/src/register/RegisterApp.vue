@@ -1,6 +1,14 @@
-<script setup>
+﻿<script setup lang="ts">
 import { computed, reactive, ref } from "vue";
 import "../theme.js";
+
+type TipKey = "username" | "password" | "confirm";
+type TipState = "" | "ok" | "error";
+
+interface Tip {
+  text: string;
+  state: TipState;
+}
 
 const api = window.api;
 const params = new URLSearchParams(location.search);
@@ -12,7 +20,7 @@ const password = ref("");
 const confirm = ref("");
 const showPassword = ref(false);
 const loading = ref(false);
-const tips = reactive({
+const tips = reactive<Record<TipKey, Tip>>({
   username: { text: "", state: "" },
   password: { text: "", state: "" },
   confirm: { text: "", state: "" },
@@ -33,16 +41,16 @@ function targetUrl() {
   return "../projects/";
 }
 
-function tip(name, message, state) {
-  tips[name].text = message || "";
-  tips[name].state = state || "";
+function tip(name: TipKey, message = "", state: TipState = "") {
+  tips[name].text = message;
+  tips[name].state = state;
 }
 
-function clearTip(name) {
+function clearTip(name: TipKey) {
   tip(name, "", "");
 }
 
-function fieldClass(name) {
+function fieldClass(name: TipKey) {
   return (
     "auth-field" +
     (tips[name].state === "error" ? " is-error" : "") +
@@ -50,7 +58,7 @@ function fieldClass(name) {
   );
 }
 
-function tipClass(name) {
+function tipClass(name: TipKey) {
   return "field-tip" + (tips[name].state ? " " + tips[name].state : "");
 }
 
@@ -93,7 +101,7 @@ async function submit() {
 
   loading.value = true;
   try {
-    if (api && api.register) {
+    if (api) {
       const result = await api.register(name, pwd, pwd2);
       if (result.ok) {
         location.href = targetUrl();
@@ -103,7 +111,7 @@ async function submit() {
         tip(
           "username",
           result.status === 409 ? "这个用户名已经被用了" : "注册失败，请检查用户名和密码",
-          "error"
+          "error",
         );
         return;
       }
