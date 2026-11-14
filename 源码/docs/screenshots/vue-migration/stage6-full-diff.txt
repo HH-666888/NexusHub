@@ -24,9 +24,9 @@ welcome 1920: 同尺寸=True; 平均灰度差=0.0957; 差异区域=(448, 1061, 1
 welcome 390: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
 assist-workspace 1440: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
 assist-workspace 1920: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
-assist-workspace 390: 同尺寸=True; 平均灰度差=0.0002; 差异区域=(97, 30, 360, 38); 字节相同=False
+assist-workspace 390: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
 workbench 1440: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
 workbench 1920: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
 workbench 390: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
 
-全部 27 张同尺寸；字节完全相同=25/27
+全部 27 张同尺寸；字节完全相同=26/27
