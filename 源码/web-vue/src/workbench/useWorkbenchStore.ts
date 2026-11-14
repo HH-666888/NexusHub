@@ -1,6 +1,18 @@
 import { reactive } from "vue";
 import type { WorkbenchFile, WorkbenchStage, WorkbenchTask } from "../types/workbench-engine";
 
+export interface WorkbenchTaskDetail {
+  visible: boolean;
+  stage: string;
+  title: string;
+  state: string;
+  stateClass: string;
+  ms: string;
+  file: string;
+  note: string;
+  openFile: string;
+}
+
 export interface WorkbenchSync {
   stages?: WorkbenchStage[];
   tasks?: WorkbenchTask[];
@@ -33,7 +45,10 @@ export interface WorkbenchStoreApi {
   reviewMode: boolean;
   reviewText: string;
   dotWarn: boolean;
+  taskDetail: WorkbenchTaskDetail;
   openStages: string[];
+  showTaskDetail(detail: Omit<WorkbenchTaskDetail, "visible">): void;
+  hideTaskDetail(): void;
   sync(payload: WorkbenchSync): void;
   isOpen(stageId: string): boolean;
   toggleStage(stageId: string): void;
@@ -55,6 +70,23 @@ export const workbenchStore: WorkbenchStoreApi = reactive({
   reviewMode: false as boolean,
   reviewText: "",
   dotWarn: false as boolean,
+  taskDetail: {
+    visible: false as boolean,
+    stage: "第 — 道",
+    title: "任务",
+    state: "—",
+    stateClass: "",
+    ms: "—",
+    file: "—",
+    note: "",
+    openFile: "",
+  },
+  showTaskDetail(detail) {
+    this.taskDetail = { ...detail, visible: true };
+  },
+  hideTaskDetail() {
+    this.taskDetail = { ...this.taskDetail, visible: false };
+  },
   openStages: [] as string[],
   sync(payload: WorkbenchSync) {
     if (payload.stages) this.stages = payload.stages.map((stage) => ({ ...stage }));

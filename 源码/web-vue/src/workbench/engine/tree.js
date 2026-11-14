@@ -961,38 +961,28 @@
 
       function showTaskDetail(id) {
         const task = TASK_STORE.tasks.find((item) => item.id === id);
-        if (!task || !tc.box) return;
+        if (!task) return;
         tcCurrent = id;
 
         const index = STAGE_ORDER.indexOf(task.stage);
-        if (tc.stage) tc.stage.textContent = index >= 0 ? "第 " + (index + 1) + " 道 · " + STAGES[index].name : task.stage;
-        if (tc.title) tc.title.textContent = task.title || "任务";
-        if (tc.state) {
-          tc.state.textContent = STATE_TEXT[task.state] || task.state;
-          tc.state.className = task.state === "failed" ? "is-fail" : "";
-        }
-        if (tc.ms) tc.ms.textContent = fmtMs(task.ms);
-        if (tc.file) tc.file.textContent = task.file || "—";
-        if (tc.note) {
-          tc.note.textContent = task.reason
+        const target = task.file && fileOf(task.file) ? task.file : "";
+        window.__wbStore?.showTaskDetail({
+          stage: index >= 0 ? "第 " + (index + 1) + " 道 · " + STAGES[index].name : task.stage,
+          title: task.title || "任务",
+          state: STATE_TEXT[task.state] || task.state,
+          stateClass: task.state === "failed" ? "is-fail" : "",
+          ms: fmtMs(task.ms),
+          file: task.file || "—",
+          note: task.reason
             ? "原因：" + task.reason
-            : task.note ? "说明：" + task.note : "";
-        }
-
-        if (tc.open) {
-          const target = task.file && fileOf(task.file) ? task.file : "";
-          // 用 style.display，别用 hidden：.btn 的 display 会盖掉 [hidden]
-          tc.open.style.display = target ? "" : "none";
-          tc.open.onclick = function () {
-            if (target) showFile(target);
-          };
-        }
-        tc.box.hidden = false;
+            : task.note ? "说明：" + task.note : "",
+          openFile: target,
+        });
       }
 
       function hideTaskDetail() {
         tcCurrent = null;
-        if (tc.box) tc.box.hidden = true;
+        window.__wbStore?.hideTaskDetail();
       }
 
       if (tc.box) {
