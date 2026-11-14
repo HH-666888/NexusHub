@@ -1,0 +1,32 @@
+NexusHub 全量视觉验收（阶段 6）
+日期: 2026-11-14
+
+settings 1440: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+settings 1920: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+settings 390: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+login 1440: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+login 1920: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+login 390: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+register 1440: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+register 1920: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+register 390: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+projects 1440: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+projects 1920: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+projects 390: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+memory 1440: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+memory 1920: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+memory 390: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+assist 1440: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+assist 1920: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+assist 390: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+welcome 1440: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+welcome 1920: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+welcome 390: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+assist-workspace 1440: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+assist-workspace 1920: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+assist-workspace 390: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+workbench 1440: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+workbench 1920: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+workbench 390: 同尺寸=True; 平均灰度差=0.0000; 差异区域=None; 字节相同=True
+
+全部 27 张同尺寸；字节完全相同=27/27；全部一致=True

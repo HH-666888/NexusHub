@@ -1,10 +1,10 @@
-<script setup>
+﻿<script setup lang="ts">
 import { onMounted } from "vue";
 
 const api = window.api;
 
-async function submitComposer(event) {
-  const form = event.currentTarget;
+async function submitComposer(event: SubmitEvent) {
+  const form = event.currentTarget as HTMLFormElement;
   const input = form.querySelector("input");
   const text = (input && input.value ? input.value : "").trim();
   const carry = text ? "&prompt=" + encodeURIComponent(text) : "";
