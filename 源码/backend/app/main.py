@@ -71,7 +71,7 @@ def create_app() -> FastAPI:
     if vue_assets.is_dir():
         app.mount("/vue-assets", StaticFiles(directory=str(vue_assets)), name="vue-assets")
 
-    for page in ("settings", "login", "register", "projects", "memory", "welcome"):
+    for page in ("settings", "login", "register", "projects", "memory", "welcome", "workbench"):
         page_dist = vue_dist / page
         if page_dist.is_dir():
             app.mount(f"/{page}", StaticFiles(directory=str(page_dist), html=True), name=f"{page}-vue")

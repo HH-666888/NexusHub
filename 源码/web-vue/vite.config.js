@@ -11,6 +11,7 @@ export default defineConfig({
     outDir: fileURLToPath(new URL("../web/vue-dist", import.meta.url)),
     emptyOutDir: true,
     assetsDir: "vue-assets",
+    cssMinify: false,
     rollupOptions: {
       input: {
         settings: fileURLToPath(new URL("settings/index.html", import.meta.url)),
@@ -21,6 +22,7 @@ export default defineConfig({
         assist: fileURLToPath(new URL("assist/index.html", import.meta.url)),
         workspace: fileURLToPath(new URL("assist/workspace/index.html", import.meta.url)),
         welcome: fileURLToPath(new URL("welcome/index.html", import.meta.url)),
+        workbench: fileURLToPath(new URL("workbench/index.html", import.meta.url)),
       },
     },
   },
