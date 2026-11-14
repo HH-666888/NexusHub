@@ -5,6 +5,7 @@ import TaskDetail from "./components/TaskDetail.vue";
 import CanvasPanel from "./components/CanvasPanel.vue";
 import CodePane from "./components/CodePane.vue";
 import StatusBar from "./components/StatusBar.vue";
+import GateModal from "./components/GateModal.vue";
 
 onMounted(async () => {
   // 树布局与 SSE 是独立的图形/数据引擎，生命周期绑定在页面挂载之后。
@@ -19,4 +20,5 @@ onMounted(async () => {
   <CanvasPanel />
   <CodePane />
   <StatusBar />
+  <GateModal />
 </template>
