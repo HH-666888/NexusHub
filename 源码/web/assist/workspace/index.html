@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>辅助工作台 · NexusHub</title>
+  <link rel="stylesheet" href="../../common/app.css?v=20261114h">
+  <link rel="stylesheet" href="../style.css?v=20261114h">
+  <link rel="stylesheet" href="../../vendor/codemirror/lib/codemirror.css?v=20261114h">
+</head>
+<body>
+  <header class="appbar" id="appbar" data-tab="assist" data-crumb="辅助开发" data-parent="辅助开发" data-parent-href="/assist/">
+    <template data-slot="center">
+      <span class="pill pill-plain" id="memory-pill">记忆 —</span>
+      <span class="pill pill-plain" id="stage-pill">第 1 道 · 需求分析</span>
+    </template>
+    <template data-slot="right">
+      <select id="mode" class="input" style="height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 12.5px;" title="AI 协作方式">
+        <option value="chat">纯对话（不改代码）</option>
+        <option value="suggest" selected>协作（只给建议）</option>
+        <option value="auto">自动（直接改码）</option>
+      </select>
+    </template>
+  </header>
+
+  <div class="assist-work">
+    <aside class="stage-rail" id="rail">
+      <div class="rail-title">六道工序</div>
+    </aside>
+
+    <section class="stage-main">
+      <div class="stage-head">
+        <h2 id="stage-title">需求分析</h2>
+        <span class="grow"></span>
+        <button class="btn btn-sm btn-ghost" type="button" id="ask-stage">AI 看这一步</button>
+        <button class="btn btn-sm btn-ghost" type="button" id="advance">完成本阶段 → 下一道</button>
+      </div>
+      <div class="stage-body" id="stage-body"></div>
+    </section>
+
+    <aside class="assist-side">
+      <section class="side-block">
+        <div class="side-head">检查结果 <span class="count" id="finding-count">0</span></div>
+        <div class="findings-list" id="findings">
+          <div class="findings-empty">还没有检查结果。<br />写好文件后点“检查”。</div>
+        </div>
+      </section>
+
+      <section class="side-block coach">
+        <div class="side-head">AI 助手 <span class="count" id="cite-count"></span></div>
+        <div class="coach-log" id="coach-log">
+          <div class="coach-msg ai">我会按当前阶段帮你：需求阶段问清楚，写代码时只看不改。</div>
+        </div>
+        <div class="coach-form">
+          <textarea id="coach-input" placeholder="问点什么，或直接说“下一步做什么”"></textarea>
+          <button class="btn btn-primary btn-sm" type="button" id="coach-send">发送</button>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <script src="../../vendor/codemirror/lib/codemirror.js?v=20261114h"></script>
+  <script src="../../vendor/codemirror/mode/python/python.js?v=20261114h"></script>
+  <script src="../../vendor/codemirror/mode/clike/clike.js?v=20261114h"></script>
+  <script src="../../vendor/codemirror/mode/javascript/javascript.js?v=20261114h"></script>
+  <script src="../../vendor/codemirror/mode/xml/xml.js?v=20261114h"></script>
+  <script src="../../vendor/codemirror/mode/css/css.js?v=20261114h"></script>
+  <script src="../../vendor/codemirror/mode/sql/sql.js?v=20261114h"></script>
+  <script src="../../common/api.js?v=20261114h"></script>
+  <script src="../../common/appbar.js?v=20261114h"></script>
+  <script src="./main.js?v=20261114h"></script>
+</body>
+</html>
