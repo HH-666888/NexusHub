@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """生成《NexusHub 前端 Vue 全量替换分阶段实施计划》。"""
 
 from docx import Document
@@ -274,7 +274,7 @@ def add_header(section):
     p.paragraph_format.space_after = Pt(2)
     run = p.add_run("NexusHub · 前端 Vue 全量替换实施计划")
     set_run_font(run, 8.5, False, MUTED)
-    run2 = p.add_run("    v1.0 / 规划稿")
+    run2 = p.add_run("    v1.2 / 交付记录")
     set_run_font(run2, 8.5, False, "9CA3AF")
     p_pr = p._p.get_or_add_pPr()
     p_bdr = OxmlElement("w:pBdr")
@@ -353,7 +353,7 @@ def build():
 
     add_callout(
         doc,
-        "本文件是实施规划 + 阶段执行记录。截至 2026-11-14，阶段 0、1 已完成，当前完成度 15%；阶段 2 未开始。所有阶段以“视觉与交互一致、后端业务 API 不动、绝不使用假数据”为前提。",
+        "本文件是实施规划 + 交付记录。截至 2026-11-14，9 个页面全部迁移，27 张截图与基线字节级一致，阶段 0–8 完成，当前完成度 100%。所有阶段以“视觉与交互一致、后端业务 API 不动、绝不使用假数据”为前提。",
         fill=AMBER_BG,
         accent=AMBER,
         bold_prefix="文档状态  ",
@@ -364,10 +364,10 @@ def build():
     p.paragraph_format.space_after = Pt(6)
 
     meta_rows = [
-        ("文档版本", "v1.0（规划稿）"),
+        ("文档版本", "v1.2（交付记录）"),
         ("编制日期", "2026 年 11 月 14 日"),
         ("迁移对象", "源码/web 下 9 个用户页面与公共层"),
-        ("目标技术栈", "Vite + Vue 3 + JavaScript，第二阶段增量 TypeScript"),
+        ("目标技术栈", "Vite + Vue 3 + 增量 TypeScript（旧控制器 allowJs）"),
         ("硬约束", "不改业务 API；不改页面视觉与交互；不出现假数据；不重写 Git 历史"),
         ("完成度口径", "累计可交付替换进度；阶段质量门未通过，不得进入下一阶段"),
     ]
@@ -401,7 +401,7 @@ def build():
     p = doc.add_paragraph()
     p.paragraph_format.space_before = Pt(28)
     p.paragraph_format.space_after = Pt(0)
-    run = p.add_run("一句话结论：9 个页面、9 个阶段。阶段 5 完成全部页面的 Vue 化，阶段 7 完成 TypeScript，阶段 8 才允许删除备份。")
+    run = p.add_run("一句话结论：9 个页面、9 个阶段。阶段 5 完成全部页面的 Vue 化，阶段 7 完成增量 TypeScript，阶段 8 清理并保留回滚标签。")
     set_run_font(run, 10.2, True, TEAL)
 
     doc.add_page_break()
@@ -844,36 +844,50 @@ def build():
 
     doc.add_page_break()
     add_heading(doc, "十二、执行记录（截至 2026-11-14）", 1)
-    add_para(doc, "以下记录是实际执行结果，不是计划值。阶段 2 尚未开始，完成度停在 15%。")
+    add_para(doc, "以下记录是实际执行结果，不是计划值。9 个页面全部迁移，27 张截图字节级一致。")
     add_table(
         doc,
         ["阶段", "状态", "完成度", "实际产物 / 证据", "提交"],
         [
-            ("0 备份与基线", "完成", "5%", "tag pre-vue-migration；27 张真实基线截图；本机 web-baseline-20261114", "5897c6d"),
-            ("1 工程底座 + 设置页", "完成", "15%", "web-vue（Vue 3 + Vite）；/settings 优先托管；三分辨率截图字节级一致；9 页控制台零异常", "40181f8 / 0d9fba0"),
-            ("2 认证与项目页", "未开始", "15%", "—", "—"),
+            ("0 备份与基线", "完成", "5%", "tag pre-vue-migration；27 张真实基线截图；本机备份副本", "5897c6d"),
+            ("1 设置页试点", "完成", "15%", "web-vue（Vue 3 + Vite）；/settings；三分辨率字节一致；9 页零异常", "40181f8 / 0d9fba0"),
+            ("2 认证与项目页", "完成", "35%", "登录/注册/项目页；三分辨率字节一致；登录、筛选、创建/删除可用", "a12f6bf"),
+            ("3 列表与欢迎页", "完成", "55%", "记忆/辅助列表/欢迎页；记忆、辅助列表字节一致；欢迎页保留滚动叙事", "8cc3a06"),
+            ("4 辅助工作台", "完成", "70%", "WorkspaceApp + 原控制器；CodeMirror 高亮；三分辨率字节一致", "633bf7c"),
+            ("5 工作台", "完成", "85%", "WorkbenchApp + 原树/SSE 控制器；三分辨率字节一致", "340b020"),
+            ("6 全量验收", "完成", "93%", "9 页 × 3 分辨率共 27 张，字节级一致；控制台零异常、无 404/500", "fd218de"),
+            ("7 增量 TypeScript", "完成", "98%", "入口与三个复杂页壳为 TS；strict；vue-tsc 零错误；旧控制器 allowJs", "fd218de"),
+            ("8 清理与交付", "完成", "100%", "最终构建；README；删除本机对比副本；pre-vue-migration 标签保留", "本次清理提交"),
         ],
-        [3.4, 2.0, 1.6, 8.0, 2.0],
-        font_size=8.4,
+        [3.0, 1.5, 1.4, 9.0, 2.1],
+        font_size=8.0,
         first_col_bold=True,
     )
     add_callout(
         doc,
-        "已知行为修正：原设置页保存按钮查找的是“保存更改”，而页面按钮文案是“保存 API Key”，按钮实际没有接线。迁移后保存可用；初始视觉仍与基线字节级一致，改动单独记录在了提交里。",
+        "已知行为修正：原设置页保存按钮查找的是“保存更改”，而页面按钮文案是“保存 API Key”，按钮实际没有接线。迁移后保存可用；初始视觉仍与基线字节级一致。",
         fill=AMBER_BG,
         accent=AMBER,
         bold_prefix="行为差异  ",
     )
-    add_para(doc, "各阶段实际结论", 10.5, True, "1F2937", 6, 2)
+    add_callout(
+        doc,
+        "类型化边界：入口脚本和欢迎/工作台/辅助工作台三个壳组件已用 TypeScript；六个业务组件与三个原控制器仍为 JavaScript，通过 allowJs 参与构建。没有把 JS 文件改后缀冒充全量类型化。",
+        fill=BLUE_BG,
+        accent=ACCENT,
+        bold_prefix="TypeScript  ",
+    )
+    add_para(doc, "最终验证", 10.5, True, "1F2937", 6, 2)
     add_bullets(doc, [
-        "阶段 0：完成 Git 标签与 web 副本，27 张基线截图覆盖 9 页 × 3 分辨率。",
-        "阶段 1：设置页改为 Vue 组件；CSS 与 DOM 层级保持原样；三分辨率截图差异为 0。",
-        "回归：9 个页面在 1440×900 下控制台零异常、网络无 404/500。",
-        "下一步：阶段 2 迁移登录、注册、项目页；未通过视觉门不进入阶段 3。",
+        "视觉：27 张截图与 pre-vue-migration 基线字节完全相同。",
+        "交互：登录/注册/项目/记忆/辅助列表/两个工作台的关键流程按页回归。",
+        "工程：pnpm build 通过；pnpm typecheck（strict）零错误。",
+        "运行：9 个页面 1440×900 控制台零异常、网络无 404/500。",
+        "清理：本机 web-baseline-20261114 已删除；Git 标签保留，可随时回滚。",
     ])
 
-    add_para(doc, "编制说明", 10.5, True, "1F2937", 12, 2)
-    add_para(doc, "本计划描述迁移顺序、完成度口径和验收门；阶段 0、1 已执行，其余未开始。执行中每个阶段结束后更新完成度与差异记录，不提前写“已完成”。", 9.8, False, MUTED, 0, 4)
+    add_para(doc, "编制说明", 10.5, True, "1F2937", 10, 2)
+    add_para(doc, "本计划描述迁移顺序、完成度口径和验收门；实际执行到阶段 8，当前完成度 100%。复杂页仍保留命令式控制器，是增量迁移的已知边界，不是未完成页面。", 9.8, False, MUTED, 0, 4)
 
     doc.save(OUT)
 
