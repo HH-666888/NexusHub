@@ -488,7 +488,50 @@
       return;
     }
 
+    if (modeSelect.value === "agent") {
+      await runAgent(message);
+      return;
+    }
+
     await streamCoach(message);
+  }
+
+  async function runAgent(message) {
+    const bubble = appendCoach("ai", "正在调用工具…");
+    const result = await window.api.assistAgent(projectId, message, state.stage);
+    bubble.textContent = "";
+    if (!result) {
+      bubble.textContent = "Agent 暂时没有响应，请稍后再试。";
+      return;
+    }
+    const tools = result.tools || [];
+    if (tools.length) {
+      const wrap = document.createElement("div");
+      wrap.className = "tool-traces";
+      tools.forEach(function (item) {
+        const row = document.createElement("div");
+        row.className = "tool-call";
+        const title = document.createElement("b");
+        title.textContent = "🔧 " + item.name;
+        const meta = document.createElement("small");
+        const args = JSON.stringify(item.arguments || {});
+        meta.textContent = args + " · " + item.ms + "ms";
+        const body = document.createElement("div");
+        body.className = "tool-result";
+        body.textContent = item.result || "";
+        row.appendChild(title);
+        row.appendChild(meta);
+        row.appendChild(body);
+        wrap.appendChild(row);
+      });
+      bubble.appendChild(wrap);
+    }
+    const answer = document.createElement("div");
+    answer.className = "agent-answer";
+    answer.textContent = result.reply || "";
+    bubble.appendChild(answer);
+    addCitations(bubble, result.citations);
+    coachLog.scrollTop = coachLog.scrollHeight;
   }
 
   function addSuggestApply(el, message) {

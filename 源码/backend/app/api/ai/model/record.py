@@ -41,6 +41,8 @@ class RecordedModelClient:
         max_tokens: int = 800,
         temperature: float = 0.2,
         json_mode: bool = False,
+        tools: list[dict] | None = None,
+        tool_choice: str | None = None,
     ) -> ModelReply:
         key = _digest(model, messages, max_tokens, temperature)
         path = self._dir / f"{key}.json"
@@ -54,7 +56,13 @@ class RecordedModelClient:
         if self._inner is None:
             raise ModelError("录制/直连模式需要模型客户端")
         reply = self._inner.complete(
-            messages, model, max_tokens=max_tokens, temperature=temperature, json_mode=json_mode
+            messages,
+            model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            json_mode=json_mode,
+            tools=tools,
+            tool_choice=tool_choice,
         )
         if self._mode == "record":
             path.write_text(

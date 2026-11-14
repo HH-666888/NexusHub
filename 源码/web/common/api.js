@@ -259,6 +259,14 @@
       return result;
     },
 
+    async assistAgent(id, message, stage) {
+      const result = await request("/assist/projects/" + encodeURIComponent(id) + "/agent", {
+        method: "POST",
+        body: JSON.stringify({ message, stage }),
+      });
+      return result.ok ? result.data : null;
+    },
+
     async skills() {
       const result = await request("/skills");
       return result.ok ? result.data.skills : null;

@@ -18,6 +18,7 @@ from app.deps import get_current_user, get_db
 from app.domain.user import User
 from app.shared.time import now_ms
 from app.api.assist import analyzer, coach, memory_service
+from app.api.agent.loop import run_agent
 
 router = APIRouter()
 
@@ -546,4 +547,24 @@ def stage_ai_stream(
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+@router.post("/projects/{project_id}/agent")
+def project_agent(
+    project_id: str,
+    payload: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    project = _owned(db, project_id, user)
+    stage = str(payload.get("stage") or project.stage)
+    if stage not in STAGES:
+        raise HTTPException(status_code=400, detail="unknown stage")
+    return run_agent(
+        db,
+        user=user,
+        project=project,
+        message=str(payload.get("message") or "").strip(),
+        stage=stage,
     )

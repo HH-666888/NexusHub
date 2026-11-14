@@ -361,3 +361,23 @@
   animation: coach-cursor 0.9s steps(2) infinite;
 }
 @keyframes coach-cursor { 0%, 45% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+
+.tool-traces { display: grid; gap: 6px; margin-bottom: 8px; }
+.tool-call {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: var(--card-2, rgba(15, 23, 42, .02));
+}
+.tool-call b { display: block; font-size: 12px; margin-bottom: 2px; }
+.tool-call small { display: block; color: var(--text-3); font-size: 10.5px; margin-bottom: 4px; }
+.tool-result {
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  max-height: 90px;
+  overflow: auto;
+}
+.agent-answer { white-space: pre-wrap; }

@@ -29,6 +29,7 @@ class ModelReply:
     completion_tokens: int
     latency_ms: int
     finish_reason: str = ""
+    tool_calls: list[dict] | None = None
 
 
 class ModelClient:
@@ -53,6 +54,8 @@ class ModelClient:
         max_tokens: int = 800,
         temperature: float = 0.2,
         json_mode: bool = False,
+        tools: list[dict] | None = None,
+        tool_choice: str | None = None,
     ) -> ModelReply:
         body: dict = {
             "model": model,
@@ -62,6 +65,9 @@ class ModelClient:
         }
         if json_mode:
             body["response_format"] = {"type": "json_object"}
+        if tools:
+            body["tools"] = tools
+            body["tool_choice"] = tool_choice or "auto"
 
         last_error: Exception | None = None
         for attempt in range(3):
@@ -78,8 +84,10 @@ class ModelClient:
                     raise ModelError(f"HTTP {response.status_code}: {response.text[:200]}")
                 data = response.json()
                 usage = data.get("usage") or {}
+                message = data["choices"][0].get("message") or {}
                 return ModelReply(
-                    content=data["choices"][0]["message"]["content"] or "",
+                    content=message.get("content") or "",
+                    tool_calls=message.get("tool_calls") or None,
                     model=data.get("model", model),
                     prompt_tokens=int(usage.get("prompt_tokens") or 0),
                     completion_tokens=int(usage.get("completion_tokens") or 0),
