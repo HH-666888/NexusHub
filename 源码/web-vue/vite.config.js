@@ -19,6 +19,7 @@ export default defineConfig({
         projects: fileURLToPath(new URL("projects/index.html", import.meta.url)),
         memory: fileURLToPath(new URL("memory/index.html", import.meta.url)),
         assist: fileURLToPath(new URL("assist/index.html", import.meta.url)),
+        workspace: fileURLToPath(new URL("assist/workspace/index.html", import.meta.url)),
         welcome: fileURLToPath(new URL("welcome/index.html", import.meta.url)),
       },
     },

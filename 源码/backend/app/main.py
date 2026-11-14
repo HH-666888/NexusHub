@@ -76,7 +76,15 @@ def create_app() -> FastAPI:
         if page_dist.is_dir():
             app.mount(f"/{page}", StaticFiles(directory=str(page_dist), html=True), name=f"{page}-vue")
 
-    # 辅助项目列表先只接管 /assist/；/assist/workspace/ 仍由原页面提供。
+    # 辅助项目列表接管 /assist/，工作台接管 /assist/workspace/。
+    workspace_dist = vue_dist / "assist" / "workspace"
+    if workspace_dist.is_dir():
+        app.mount(
+            "/assist/workspace",
+            StaticFiles(directory=str(workspace_dist), html=True),
+            name="assist-workspace-vue",
+        )
+
     assist_page = vue_dist / "assist" / "index.html"
     if assist_page.is_file():
         @app.get("/assist/", include_in_schema=False)
