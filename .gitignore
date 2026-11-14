@@ -113,4 +113,12 @@ backend/.env
 .creative-design/
 design-preview/
 
-# v2 工作台是源码，不是运行时产物
+# v2 工作台 / 辅助工作台：源码目录同名，不能被运行时目录规则误伤
+!源码/web-vue/src/workbench/
+!源码/web-vue/src/workbench/**
+!源码/web-vue/src/workspace/
+!源码/web-vue/src/workspace/**
+!源码/web/vue-dist/workbench/
+!源码/web/vue-dist/workbench/**
+!源码/web/vue-dist/assist/workspace/
+!源码/web/vue-dist/assist/workspace/**

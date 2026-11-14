@@ -1,0 +1,43 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>辅助工作台 · NexusHub</title>
+  <link rel="stylesheet" href="/common/app.css?v=20261114r">
+  <link rel="stylesheet" href="/common/assist.css?v=20261114r">
+  <link rel="stylesheet" href="/vendor/codemirror/lib/codemirror.css?v=20261114r">
+  <script type="module" crossorigin src="/vue-assets/workspace-B6e3ZJWe.js"></script>
+  <link rel="modulepreload" crossorigin href="/vue-assets/runtime-dom.esm-bundler-1qGPaAoH.js">
+</head>
+<body>
+<header class="appbar" id="appbar" data-tab="assist" data-crumb="辅助开发" data-parent="辅助开发" data-parent-href="/assist/">
+    <template data-slot="center">
+      <span class="pill pill-plain" id="skill-pill">Skill —</span>
+      <span class="pill pill-plain" id="memory-pill">记忆 —</span>
+      <span class="pill pill-plain" id="stage-pill">第 1 道 · 需求分析</span>
+    </template>
+    <template data-slot="right">
+      <select id="mode" class="input" style="height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 12.5px;" title="AI 协作方式">
+        <option value="chat">纯对话（不改代码）</option>
+        <option value="suggest" selected>协作（只给建议）</option>
+        <option value="auto">自动（直接改码）</option>
+        <option value="agent">Agent（会查文件）</option>
+      </select>
+    </template>
+  </header>
+
+  <div id="workspace-app" class="assist-work"></div>
+
+  <script src="/vendor/codemirror/lib/codemirror.js?v=20261114r"></script>
+  <script src="/vendor/codemirror/mode/python/python.js?v=20261114r"></script>
+  <script src="/vendor/codemirror/mode/clike/clike.js?v=20261114r"></script>
+  <script src="/vendor/codemirror/mode/javascript/javascript.js?v=20261114r"></script>
+  <script src="/vendor/codemirror/mode/xml/xml.js?v=20261114r"></script>
+  <script src="/vendor/codemirror/mode/css/css.js?v=20261114r"></script>
+  <script src="/vendor/codemirror/mode/sql/sql.js?v=20261114r"></script>
+  <script src="/common/api.js?v=20261114r"></script>
+  <script src="/common/appbar.js?v=20261114r"></script>
+</body>
+</html>

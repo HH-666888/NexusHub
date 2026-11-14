@@ -1,0 +1,47 @@
+﻿<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NexusHub · 树型工作流 + 实时代码流</title>
+    <link rel="stylesheet" href="/common/app.css?v=20261114r" />
+    <script type="module" crossorigin src="/vue-assets/workbench-BExsq_YZ.js"></script>
+    <link rel="modulepreload" crossorigin href="/vue-assets/runtime-dom.esm-bundler-1qGPaAoH.js">
+    <link rel="modulepreload" crossorigin href="/vue-assets/preload-helper-7y9sWmk5.js">
+    <link rel="stylesheet" crossorigin href="/vue-assets/workbench-syPIjWaR.css">
+  </head>
+  <body>
+<header class="appbar" id="appbar" data-tab="workflow" data-crumb="运行详情" data-parent="我的项目">
+    <template data-slot="center">
+      <span class="pill pill-plain" id="run-stage-pill">等待开始 · 0 / 6 道</span>
+    </template>
+    <template data-slot="right">
+      <button class="btn btn-sm btn-ghost" type="button" id="toggle-tasks">
+        <svg viewBox="0 0 24 24" aria-hidden style="width: 15px; height: 15px;"><path d="M4 6h6M4 12h6M4 18h6M14 6h6M14 12h6" /></svg>
+        清单
+      </button>
+      <button class="btn btn-sm btn-ghost" type="button" id="toggle-code">
+        <svg viewBox="0 0 24 24" aria-hidden style="width: 15px; height: 15px;"><path d="M4 6h16M4 12h10M4 18h13" /></svg>
+        代码
+      </button>
+      <button class="icon-btn" type="button" aria-label="暂停">
+        <svg viewBox="0 0 24 24" aria-hidden><path d="M9 5v14M15 5v14" stroke-width="2" /></svg>
+      </button>
+    </template>
+  </header>
+
+    <div id="work" class="work"></div>
+
+
+    <script>
+  window.onerror = function (msg, src, line) {
+    var el = document.getElementById("event-line");
+    if (el) el.textContent = "JS错误：" + msg + " @" + line;
+    document.title = "ERR " + msg;
+  };
+</script>
+    <script src="/common/api.js?v=20261114r"></script>
+    <script src="/common/appbar.js?v=20261114r"></script>
+  </body>
+</html>
