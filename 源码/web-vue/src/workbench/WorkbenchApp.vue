@@ -6,15 +6,23 @@ import CanvasPanel from "./components/CanvasPanel.vue";
 import CodePane from "./components/CodePane.vue";
 import StatusBar from "./components/StatusBar.vue";
 import GateModal from "./components/GateModal.vue";
-import { workbenchStore } from "./useWorkbenchStore";
 import { useWorkbenchRun } from "./useWorkbenchRun";
+import { initWorkbenchModel } from "./workbenchModel";
 
-window.__wbStore = workbenchStore;
+initWorkbenchModel();
 const run = useWorkbenchRun();
 
+function bindChrome() {
+  document.getElementById("toggle-tasks")?.addEventListener("click", () => {
+    document.getElementById("work")?.classList.toggle("no-tasks");
+  });
+  document.getElementById("toggle-code")?.addEventListener("click", () => {
+    document.getElementById("work")?.classList.toggle("no-code");
+  });
+}
+
 onMounted(async () => {
-  // 树模型先就绪，SSE 数据层再把 run/事件写进 store 与模型。
-  await import("./engine/tree.js");
+  bindChrome();
   await run.boot();
 });
 </script>

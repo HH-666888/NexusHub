@@ -170,11 +170,3 @@ export const workbenchStore: WorkbenchStoreApi = reactive({
     else this.openStages = this.stages.map((stage) => stage.id);
   },
 });
-
-declare global {
-  interface Window {
-    __wbStore?: WorkbenchStoreApi;
-  }
-}
-
-export {};

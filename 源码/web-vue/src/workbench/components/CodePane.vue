@@ -1,7 +1,8 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import { workbenchStore } from "../useWorkbenchStore";
 import { highlight } from "../highlight";
+import { showFile } from "../workbenchModel";
 
 interface VerdictCheck {
   name: string;
@@ -46,9 +47,13 @@ function tabMark(path: string) {
   return file?.state === "done" ? "✓" : "待生成";
 }
 
+function hideCode() {
+  document.getElementById("work")?.classList.add("no-code");
+}
+
 function openFile(path: string) {
   activeTab.value = "代码";
-  window.__wb?.showFile(path);
+  showFile(path);
 }
 
 async function selectTab(tab: "代码" | "预览" | "验收") {
@@ -110,7 +115,7 @@ watch(
         <button type="button" :class="{ 'is-on': activeTab === '验收' }" @click="selectTab('验收')">验收</button>
       </div>
       <span class="spacer"></span>
-      <button class="icon-btn" type="button" id="hide-code" aria-label="隐藏代码面板">
+      <button class="icon-btn" type="button" id="hide-code" aria-label="隐藏代码面板" @click="hideCode">
         <svg viewBox="0 0 24 24" aria-hidden><path d="M9 6l6 6-6 6" /></svg>
       </button>
     </div>

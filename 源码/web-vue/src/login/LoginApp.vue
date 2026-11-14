@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { computed, nextTick, reactive, ref } from "vue";
-import "../theme.js";
+import "../theme";
 
 type TipKey = "account" | "password";
 type TipState = "" | "ok" | "error";

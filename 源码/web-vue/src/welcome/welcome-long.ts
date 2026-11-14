@@ -7,8 +7,12 @@
 (function () {
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  const $ = (sel, root) => (root || document).querySelector(sel);
-  const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+  function $<T extends Element = HTMLElement>(sel: string, root: ParentNode = document): T | null {
+    return root.querySelector(sel) as T | null;
+  }
+  function $$<T extends Element = HTMLElement>(sel: string, root: ParentNode = document): T[] {
+    return Array.from(root.querySelectorAll(sel)) as T[];
+  }
 
   /* ───────── 顶部阅读进度 ───────── */
   const bar = $("#scroll-progress");
@@ -16,9 +20,10 @@
   const nav = $("#flow-nav");
   const wrap = $("#flow-wrap");
   const rulerFill = $("#ruler-fill");
-  const stages = $$(".stage");
-  const navLinks = $$("[data-nav]");
-  const dots = $$("[data-dot]");
+  type StageEl = HTMLElement & { _timer?: number | null; _timers?: number[] };
+  const stages = $$<StageEl>(".stage");
+  const navLinks = $$<HTMLElement>("[data-nav]");
+  const dots = $$<HTMLElement>("[data-dot]");
   const navTrack = $("#nav-track");
   const compact = $("#nav-compact");
 
@@ -104,7 +109,7 @@
      演出（is-in）：元素中心越过视口中线（且向下）时播一次，可重复
      复位：元素完全离开视口后清空，下一次向下经过再播 */
 
-  function markActive(index) {
+  function markActive(index: number) {
     if (index === activeIndex) return;
     activeIndex = index;
     navLinks.forEach((a, i) => a.classList.toggle("is-on", i === index));
@@ -117,13 +122,13 @@
     }
   }
 
-  const state = new Map();
+  const state = new Map<StageEl, { played: boolean; visible: boolean }>();
   stages.forEach((s) => state.set(s, { played: false, visible: false }));
   let lastY = window.scrollY || 0;
   let lastBarY = window.scrollY || 0;
   let upAccum = 0;   // 累计向上滚了多少，用来判断回看了一眼
 
-  function playStage(s) {
+  function playStage(s: StageEl) {
     const st = state.get(s);
     if (!st || st.played) return;
     st.played = true;
@@ -134,7 +139,7 @@
     runArt(s);
   }
 
-  function resetStage(s) {
+  function resetStage(s: StageEl) {
     const st = state.get(s);
     if (!st) return;
     st.played = false;
@@ -151,10 +156,11 @@
     lastY = y;
     const vh = window.innerHeight;
     const mid = vh / 2;
-    let nearest = null;
+    let activeIndexFound = -1;
 
     stages.forEach((s, i) => {
       const st = state.get(s);
+      if (!st) return;
       const r = s.getBoundingClientRect();
 
       // 只在"整段掉到视口下方"时复位：下一轮从底部上来会重新演一遍。
@@ -183,10 +189,10 @@
 
       // 当前工序 = 屏幕 45% 线落在哪一段里（比"离中线最近"稳，长短屏都不会跳）
       const activeLine = vh * 0.45;
-      if (r.top <= activeLine) nearest = { index: i, dist: 0 };
+      if (r.top <= activeLine) activeIndexFound = i;
     });
 
-    if (nearest) markActive(nearest.index);
+    if (activeIndexFound >= 0) markActive(activeIndexFound);
   }
 
   const bridge = $("#bridge");
@@ -207,16 +213,16 @@
   if (stats) io.observe(stats);
 
   /* ───────── 每段的专属演出 ───────── */
-  function runArt(stage) {
+  function runArt(stage: StageEl) {
     if (stage.id === "s-build") typeBuild(stage);
     if (stage.id === "s-test") runChecks(stage);
     if (stage.id === "s-deliver") countAll(stage);
   }
 
   /** 复位：把 JS 驱动的那几段清干净，下一次才能重新演 */
-  function cleanupArt(stage) {
+  function cleanupArt(stage: StageEl) {
     if (stage.id === "s-build") {
-      $$(".build-col", stage).forEach((col) => {
+      $$<StageEl>(".build-col", stage).forEach((col) => {
         if (col._timer) {
           clearInterval(col._timer);
           col._timer = null;
@@ -226,7 +232,7 @@
       });
     }
     if (stage.id === "s-test") {
-      const list = $("#checks", stage);
+      const list = $<StageEl>("#checks", stage);
       if (list) {
         if (list._timers) {
           list._timers.forEach(clearTimeout);
@@ -274,12 +280,12 @@
     ],
   };
 
-  function typeBuild(stage) {
-    const cols = Array.from(stage.querySelectorAll(".build-col"));
+  function typeBuild(stage: StageEl) {
+    const cols = Array.from(stage.querySelectorAll<StageEl>(".build-col"));
     if (reduce) {
       cols.forEach((col) => {
         const pre = col.querySelector("pre");
-        const lines = BUILD[col.dataset.file] || [];
+        const lines = BUILD[(col.dataset.file || "") as keyof typeof BUILD] || [];
         if (pre) pre.textContent = lines.join("\n");
       });
       return;
@@ -298,13 +304,13 @@
       while (index < cols.length) {
         const col = cols[index++];
         const pre = col.querySelector("pre");
-        const lines = BUILD[col.dataset.file] || [];
+        const lines = BUILD[(col.dataset.file || "") as keyof typeof BUILD] || [];
         if (!pre || !lines.length) continue;
         const speed = Number(col.dataset.speed || 60);
         let i = 0;
-        col._timer = setInterval(() => {
+        const timer = setInterval(() => {
           if (i >= lines.length) {
-            clearInterval(col._timer);
+            clearInterval(timer);
             col._timer = null;
             next();
             return;
@@ -312,27 +318,28 @@
           pre.textContent += (i ? "\n" : "") + lines[i];
           i += 1;
         }, speed);
+        col._timer = timer;
         return;
       }
     }
     next();
   }
 
-  function runChecks(stage) {
-    const list = $("#checks", stage);
+  function runChecks(stage: StageEl) {
+    const list = $<StageEl>("#checks", stage);
     if (!list) return;
     const items = Array.from(list.children);
     if (reduce) {
       items.forEach((li) => li.classList.add("ok"));
       return;
     }
-    if (!list._timers) list._timers = [];
-    list._timers.push(
+    const timers = list._timers || (list._timers = []);
+    timers.push(
       ...items.map((li, i) =>
         setTimeout(() => {
           if (li.hasAttribute("data-fix")) {
             li.classList.add("bad");
-            list._timers.push(
+            timers.push(
               setTimeout(() => {
                 li.classList.remove("bad");
                 li.classList.add("ok");
@@ -348,7 +355,7 @@
 
   /* 计数：¥0.025 / 138 秒 / 23 KB —— 只滚一次，复位不重来 */
   const counted = new WeakSet();
-  function countAll(root) {
+  function countAll(root: Element) {
     if (counted.has(root)) return;
     counted.add(root);
     $$("[data-count]", root).forEach((el) => {
@@ -356,7 +363,7 @@
       const decimals = Number(el.dataset.decimals || 0);
       const prefix = el.dataset.prefix || "";
       const suffix = el.dataset.suffix || "";
-      const render = (v) =>
+      const render = (v: number) =>
         (el.textContent = prefix + v.toFixed(decimals) + suffix);
       if (reduce) {
         render(target);
@@ -364,7 +371,7 @@
       }
       const start = performance.now();
       const dur = 800;
-      function step(now) {
+      function step(now: number) {
         const t = Math.min(1, (now - start) / dur);
         const eased = 1 - Math.pow(1 - t, 3);
         render(target * eased);

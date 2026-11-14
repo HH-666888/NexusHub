@@ -1,5 +1,6 @@
 import { onBeforeUnmount } from "vue";
 import { workbenchStore } from "./useWorkbenchStore";
+import * as model from "./workbenchModel";
 import type { WorkbenchRun } from "../types/workbench-engine";
 
 const STAGE_OF: Record<string, number> = {
@@ -37,7 +38,6 @@ interface RunState {
   cost: number;
   lastSeq: number;
   timer: number | null;
-  verdict: Record<string, any> | null;
 }
 
 export function useWorkbenchRun() {
@@ -45,17 +45,13 @@ export function useWorkbenchRun() {
   const id = params.get("run") || "";
   const prompt = params.get("prompt") || "";
   const store = workbenchStore;
-  const state: RunState = { events: [], run: null, cost: 0, lastSeq: 0, timer: null, verdict: null };
+  const state: RunState = { events: [], run: null, cost: 0, lastSeq: 0, timer: null };
   const queue: { items: QueuedEvent[]; timer: number | null } = { items: [], timer: null };
   let source: EventSource | null = null;
   let finished = false;
 
-  function wb() {
-    return window.__wb;
-  }
-
   function speed() {
-    return wb()?.getSpeed() || 1;
+    return model.getSpeed() || 1;
   }
 
   function timeOf(ms: number) {
@@ -91,36 +87,24 @@ export function useWorkbenchRun() {
     if (queue.timer === null) queue.timer = window.setTimeout(drain, 30);
   }
 
-  function stageNote(kind: string, payload: Record<string, any>) {
-    if (kind === "spec") {
-      const n = payload.spec?.acceptance?.length || 0;
-      return n ? n + " 条验收标准" : "规格已定";
-    }
-    if (kind === "arch") {
-      const n = payload.arch?.modules?.length || 0;
-      return n ? n + " 个模块" : "架构已定";
-    }
-    return "";
-  }
-
   function apply(kind: string, payload: Record<string, any>, at: number, record = true) {
     if (record) state.events.push({ kind, payload, at });
 
     if (kind === "phase") {
       const index = PHASE_OF[payload.phase] ?? 2;
       if (payload.phase === "done") {
-        wb()?.setStage(5);
-        wb()?.setProgress(100);
+        model.setStage(5);
+        model.setProgress(100);
       } else {
-        wb()?.setStage(index);
+        model.setStage(index);
       }
-      wb()?.setEvent(timeOf(at) + " · " + (payload.label || payload.phase));
+      model.setEvent(timeOf(at) + " · " + (payload.label || payload.phase));
       return;
     }
 
     if (kind === "reasoning" || kind === "text") {
       const text = String(payload.delta || "").slice(0, 40);
-      if (text) wb()?.setEvent(timeOf(at) + " · " + text);
+      if (text) model.setEvent(timeOf(at) + " · " + text);
       return;
     }
 
@@ -135,31 +119,31 @@ export function useWorkbenchRun() {
     }
 
     if (kind === "spec" || kind === "arch") {
-      wb()?.setEvent(timeOf(at) + " · " + (kind === "spec" ? "需求分析完成" : "架构设计完成"));
+      model.setEvent(timeOf(at) + " · " + (kind === "spec" ? "需求分析完成" : "架构设计完成"));
       return;
     }
 
     if (kind === "retrieval") {
       const hits = payload.hits || [];
       store.setEvidence(hits);
-      wb()?.setEvent(timeOf(at) + " · 检索到 " + hits.length + " 条依据");
+      model.setEvent(timeOf(at) + " · 检索到 " + hits.length + " 条依据");
       return;
     }
 
     if (kind === "task") {
-      if (payload.task) wb()?.addTask(payload.task);
+      if (payload.task) model.addTask(payload.task);
       return;
     }
 
     if (kind === "modules") {
       const items = payload.batch?.modules || [];
-      if (items.length) wb()?.setBranches(items);
-      wb()?.setEvent(timeOf(at) + " · 拆出 " + items.length + " 个开发任务，逐个写");
+      if (items.length) model.setBranches(items);
+      model.setEvent(timeOf(at) + " · 拆出 " + items.length + " 个开发任务，逐个写");
       return;
     }
 
     if (kind === "file") {
-      wb()?.feedFile(
+      model.feedFile(
         payload.path,
         payload.lang,
         payload.delta || "",
@@ -167,60 +151,59 @@ export function useWorkbenchRun() {
         Boolean(payload.replace),
       );
       if (payload.done) {
-        wb()?.markBranchDone(payload.path);
-        wb()?.setEvent(timeOf(at) + " · " + payload.path + " 写完");
+        model.markBranchDone(payload.path);
+        model.setEvent(timeOf(at) + " · " + payload.path + " 写完");
       }
       return;
     }
 
     if (kind === "cost") {
       state.cost = payload.totalCny || state.cost;
-      wb()?.setCost(state.cost);
+      model.setCost(state.cost);
       return;
     }
 
     if (kind === "usage") {
-      wb()?.addCall();
+      model.addCall();
       return;
     }
 
     if (kind === "check") {
       const summary = payload.summary || {};
-      wb()?.setEvent(timeOf(at) + " · 自测 " + (summary.passed || 0) + " / " + (summary.total || 0) + " 通过");
+      model.setEvent(timeOf(at) + " · 自测 " + (summary.passed || 0) + " / " + (summary.total || 0) + " 通过");
       return;
     }
 
     if (kind === "verdict") {
-      state.verdict = payload;
-      wb()?.setEvent(timeOf(at) + " · 验收 " + (payload.passed || 0) + " / " + (payload.total || 0));
+      model.setEvent(timeOf(at) + " · 验收 " + (payload.passed || 0) + " / " + (payload.total || 0));
       return;
     }
 
     if (kind === "artifact") {
-      wb()?.setEvent(timeOf(at) + " · 产物已生成：" + (payload.artifact?.name || ""));
+      model.setEvent(timeOf(at) + " · 产物已生成：" + (payload.artifact?.name || ""));
       return;
     }
 
     if (kind === "error") {
-      wb()?.setStatus("failed");
-      wb()?.setEvent("出错：" + (payload.message || "未知错误"));
+      model.setStatus("failed");
+      model.setEvent("出错：" + (payload.message || "未知错误"));
     }
   }
 
   function applyRun(run: WorkbenchRun) {
     state.run = run;
     state.cost = Number(run.totalCostCny || 0);
-    wb()?.setCost(state.cost);
+    model.setCost(state.cost);
     const index = STAGE_OF[run.stage];
     if (typeof index === "number" && run.status !== "done") {
-      wb()?.setStage(index);
-      wb()?.setProgress(Math.min(96, 12 + index * 15));
+      model.setStage(index);
+      model.setProgress(Math.min(96, 12 + index * 15));
     }
     if (run.status === "done") {
-      wb()?.setStage(5);
-      wb()?.setProgress(100);
+      model.setStage(5);
+      model.setProgress(100);
     }
-    wb()?.setStatus(run.status);
+    model.setStatus(run.status);
     const crumb = document.querySelector(".crumb b");
     if (crumb && run.prompt) {
       crumb.textContent = run.prompt.length > 18 ? run.prompt.slice(0, 18) + "…" : run.prompt;
@@ -246,14 +229,14 @@ export function useWorkbenchRun() {
       enqueue(kind, payload, payload.at || Date.now());
       if (kind === "phase" && payload.phase === "done") {
         finished = true;
-        wb()?.setStatus("done");
+        model.setStatus("done");
         source?.close();
       }
     };
     source.onerror = () => {
       if (finished) return;
       if (state.run && ["done", "failed", "cancelled"].includes(state.run.status)) return;
-      wb()?.setEvent("连接中断，正在重连…");
+      model.setEvent("连接中断，正在重连…");
     };
   }
 
@@ -272,7 +255,7 @@ export function useWorkbenchRun() {
         pause.innerHTML = paused
           ? '<svg viewBox="0 0 24 24" aria-hidden><path d="M9 5v14M15 5v14" stroke-width="2" /></svg>'
           : '<svg viewBox="0 0 24 24" aria-hidden><path d="M8 5l11 7-11 7z" stroke-width="2" /></svg>';
-        wb()?.setStatus(paused ? "running" : "paused");
+        model.setStatus(paused ? "running" : "paused");
       });
     }
 
@@ -289,7 +272,7 @@ export function useWorkbenchRun() {
           method: "POST",
           credentials: "include",
         });
-        wb()?.setStatus("cancelled");
+        model.setStatus("cancelled");
         cancel.textContent = "已取消";
       });
       right.insertBefore(cancel, pause || right.firstChild);
@@ -304,7 +287,7 @@ export function useWorkbenchRun() {
         Array.from(bottom.children).forEach((item) => item.classList.toggle("is-on", item === btn));
         const which = btn.textContent?.trim();
         if (which === "终端") {
-          wb()?.setEvent("预览由交付阶段启动；当前没有运行中的进程");
+          model.setEvent("预览由交付阶段启动；当前没有运行中的进程");
           return;
         }
         if (which === "验收") {
@@ -312,16 +295,15 @@ export function useWorkbenchRun() {
             credentials: "include",
           });
           if (!result.ok) {
-            wb()?.setEvent("还没有验收结果");
+            model.setEvent("还没有验收结果");
             return;
           }
           const body = await result.json();
           const verdict = body.verdict || body;
-          state.verdict = verdict;
-          wb()?.setEvent("验收：" + (verdict.passed || 0) + " / " + (verdict.total || 0) + " 通过");
+          model.setEvent("验收：" + (verdict.passed || 0) + " / " + (verdict.total || 0) + " 通过");
           return;
         }
-        wb()?.setEvent("事件 " + state.events.length + " 条");
+        model.setEvent("事件 " + state.events.length + " 条");
       });
     });
   }
@@ -336,17 +318,17 @@ export function useWorkbenchRun() {
   function replayAll() {
     stopReplay();
     clearQueue();
-    wb()?.resetFiles();
-    wb()?.clearTasks();
-    wb()?.setStage(0);
-    wb()?.setProgress(0);
-    wb()?.setStatus("running");
+    model.resetFiles();
+    model.clearTasks();
+    model.setStage(0);
+    model.setProgress(0);
+    model.setStatus("running");
     let index = 0;
     const step = () => {
       if (index >= state.events.length) {
         stopReplay();
-        wb()?.setStatus("done");
-        wb()?.setProgress(100);
+        model.setStatus("done");
+        model.setProgress(100);
         return;
       }
       const item = state.events[index++];
@@ -364,7 +346,7 @@ export function useWorkbenchRun() {
     if (!path) return;
     const items = state.events.filter((item) => item.kind === "file" && item.payload?.path === path);
     if (!items.length) return;
-    wb()?.resetFile(path);
+    model.resetFile(path);
     let index = 0;
     const step = () => {
       if (index >= items.length) {
@@ -372,7 +354,7 @@ export function useWorkbenchRun() {
         return;
       }
       const item = items[index++];
-      wb()?.feedFile(
+      model.feedFile(
         item.payload.path,
         item.payload.lang,
         item.payload.delta || "",
@@ -389,8 +371,8 @@ export function useWorkbenchRun() {
   function backToLive() {
     stopReplay();
     clearQueue();
-    wb()?.resetFiles();
-    wb()?.clearTasks();
+    model.resetFiles();
+    model.clearTasks();
     state.events.forEach((item) => apply(item.kind, item.payload, item.at, false));
     if (state.run) applyRun(state.run);
   }
@@ -412,7 +394,7 @@ export function useWorkbenchRun() {
     if (!window.api) return;
     if (id === "new" && !prompt) {
       document.body.classList.add("is-blank");
-      wb()?.setEvent("还没有任务；在项目页输入一句话后，这里会出现派发记录");
+      model.setEvent("还没有任务；在项目页输入一句话后，这里会出现派发记录");
       return;
     }
     if (id === "new" && prompt) {
@@ -425,16 +407,15 @@ export function useWorkbenchRun() {
     if (!id) return;
 
     document.documentElement.dataset.live = "1";
-    wb()?.stopTimeline();
-    wb()?.resetFiles();
+    model.resetFiles();
     document.body.classList.add("is-live");
-    wb()?.setEvent("已连接，等待第一个事件…");
+    model.setEvent("已连接，等待第一个事件…");
 
     const run = (await window.api.run(id)) as WorkbenchRun | null;
     if (!run) {
       document.body.classList.add("is-blank");
-      wb()?.setStatus("failed");
-      wb()?.setEvent("这次运行不存在或已被删除，请回项目页重新开始");
+      model.setStatus("failed");
+      model.setEvent("这次运行不存在或已被删除，请回项目页重新开始");
       return;
     }
     applyRun(run);

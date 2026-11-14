@@ -1,7 +1,8 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed } from "vue";
 import { workbenchStore } from "../useWorkbenchStore";
 import type { WorkbenchStage, WorkbenchTask } from "../../types/workbench-engine";
+import { showTaskDetail } from "../workbenchModel";
 
 const store = workbenchStore;
 
@@ -91,6 +92,7 @@ function taskClass(task: WorkbenchTask) {
               :key="task.id"
               :class="taskClass(task)"
               :data-task="task.id"
+              @click="showTaskDetail(task.id)"
             >
               <span class="name">{{ taskLabel(task) }}</span>
               <span class="state">{{ taskState(task) }}</span>

@@ -31,7 +31,7 @@ async function submitComposer(event: SubmitEvent) {
 
 onMounted(async () => {
   // 长页滚动叙事是命令式脚本，必须在 Vue 渲染完 DOM 后再挂。
-  await import("./welcome-long.js");
+  await import("./welcome-long");
 });
 </script>
 

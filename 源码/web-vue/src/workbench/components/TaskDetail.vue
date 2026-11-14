@@ -1,5 +1,6 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { workbenchStore } from "../useWorkbenchStore";
+import { showFile } from "../workbenchModel";
 
 const store = workbenchStore;
 
@@ -8,7 +9,7 @@ function close() {
 }
 
 function openFile() {
-  if (store.taskDetail.openFile) window.__wb?.showFile(store.taskDetail.openFile);
+  if (store.taskDetail.openFile) showFile(store.taskDetail.openFile);
 }
 </script>
 

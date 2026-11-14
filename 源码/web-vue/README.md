@@ -1,4 +1,4 @@
-# NexusHub Vue 前端
+﻿# NexusHub Vue 前端
 
 已完成 9 个用户页面的 Vue 3 迁移：
 
@@ -10,7 +10,7 @@
 | 项目 | `/projects/` | Vue 状态组件（TS） |
 | 记忆 | `/memory/` | Vue 状态组件（TS） |
 | 辅助项目列表 | `/assist/` | Vue 状态组件（TS） |
-| 欢迎 | `/welcome/` | Vue 静态结构 + 原滚动叙事脚本 |
+| 欢迎 | `/welcome/` | Vue 结构 + welcome-long.ts 滚动叙事 |
 | 辅助工作台 | `/assist/workspace/` | Vue 状态组件 + useWorkspace 组合式函数（TS） |
 | 工作台 | `/workbench/` | Vue 组件 + useWorkbenchStore/Tree/Run（TS） |
 
@@ -18,7 +18,7 @@
 
 工作台拆成 TaskPanel、TaskDetail、CanvasPanel、CodePane、StatusBar、GateModal；任务、阶段、进度、文件、代码、树节点/SVG、门禁、参考依据、预览/验收都由 Vue 组件渲染，状态集中在 `useWorkbenchStore`。
 
-树布局是 `useWorkbenchTree` 的纯函数，SSE/run 数据层是 `useWorkbenchRun`；`engine/tree.js` 只保留任务/文件模型、代码流和 appbar 辅助，不再创建树节点、任务卡、代码 DOM 或门禁 DOM。
+树布局是 `useWorkbenchTree` 的纯函数，SSE/run 数据层是 `useWorkbenchRun`，任务/文件模型是 `workbenchModel`。`engine/tree.js` 已删除，`window.__wb` 全局边界也已移除。
 
 ## 开发
 
@@ -75,6 +75,6 @@ pnpm typecheck
 
 - 不借迁移改视觉、文案和布局。
 - 只使用真实接口；空态只用 `— / 暂无 / 加载中…`。
-- 工作台 `engine/tree.js` 仍保留任务/文件模型与代码流逻辑，UI 层已不再由它创建；后续可继续把模型迁成 typed store。
+- 工作台模型、SSE、树布局、任务、代码、门禁、依据、页签都由 TypeScript 状态层驱动。
 - 不改成 SPA；保持现有 URL 和多页静态托管。
 - 工作台的 CSS 交给 Vite 原样输出（关闭 lightningcss 压缩），避免动画 CSS 压缩报错。

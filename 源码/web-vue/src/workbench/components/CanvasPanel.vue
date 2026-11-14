@@ -4,11 +4,13 @@ import { useWorkbenchTree, type TreeNode } from "../useWorkbenchTree";
 import { workbenchStore } from "../useWorkbenchStore";
 import type { WorkbenchStage } from "../../types/workbench-engine";
 import type { TreeCard } from "../useWorkbenchTree";
+import { showTaskDetail, speed, setSpeed } from "../workbenchModel";
 
 const tree = useWorkbenchTree();
 const { view, nodes, paths, height, width } = tree;
 const inner = ref<HTMLElement | null>(null);
 const ready = ref(false);
+const speedOpen = ref(false);
 let observer: ResizeObserver | null = null;
 
 const focusName = computed(() => {
@@ -61,11 +63,26 @@ function expandStage(index: number | undefined) {
   if (typeof index === "number") tree.expandStage(index);
 }
 
+function closeSpeed(event: MouseEvent) {
+  if (!(event.target as HTMLElement).closest(".speed-pop")) speedOpen.value = false;
+}
+
+function showTasks() {
+  document.getElementById("work")?.classList.remove("no-tasks");
+  onResize();
+}
+
+function showCode() {
+  document.getElementById("work")?.classList.remove("no-code");
+  onResize();
+}
+
 function onResize() {
   if (inner.value) width.value = inner.value.clientWidth || 720;
 }
 
 onMounted(async () => {
+  document.addEventListener("click", closeSpeed);
   onResize();
   observer = new ResizeObserver(onResize);
   if (inner.value) observer.observe(inner.value);
@@ -73,7 +90,10 @@ onMounted(async () => {
   ready.value = true;
 });
 
-onBeforeUnmount(() => observer?.disconnect());
+onBeforeUnmount(() => {
+  observer?.disconnect();
+  document.removeEventListener("click", closeSpeed);
+});
 
 watch(
   () => view.focus,
@@ -97,17 +117,27 @@ watch(
         <button type="button" data-layout="lr" :class="{ 'is-on': view.layout === 'lr' }" @click="tree.setLayout('lr')">左右树</button>
         <button type="button" data-layout="td" :class="{ 'is-on': view.layout === 'td' }" @click="tree.setLayout('td')">上下树</button>
       </div>
-      <button class="btn btn-sm btn-ghost show-tasks" type="button" id="show-tasks">
+      <button class="btn btn-sm btn-ghost show-tasks" type="button" id="show-tasks" @click="showTasks">
         <svg viewBox="0 0 24 24" aria-hidden style="width: 14px; height: 14px;"><path d="M4 6h16M4 12h16M4 18h10" /></svg>
         显示清单
       </button>
-      <button class="btn btn-sm btn-ghost show-code" type="button" id="show-code">显示代码</button>
-      <div class="speed-pop" id="speed-pop">
-        <button type="button" class="speed-btn" id="speed-btn" title="播放速度（1 是真实速度）">1×</button>
-        <div class="speed-menu" id="speed-menu">
+      <button class="btn btn-sm btn-ghost show-code" type="button" id="show-code" @click="showCode">显示代码</button>
+      <div class="speed-pop" id="speed-pop" :class="{ open: speedOpen }">
+        <button type="button" class="speed-btn" id="speed-btn" title="播放速度（1 是真实速度）" @click.stop="speedOpen = !speedOpen">
+          {{ speed === 1 ? "1" : speed.toFixed(1) }}×
+        </button>
+        <div class="speed-menu" id="speed-menu" @click.stop>
           <div class="speed-row">
             <span>0.1×</span>
-            <input type="range" id="speed" min="0.1" max="1" step="0.1" value="1" />
+            <input
+              type="range"
+              id="speed"
+              min="0.1"
+              max="1"
+              step="0.1"
+              :value="speed"
+              @input="setSpeed(Number(($event.target as HTMLInputElement).value))"
+            />
             <span>1×</span>
           </div>
           <p>只影响呈现，不影响后端与花费</p>
@@ -176,6 +206,7 @@ watch(
           :class="[...taskClass(node), { in: ready }]"
           :style="nodeStyle(node)"
           :data-task="taskOf(node).id"
+          @click="showTaskDetail(taskOf(node).id)"
         >
           <b>{{ taskOf(node).title }}</b>
           <code v-if="!node.dense">{{ taskOf(node).file }}</code>
