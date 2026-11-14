@@ -17,6 +17,7 @@ from app.api.pipeline import gate, recorder
 from app.db.session import SessionLocal
 from app.config import get_settings
 from app.api.pipeline.context import RunContext
+from app.ai.rag.retrieve import prompt_block, retrieve
 from app.api.pipeline.errors import BudgetExceeded
 
 SYSTEM = """你是软件需求分析师。只做一件事：把用户的一句话变成可执行的软件规格。
@@ -59,10 +60,32 @@ def run(run_id: str, ctx: RunContext) -> SpecV2:
     recorder.task(run_id, "started", task_id=clarify, stage="plan", title="澄清需求边界", kind="clarify")
     recorder.reasoning(run_id, f"先确认「{ctx.prompt[:18]}」要做什么、不做什么。")
 
+    hits: list[dict] = []
+    retrieve_began = time.monotonic()
+    try:
+        db_rag = SessionLocal()
+        try:
+            hits = retrieve(db_rag, ctx.prompt, top_k=4)
+        finally:
+            db_rag.close()
+    except Exception:  # noqa: BLE001
+        hits = []
+    if hits:
+        recorder.emit(
+            run_id,
+            "retrieval",
+            {
+                "query": ctx.prompt,
+                "hits": hits,
+                "latency_ms": int((time.monotonic() - retrieve_began) * 1000),
+            },
+        )
+
     client = build_client("plan")
     model = model_for("plan")
+    system = SYSTEM + ("\n\n" + prompt_block(hits) if hits else "")
     messages = [
-        {"role": "system", "content": SYSTEM},
+        {"role": "system", "content": system},
         {"role": "user", "content": f"用户需求：{ctx.prompt}\n\n请输出规格 JSON。"},
     ]
 
@@ -97,7 +120,7 @@ def run(run_id: str, ctx: RunContext) -> SpecV2:
         stage="plan",
         title="澄清需求边界",
         kind="clarify",
-        note="边界已定" if not spec.questions else f"{len(spec.questions)} 个待确认",
+        note=("参考 " + str(len(hits)) + " 条依据 · " if hits else "") + ("边界已定" if not spec.questions else f"{len(spec.questions)} 个待确认"),
         ms=int((time.monotonic() - began) * 1000),
     )
 

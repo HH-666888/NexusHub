@@ -18,6 +18,7 @@ from app.api.ai.model.schema import structured
 from app.api.domain.models import ArchV2
 from app.api.pipeline import recorder
 from app.api.pipeline.context import RunContext
+from app.ai.rag.retrieve import prompt_block, retrieve
 from app.api.pipeline.errors import BudgetExceeded, StageFailed
 
 SYSTEM = """你是软件架构师。基于规格设计一个最小可运行的全栈应用。
@@ -116,10 +117,35 @@ def run(run_id: str, ctx: RunContext) -> ArchV2:
     recorder.task(run_id, "created", task_id=flow_task, stage="design", title="定数据流与页面", kind="design")
     recorder.task(run_id, "started", task_id=modules_task, stage="design", title="划模块边界", kind="design")
 
+    query = (spec.get("goal") or ctx.prompt or "") + " " + " ".join(
+        item.get("text", "") for item in spec.get("acceptance", [])[:4]
+    )
+    hits: list[dict] = []
+    retrieve_began = time.monotonic()
+    try:
+        db_rag = SessionLocal()
+        try:
+            hits = retrieve(db_rag, query, top_k=4)
+        finally:
+            db_rag.close()
+    except Exception:  # noqa: BLE001
+        hits = []
+    if hits:
+        recorder.emit(
+            run_id,
+            "retrieval",
+            {
+                "query": query,
+                "hits": hits,
+                "latency_ms": int((time.monotonic() - retrieve_began) * 1000),
+            },
+        )
+
     client = build_client("design")
     model = model_for("design")
+    system = SYSTEM + ("\n\n" + prompt_block(hits) if hits else "")
     base_messages = [
-        {"role": "system", "content": SYSTEM},
+        {"role": "system", "content": system},
         {
             "role": "user",
             "content": "规格：\n"

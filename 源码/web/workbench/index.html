@@ -5,8 +5,8 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>NexusHub · 树型工作流 + 实时代码流</title>
-    <link rel="stylesheet" href="../common/app.css?v=20261114h" />
-    <link rel="stylesheet" href="style.css?v=20261114h" />
+    <link rel="stylesheet" href="../common/app.css?v=20261114j" />
+    <link rel="stylesheet" href="style.css?v=20261114j" />
   </head>
   <body>
     <header class="appbar" id="appbar" data-tab="workflow" data-crumb="运行详情" data-parent="我的项目">
@@ -52,6 +52,11 @@
 
           <!-- 六道：每组可单独收放 -->
           <div class="t-group" id="stage-groups"></div>
+        </div>
+
+        <div class="evidence" id="evidence" hidden>
+          <div class="evidence-head">参考依据 <span id="evidence-count">0</span></div>
+          <div class="evidence-list" id="evidence-list"></div>
         </div>
       </aside>
 
@@ -172,10 +177,10 @@
     document.title = "ERR " + msg;
   };
 </script>
-<script src="../common/api.js?v=20261114h"></script>
-<script src="../common/appbar.js?v=20261114h"></script>
-<script src="main.js?v=20261114h"></script>
-    <script src="./live.js?v=20261114h"></script>
+<script src="../common/api.js?v=20261114j"></script>
+<script src="../common/appbar.js?v=20261114j"></script>
+<script src="main.js?v=20261114j"></script>
+    <script src="./live.js?v=20261114j"></script>
   
   <!-- 门禁：AI 拿不准时停下来问，任何阶段都可能出现 -->
   <div class="gate-modal" id="gate-modal" hidden>

@@ -164,6 +164,31 @@
       return;
     }
 
+    if (kind === "retrieval") {
+      const hits = (payload && payload.hits) || [];
+      const box = document.getElementById("evidence");
+      const list = document.getElementById("evidence-list");
+      const count = document.getElementById("evidence-count");
+      if (box && list) {
+        list.innerHTML = "";
+        hits.forEach(function (hit) {
+          const row = document.createElement("div");
+          row.className = "evidence-row";
+          const source = document.createElement("b");
+          source.textContent = hit.source || "知识库";
+          const text = document.createElement("small");
+          text.textContent = hit.snippet || "";
+          row.appendChild(source);
+          row.appendChild(text);
+          list.appendChild(row);
+        });
+        if (count) count.textContent = String(hits.length);
+        box.hidden = hits.length === 0;
+      }
+      wb.setEvent(timeOf(at) + " · 检索到 " + hits.length + " 条依据");
+      return;
+    }
+
     if (kind === "task") {
       if (payload && payload.task) wb.addTask(payload.task);
       return;

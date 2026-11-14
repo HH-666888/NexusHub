@@ -702,3 +702,25 @@ body.is-blank .statusbar .cost { opacity: .35; }
 /* 真实运行时不显示演示时间线控件 */
 body.is-live #replay,
 body.is-live #speed-pop { display: none; }
+
+
+/* 参考依据：RAG 命中的真实来源 */
+.evidence {
+  border-top: 1px solid var(--line);
+  padding: 8px 10px 10px;
+  max-height: 168px;
+  overflow: auto;
+}
+.evidence-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+.evidence-head span { color: var(--text-3); font-family: var(--mono); }
+.evidence-row { display: grid; gap: 2px; padding: 4px 0; border-top: 1px dashed var(--line-2); }
+.evidence-row:first-child { border-top: 0; }
+.evidence-row b { font-size: 11px; font-weight: 500; color: var(--text-2); }
+.evidence-row small { font-size: 10.5px; color: var(--text-3); line-height: 1.4; }
