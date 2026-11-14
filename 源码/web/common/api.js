@@ -259,6 +259,14 @@
       return result;
     },
 
+    async assistVision(id, message, stage, image) {
+      const result = await request("/assist/projects/" + encodeURIComponent(id) + "/vision", {
+        method: "POST",
+        body: JSON.stringify({ message, stage, image }),
+      });
+      return result.ok ? result.data : null;
+    },
+
     async assistAgent(id, message, stage) {
       const result = await request("/assist/projects/" + encodeURIComponent(id) + "/agent", {
         method: "POST",

@@ -32,6 +32,11 @@
   const advanceBtn = document.getElementById("advance");
   const crumbTitle = document.getElementById("crumb-title");
   const memoryPill = document.getElementById("memory-pill");
+  const imageInput = document.getElementById("coach-image-input");
+  const imageBtn = document.getElementById("coach-image-btn");
+  const imageName = document.getElementById("coach-image-name");
+  const imageClear = document.getElementById("coach-image-clear");
+  const imagePreview = document.getElementById("coach-image-preview");
 
   async function loadMemoryStats() {
     if (!window.api || !window.api.memoryStats) return;
@@ -467,8 +472,12 @@
 
   async function sendCoach() {
     const message = (coachInput.value || "").trim();
-    if (message) appendCoach("user", message);
     coachInput.value = "";
+    if (state.image) {
+      await runVision(message);
+      return;
+    }
+    if (message) appendCoach("user", message);
 
     if (modeSelect.value === "auto" && state.currentPath && message) {
       const result = await window.api.applyAssist(projectId, state.currentPath, message);
@@ -534,6 +543,33 @@
     coachLog.scrollTop = coachLog.scrollHeight;
   }
 
+  function clearImage() {
+    state.image = "";
+    state.imageName = "";
+    if (imageInput) imageInput.value = "";
+    if (imageName) imageName.textContent = "";
+    if (imageClear) imageClear.hidden = true;
+    if (imagePreview) {
+      imagePreview.hidden = true;
+      imagePreview.removeAttribute("src");
+    }
+  }
+
+  async function runVision(message) {
+    const image = state.image;
+    const label = state.imageName || "图片";
+    appendCoach("user", (message ? message + "\n" : "") + "[图片] " + label);
+    clearImage();
+    const bubble = appendCoach("ai", "正在看图片…");
+    const result = await window.api.assistVision(projectId, message, state.stage, image);
+    if (!result) {
+      bubble.textContent = "图片识别失败，请换一张更清晰的图片。";
+      return;
+    }
+    bubble.textContent = result.reply || "模型没有识别出内容。";
+    addCitations(bubble, result.citations);
+  }
+
   function addSuggestApply(el, message) {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -583,6 +619,41 @@
       await loadProject();
     });
     last.appendChild(btn);
+  }
+
+  if (imageBtn) {
+    imageBtn.addEventListener("click", function () {
+      imageInput.click();
+    });
+  }
+  if (imageInput) {
+    imageInput.addEventListener("change", function () {
+      const file = imageInput.files && imageInput.files[0];
+      if (!file) return;
+      if (!/^image\/(png|jpe?g|webp|gif)$/.test(file.type)) {
+        alert("只支持 png / jpeg / webp / gif 图片");
+        return;
+      }
+      if (file.size > 4 * 1024 * 1024) {
+        alert("图片请压缩到 4MB 以内");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = function () {
+        state.image = String(reader.result || "");
+        state.imageName = file.name;
+        if (imageName) imageName.textContent = file.name;
+        if (imageClear) imageClear.hidden = false;
+        if (imagePreview) {
+          imagePreview.src = state.image;
+          imagePreview.hidden = false;
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  if (imageClear) {
+    imageClear.addEventListener("click", clearImage);
   }
 
   document.getElementById("coach-send").addEventListener("click", sendCoach);

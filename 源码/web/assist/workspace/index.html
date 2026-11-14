@@ -5,9 +5,9 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>辅助工作台 · NexusHub</title>
-  <link rel="stylesheet" href="../../common/app.css?v=20261114n">
-  <link rel="stylesheet" href="../style.css?v=20261114n">
-  <link rel="stylesheet" href="../../vendor/codemirror/lib/codemirror.css?v=20261114n">
+  <link rel="stylesheet" href="../../common/app.css?v=20261114r">
+  <link rel="stylesheet" href="../style.css?v=20261114r">
+  <link rel="stylesheet" href="../../vendor/codemirror/lib/codemirror.css?v=20261114r">
 </head>
 <body>
   <header class="appbar" id="appbar" data-tab="assist" data-crumb="辅助开发" data-parent="辅助开发" data-parent-href="/assist/">
@@ -55,6 +55,13 @@
           <div class="coach-msg ai">我会按当前阶段帮你：需求阶段问清楚，写代码时只看不改。</div>
         </div>
         <div class="coach-form">
+          <div class="coach-attach">
+            <input id="coach-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+            <button class="btn btn-sm btn-ghost" type="button" id="coach-image-btn">＋ 图片</button>
+            <span id="coach-image-name"></span>
+            <button class="coach-image-clear" type="button" id="coach-image-clear" hidden>×</button>
+          </div>
+          <img id="coach-image-preview" alt="" hidden />
           <textarea id="coach-input" placeholder="问点什么，或直接说“下一步做什么”"></textarea>
           <button class="btn btn-primary btn-sm" type="button" id="coach-send">发送</button>
         </div>
@@ -62,15 +69,15 @@
     </aside>
   </div>
 
-  <script src="../../vendor/codemirror/lib/codemirror.js?v=20261114n"></script>
-  <script src="../../vendor/codemirror/mode/python/python.js?v=20261114n"></script>
-  <script src="../../vendor/codemirror/mode/clike/clike.js?v=20261114n"></script>
-  <script src="../../vendor/codemirror/mode/javascript/javascript.js?v=20261114n"></script>
-  <script src="../../vendor/codemirror/mode/xml/xml.js?v=20261114n"></script>
-  <script src="../../vendor/codemirror/mode/css/css.js?v=20261114n"></script>
-  <script src="../../vendor/codemirror/mode/sql/sql.js?v=20261114n"></script>
-  <script src="../../common/api.js?v=20261114n"></script>
-  <script src="../../common/appbar.js?v=20261114n"></script>
-  <script src="./main.js?v=20261114n"></script>
+  <script src="../../vendor/codemirror/lib/codemirror.js?v=20261114r"></script>
+  <script src="../../vendor/codemirror/mode/python/python.js?v=20261114r"></script>
+  <script src="../../vendor/codemirror/mode/clike/clike.js?v=20261114r"></script>
+  <script src="../../vendor/codemirror/mode/javascript/javascript.js?v=20261114r"></script>
+  <script src="../../vendor/codemirror/mode/xml/xml.js?v=20261114r"></script>
+  <script src="../../vendor/codemirror/mode/css/css.js?v=20261114r"></script>
+  <script src="../../vendor/codemirror/mode/sql/sql.js?v=20261114r"></script>
+  <script src="../../common/api.js?v=20261114r"></script>
+  <script src="../../common/appbar.js?v=20261114r"></script>
+  <script src="./main.js?v=20261114r"></script>
 </body>
 </html>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import uuid
 
@@ -12,13 +13,16 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import AssistFile, AssistFinding, AssistProject, AssistTestCase
+from app.db.models import AssistFile, AssistFinding, AssistProject, AssistTestCase, Setting
 from app.db.session import SessionLocal
 from app.deps import get_current_user, get_db
 from app.domain.user import User
 from app.shared.time import now_ms
 from app.api.assist import analyzer, coach, memory_service
 from app.api.agent.loop import run_agent
+from app.api.skills.software import block as skill_block
+from app.api.ai.factory import build_client, model_for, set_user_api_key
+from app.api.ai.cost.ledger import record_usage
 
 router = APIRouter()
 
@@ -568,3 +572,61 @@ def project_agent(
         message=str(payload.get("message") or "").strip(),
         stage=stage,
     )
+
+
+@router.post("/projects/{project_id}/vision")
+def project_vision(
+    project_id: str,
+    payload: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    project = _owned(db, project_id, user)
+    stage = str(payload.get("stage") or project.stage)
+    if stage not in STAGES:
+        raise HTTPException(status_code=400, detail="unknown stage")
+    message = str(payload.get("message") or "").strip()
+    image = str(payload.get("image") or "")
+    if not re.match(r"^data:image/(png|jpe?g|webp|gif);base64,", image):
+        raise HTTPException(status_code=400, detail="只支持 png/jpeg/webp/gif 图片")
+    if len(image) > 8_000_000:
+        raise HTTPException(status_code=413, detail="图片太大，请压缩到 5MB 以内")
+
+    key_row = db.get(Setting, {"user_id": user.id, "key": "apiKey"})
+    if key_row is not None and isinstance(key_row.value, str):
+        set_user_api_key(key_row.value)
+    memory_text, citations = memory_service.prompt_block(db, user.id)
+    system = (
+        "你是 NexusHub 的辅助开发教练。用户会发一张截图、草图或报错图。"
+        "先准确识别图里的文字、界面或错误，再结合项目阶段给建议；不要编造图里没有的内容。"
+        "\n\n" + skill_block(stage)
+        + (f"\n\n{memory_text}" if memory_text else "")
+    )
+    context = (
+        f"项目：{project.title}\n目标：{project.goal or '（未填写）'}\n"
+        f"当前阶段：{stage}\n用户问题：{message or '请分析这张图片，并结合当前阶段告诉我下一步。'}"
+    )
+    messages = [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": context},
+                {"type": "image_url", "image_url": {"url": image}},
+            ],
+        },
+    ]
+    client = build_client("plan")
+    try:
+        reply = client.complete(messages, model_for("plan"), max_tokens=800, temperature=0.2)
+    except Exception as error:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"图片识别失败：{error}") from error
+    finally:
+        client.close()
+    amount = record_usage(db, user_id=user.id, project_id=project.id, kind="vision", reply=reply)
+    return {
+        "reply": (reply.content or "").strip() or "模型没有识别出内容，可以换一张更清晰的图片。",
+        "citations": citations,
+        "model": reply.model,
+        "costCny": amount,
+    }
