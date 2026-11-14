@@ -56,7 +56,7 @@ lint-imports                  # 依赖方向 D1–D5（见目录契约 §4）
 | `app/features/` | 一次请求做完一件事：auth / runs / gate / stream / artifacts / settings |
 | `app/pipeline/` | 一次运行的内部时序：六道工序、状态机、事件、续跑 |
 | `app/ai/` | 能力：模型、RAG、Agent 工具、成本 |
-| `content/playbook/` | RAG 语料（markdown） |
+| `../RAG-knowledge/` | RAG 语料（markdown，唯一来源；`_staging/` 不参与索引） |
 | `migrations/` | Alembic；`0001` 直接执行 `database/schema/001_init.sql` |
 
 ## 约定（容易踩的）

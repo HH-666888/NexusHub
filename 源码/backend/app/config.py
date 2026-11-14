@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     run_cost_limit_cny: float = 5.0
 
     # 语料目录（相对 backend/ 根）
-    playbook_dir: str = "content/playbook"
+    playbook_dir: str = "../RAG-knowledge"
 
     # cookie 的 Secure 标记：本地 http 打开会让浏览器不回传 cookie（表现为登录后又变未登录）
     cookie_secure: bool = False
