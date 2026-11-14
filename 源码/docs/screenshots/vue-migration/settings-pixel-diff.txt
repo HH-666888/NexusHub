@@ -1,0 +1,8 @@
+NexusHub 设置页 Vue 迁移像素对比
+日期: 2026-11-14
+基线: 源码/web/settings (pre-vue-migration)
+迁移: 源码/web-vue (Vue 3 + Vite)
+
+1440x900: 同尺寸=True; 像素差均值=0.0000; 差异区域=None; 文件字节相同=True
+1920x1080: 同尺寸=True; 像素差均值=0.0000; 差异区域=None; 文件字节相同=True
+390x972: 同尺寸=True; 像素差均值=0.0000; 差异区域=None; 文件字节相同=True

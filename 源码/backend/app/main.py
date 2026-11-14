@@ -64,6 +64,11 @@ def create_app() -> FastAPI:
             response.headers["Cache-Control"] = "no-cache"
         return response
 
+    # Vue 迁移页优先挂在原路径前；构建产物不存在时自动退回原生页面。
+    settings_dist = web_dir / "settings-dist" / "settings"
+    if settings_dist.is_dir():
+        app.mount("/settings", StaticFiles(directory=str(settings_dist), html=True), name="settings-vue")
+
     # 最后挂静态站："/" 会接管所有未命中的路径，/api 由上面的路由先匹配。
     if web_dir.is_dir():
         app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web")
