@@ -97,18 +97,22 @@ onMounted(async () => {
     return;
   }
 
-  const tasks = [];
-  if (api.settings) tasks.push(api.settings());
-  if (api.memoryStats) tasks.push(api.memoryStats());
-  const [saved, stats] = await Promise.all(tasks);
+  try {
+    const tasks = [];
+    if (api.settings) tasks.push(api.settings());
+    if (api.memoryStats) tasks.push(api.memoryStats());
+    const [saved, stats] = await Promise.all(tasks);
 
-  if (saved) {
-    apiKeySet.value = Boolean(saved.apiKeySet);
-  }
-  if (stats) {
-    memory.value = stats;
-    memoryState.value = "ready";
-  } else {
+    if (saved) {
+      apiKeySet.value = Boolean(saved.apiKeySet);
+    }
+    if (stats) {
+      memory.value = stats;
+      memoryState.value = "ready";
+    } else {
+      memoryState.value = "error";
+    }
+  } catch (error) {
     memoryState.value = "error";
   }
 });
