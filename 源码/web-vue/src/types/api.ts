@@ -83,9 +83,16 @@ export interface AssistFile {
   content: string;
 }
 
+export interface AssistProjectFile {
+  path: string;
+  lang?: string;
+  bytes?: number;
+}
+
 export interface AssistStage {
   id: string;
   label: string;
+  state?: string;
 }
 
 export interface AssistTest {
@@ -113,7 +120,7 @@ export interface AssistProject {
   goal?: string;
   stage: string;
   stages: AssistStage[];
-  files: AssistFile[];
+  files: AssistProjectFile[];
   findings?: { open?: number };
   stageLabel?: string;
   mode?: string;
