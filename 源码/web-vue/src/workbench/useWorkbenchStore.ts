@@ -1,6 +1,21 @@
 import { reactive } from "vue";
 import type { WorkbenchFile, WorkbenchStage, WorkbenchTask } from "../types/workbench-engine";
 
+export interface GateQuestion {
+  id: string;
+  text: string;
+  type?: string;
+  options?: string[];
+  default?: string;
+}
+
+export interface WorkbenchGate {
+  visible: boolean;
+  round: number;
+  title: string;
+  questions: GateQuestion[];
+}
+
 export interface WorkbenchTaskDetail {
   visible: boolean;
   stage: string;
@@ -46,7 +61,10 @@ export interface WorkbenchStoreApi {
   reviewText: string;
   dotWarn: boolean;
   taskDetail: WorkbenchTaskDetail;
+  gate: WorkbenchGate;
   openStages: string[];
+  showGate(gate: { round?: number; questions?: GateQuestion[] }): void;
+  hideGate(): void;
   showTaskDetail(detail: Omit<WorkbenchTaskDetail, "visible">): void;
   hideTaskDetail(): void;
   sync(payload: WorkbenchSync): void;
@@ -86,6 +104,24 @@ export const workbenchStore: WorkbenchStoreApi = reactive({
   },
   hideTaskDetail() {
     this.taskDetail = { ...this.taskDetail, visible: false };
+  },
+  gate: {
+    visible: false as boolean,
+    round: 1,
+    title: "需要你确认",
+    questions: [] as GateQuestion[],
+  },
+  showGate(gate) {
+    const questions = gate.questions || [];
+    this.gate = {
+      visible: true,
+      round: gate.round || 1,
+      title: `需要你确认（第 ${gate.round || 1} 轮 · ${questions.length} 个问题）`,
+      questions,
+    };
+  },
+  hideGate() {
+    this.gate = { ...this.gate, visible: false };
   },
   openStages: [] as string[],
   sync(payload: WorkbenchSync) {

@@ -271,94 +271,12 @@
   // ───────── 门禁 ─────────
 
   function showGate(gate) {
-    const box = document.getElementById("gate-modal");
-    if (!box) return;
-    const questions = gate.questions || [];
-    const title = box.querySelector(".gate-title");
-    if (title) title.textContent = "需要你确认（第 " + (gate.round || 1) + " 轮 · " + questions.length + " 个问题）";
-    const body = box.querySelector(".gate-body");
-    if (!body) return;
-    body.innerHTML = questions
-      .map(function (q, index) {
-        let control;
-        if (q.type === "text") {
-          control =
-            '<input class="gate-text" name="' +
-            q.id +
-            '" placeholder="' +
-            (q.default || "") +
-            '">';
-        } else if (q.type === "multi") {
-          control = (q.options || [])
-            .map(function (option) {
-              return (
-                '<label><input type="checkbox" name="' +
-                q.id +
-                '" value="' +
-                option +
-                '"> ' +
-                option +
-                "</label>"
-              );
-            })
-            .join("");
-        } else {
-          control = (q.options || [])
-            .map(function (option) {
-              return (
-                '<label><input type="radio" name="' +
-                q.id +
-                '" value="' +
-                option +
-                '"' +
-                (option === q.default ? " checked" : "") +
-                "> " +
-                option +
-                "</label>"
-              );
-            })
-            .join("");
-        }
-        return (
-          '<div class="gate-q"><p>' + (index + 1) + ". " + q.text + "</p><div class=\"gate-opts\">" + control + "</div></div>"
-        );
-      })
-      .join("");
-    body.scrollTop = 0;
-    box.hidden = false;
-    box.dataset.round = String(gate.round || 1);
-    box.dataset.questions = JSON.stringify(questions);
+    window.__wbStore?.showGate(gate);
   }
 
   function hideGate() {
-    const box = document.getElementById("gate-modal");
-    if (box) box.hidden = true;
+    window.__wbStore?.hideGate();
   }
-
-  async function submitGate(auto) {
-    const box = document.getElementById("gate-modal");
-    if (!box) return;
-    const questions = JSON.parse(box.dataset.questions || "[]");
-    const answers = questions.map(function (q) {
-      if (q.type === "multi") {
-        const checked = Array.from(box.querySelectorAll('input[name="' + q.id + '"]:checked')).map(function (input) {
-          return input.value;
-        });
-        return { id: q.id, value: checked.join(",") || q.default || "" };
-      }
-      const input = box.querySelector('.gate-text[name="' + q.id + '"]');
-      if (input) return { id: q.id, value: input.value || q.default || "" };
-      const checked = box.querySelector('input[name="' + q.id + '"]:checked');
-      return { id: q.id, value: checked ? checked.value : q.default || "" };
-    });
-    await window.api.answerGate(id, { round: Number(box.dataset.round || 1), answers: answers, auto: Boolean(auto) });
-    hideGate();
-  }
-
-  document.addEventListener("click", function (event) {
-    if (event.target && event.target.id === "gate-submit") submitGate(false);
-    if (event.target && event.target.id === "gate-skip") submitGate(true);
-  });
 
   function subscribe() {
     if (typeof EventSource === "undefined") return;
