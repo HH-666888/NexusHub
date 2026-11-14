@@ -100,9 +100,14 @@ function taskClass(task: WorkbenchTask) {
       </div>
     </div>
 
-    <div class="evidence" id="evidence" hidden>
-      <div class="evidence-head">参考依据 <span id="evidence-count">0</span></div>
-      <div class="evidence-list" id="evidence-list"></div>
+    <div class="evidence" id="evidence" :hidden="!store.evidence.length">
+      <div class="evidence-head">参考依据 <span id="evidence-count">{{ store.evidence.length }}</span></div>
+      <div class="evidence-list" id="evidence-list">
+        <div v-for="(hit, index) in store.evidence" :key="index" class="evidence-row">
+          <b>{{ hit.source || "知识库" }}</b>
+          <small>{{ hit.snippet || "" }}</small>
+        </div>
+      </div>
     </div>
   </aside>
 </template>

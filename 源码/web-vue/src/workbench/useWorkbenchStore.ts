@@ -9,6 +9,11 @@ export interface GateQuestion {
   default?: string;
 }
 
+export interface EvidenceHit {
+  source?: string;
+  snippet?: string;
+}
+
 export interface WorkbenchGate {
   visible: boolean;
   round: number;
@@ -62,7 +67,9 @@ export interface WorkbenchStoreApi {
   dotWarn: boolean;
   taskDetail: WorkbenchTaskDetail;
   gate: WorkbenchGate;
+  evidence: EvidenceHit[];
   openStages: string[];
+  setEvidence(hits: EvidenceHit[]): void;
   showGate(gate: { round?: number; questions?: GateQuestion[] }): void;
   hideGate(): void;
   showTaskDetail(detail: Omit<WorkbenchTaskDetail, "visible">): void;
@@ -122,6 +129,10 @@ export const workbenchStore: WorkbenchStoreApi = reactive({
   },
   hideGate() {
     this.gate = { ...this.gate, visible: false };
+  },
+  evidence: [] as EvidenceHit[],
+  setEvidence(hits) {
+    this.evidence = hits.map((hit) => ({ source: hit.source, snippet: hit.snippet }));
   },
   openStages: [] as string[],
   sync(payload: WorkbenchSync) {
