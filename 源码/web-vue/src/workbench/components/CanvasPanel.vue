@@ -1,4 +1,87 @@
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useWorkbenchTree, type TreeNode } from "../useWorkbenchTree";
+import { workbenchStore } from "../useWorkbenchStore";
+import type { WorkbenchStage } from "../../types/workbench-engine";
+import type { TreeCard } from "../useWorkbenchTree";
+
+const tree = useWorkbenchTree();
+const { view, nodes, paths, height, width } = tree;
+const inner = ref<HTMLElement | null>(null);
+const ready = ref(false);
+let observer: ResizeObserver | null = null;
+
+const focusName = computed(() => {
+  if (view.focus === null) return "—";
+  const stage = workbenchStore.stages[view.focus];
+  return stage ? stage.no + " " + stage.name : "—";
+});
+
+function stageOf(node: TreeNode) {
+  return node.data as WorkbenchStage;
+}
+
+function taskOf(node: TreeNode) {
+  return node.data as TreeCard;
+}
+
+function compactName(stage: WorkbenchStage) {
+  return width.value < 900 ? stage.short || stage.name : stage.name;
+}
+
+function nodeStyle(node: TreeNode) {
+  return {
+    left: node.x + "px",
+    top: node.y + "px",
+    width: node.w + "px",
+    ...(node.kind === "stage" && node.compact ? { minHeight: node.h + "px" } : {}),
+    ...(node.kind === "task" || node.kind === "chip" ? { height: node.h + "px" } : {}),
+  };
+}
+
+function stageClass(node: TreeNode) {
+  const stage = stageOf(node);
+  return ["node-stage", stage?.state || "wait", { focus: view.focus !== null }];
+}
+
+function stageGrid(node: TreeNode) {
+  return node.compact ? "18px minmax(0,1fr)" : undefined;
+}
+
+function taskClass(node: TreeNode) {
+  const task = taskOf(node);
+  return ["node-task", task.state, { dense: node.dense }];
+}
+
+function focusStage(index: number | undefined) {
+  if (typeof index === "number") tree.focusStage(index);
+}
+
+function expandStage(index: number | undefined) {
+  if (typeof index === "number") tree.expandStage(index);
+}
+
+function onResize() {
+  if (inner.value) width.value = inner.value.clientWidth || 720;
+}
+
+onMounted(async () => {
+  onResize();
+  observer = new ResizeObserver(onResize);
+  if (inner.value) observer.observe(inner.value);
+  await nextTick();
+  ready.value = true;
+});
+
+onBeforeUnmount(() => observer?.disconnect());
+
+watch(
+  () => view.focus,
+  (focus) => {
+    document.getElementById("work")?.classList.toggle("is-focus", focus !== null);
+  },
+);
+</script>
 
 <template>
   <main class="canvas" id="canvas">
@@ -7,12 +90,12 @@
       <span class="hint">一级主控 → 六道工序 → 按需分析出的任务</span>
       <span class="spacer"></span>
       <div class="layout-switch" role="group" aria-label="连线样式">
-        <button type="button" data-edges="curve" class="is-on">曲线</button>
-        <button type="button" data-edges="elbow">折线</button>
+        <button type="button" data-edges="curve" :class="{ 'is-on': view.edges === 'curve' }" @click="tree.setEdges('curve')">曲线</button>
+        <button type="button" data-edges="elbow" :class="{ 'is-on': view.edges === 'elbow' }" @click="tree.setEdges('elbow')">折线</button>
       </div>
       <div class="layout-switch" role="group" aria-label="树的排布">
-        <button type="button" data-layout="lr" class="is-on">左右树</button>
-        <button type="button" data-layout="td">上下树</button>
+        <button type="button" data-layout="lr" :class="{ 'is-on': view.layout === 'lr' }" @click="tree.setLayout('lr')">左右树</button>
+        <button type="button" data-layout="td" :class="{ 'is-on': view.layout === 'td' }" @click="tree.setLayout('td')">上下树</button>
       </div>
       <button class="btn btn-sm btn-ghost show-tasks" type="button" id="show-tasks">
         <svg viewBox="0 0 24 24" aria-hidden style="width: 14px; height: 14px;"><path d="M4 6h16M4 12h16M4 18h10" /></svg>
@@ -37,14 +120,88 @@
     </div>
 
     <div class="focus-bar" id="focus-bar">
-      聚焦：<b id="focus-name">—</b>
+      聚焦：<b id="focus-name">{{ focusName }}</b>
       <span id="focus-note">其余工序在后台继续</span>
-      <button type="button" id="exit-focus">退出聚焦</button>
+      <button type="button" id="exit-focus" @click="tree.clearFocus()">退出聚焦</button>
     </div>
 
-    <div class="canvas-inner" id="canvas-inner">
-      <svg class="tree-svg" id="tree-svg" aria-hidden></svg>
-      <!-- 节点由脚本插入，便于做逐个出现 -->
+    <div class="canvas-inner" id="canvas-inner" ref="inner" :style="{ minHeight: height + 'px' }">
+      <svg
+        class="tree-svg"
+        id="tree-svg"
+        aria-hidden
+        :viewBox="`0 0 ${width} ${height}`"
+        preserveAspectRatio="none"
+        :style="{ height: height + 'px' }"
+      >
+        <path
+          v-for="(path, index) in paths"
+          :key="index"
+          :d="path"
+          pathLength="1"
+          :class="{ draw: ready }"
+        />
+      </svg>
+
+      <template v-for="(node, index) in nodes" :key="index">
+        <div
+          v-if="node.kind === 'root'"
+          class="node-root"
+          :class="{ in: ready }"
+          :style="nodeStyle(node)"
+        >
+          <b>{{ node.title }}</b><small>{{ node.note }}</small>
+        </div>
+
+        <div
+          v-else-if="node.kind === 'stage'"
+          :class="[...stageClass(node), { in: ready }]"
+          :style="[nodeStyle(node), { gridTemplateColumns: stageGrid(node) }]"
+          :data-stage="node.stageIndex"
+          @click="focusStage(node.stageIndex)"
+        >
+          <template v-if="node.compact">
+            <span class="no">{{ stageOf(node).no }}</span>
+            <span class="txt"><b>{{ compactName(stageOf(node)) }}</b><small>{{ stageOf(node).note }}</small></span>
+          </template>
+          <template v-else>
+            <span class="no">{{ stageOf(node).no }}</span>
+            <svg viewBox="0 0 24 24"><path :d="tree.iconOf(stageOf(node))" /></svg>
+            <span class="txt"><b>{{ stageOf(node).name }}</b><small>{{ stageOf(node).note }}</small></span>
+          </template>
+        </div>
+
+        <div
+          v-else-if="node.kind === 'task'"
+          :class="[...taskClass(node), { in: ready }]"
+          :style="nodeStyle(node)"
+          :data-task="taskOf(node).id"
+        >
+          <b>{{ taskOf(node).title }}</b>
+          <code v-if="!node.dense">{{ taskOf(node).file }}</code>
+          <span class="mini"><i :style="{ width: (taskOf(node).state === 'done' ? 100 : taskOf(node).state === 'running' ? 45 : 0) + '%' }"></i></span>
+        </div>
+
+        <div
+          v-else-if="node.kind === 'chip'"
+          class="node-task ghost chip"
+          :class="{ in: ready }"
+          :style="nodeStyle(node)"
+          :data-expand="node.stageIndex"
+          @click="expandStage(node.stageIndex)"
+        >
+          <b>{{ node.title }}</b><code>{{ node.note }}</code>
+        </div>
+
+        <div
+          v-else-if="node.kind === 'other'"
+          class="node-task ghost other"
+          :class="{ in: ready }"
+          :style="nodeStyle(node)"
+        >
+          <b>{{ node.title }}</b><code>{{ node.note }}</code>
+        </div>
+      </template>
     </div>
   </main>
 </template>

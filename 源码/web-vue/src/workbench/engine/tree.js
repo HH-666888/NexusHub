@@ -428,76 +428,8 @@
       /* ───────── 渲染：按布局建节点，再按顺序点亮 ───────── */
 
       function render() {
-        clearTimers();
-        inner.querySelectorAll(".node-root, .node-stage, .node-task, .node-other").forEach((n) => n.remove());
-        svg.innerHTML = "";
-
-        const width = inner.clientWidth || 720;
-        const plan = view.layout === "lr" ? layoutLR(width) : layoutTD(width);
-
-        inner.style.minHeight = plan.height + "px";
-        svg.setAttribute("viewBox", `0 0 ${width} ${plan.height}`);
-        svg.setAttribute("preserveAspectRatio", "none");
-        svg.style.height = plan.height + "px";   // 与 viewBox 1:1，避免 y 被拉伸
-
-        const stageItems = plan.nodes.filter((n) => n.kind === "stage");
-        const taskItems = plan.nodes.filter((n) => n.kind === "task");
-
-        plan.nodes.forEach((item) => {
-          const el = document.createElement("div");
-
-          if (item.kind === "root") {
-            el.className = "node-root";
-            el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px`;
-            el.innerHTML = `<b>${item.title}</b><small>${item.note}</small>`;
-            later(() => el.classList.add("in"), 100);
-          }
-
-          if (item.kind === "stage") {
-            el.className = `node-stage ${item.data.state}${view.focus !== null ? " focus" : ""}`;
-            el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px${item.compact ? ";min-height:" + item.h + "px" : ""}`;
-            el.dataset.stage = String(item.stageIndex);
-            const compactName = item.compact && width < 900;
-            el.innerHTML = item.compact
-              ? `<span class="no">${item.data.no}</span><span class="txt"><b>${compactName ? item.data.short : item.data.name}</b><small>${item.data.note}</small></span>`
-              : `<span class="no">${item.data.no}</span>
-                 <svg viewBox="0 0 24 24"><path d="${item.data.icon}"/></svg>
-                 <span class="txt"><b>${item.data.name}</b><small>${item.data.note}</small></span>`;
-            if (item.compact) el.style.gridTemplateColumns = "18px minmax(0,1fr)";
-            const appearAt = 380 + stageItems.indexOf(item) * 170;
-            later(() => el.classList.add("in"), appearAt);
-          }
-
-          if (item.kind === "task") {
-            const t = item.data;
-            el.className = `node-task ${t.state}${item.dense ? " dense" : ""}`;
-            el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px;height:${item.h}px`;
-            if (t.id) el.dataset.task = t.id;
-            el.innerHTML = `<b>${t.title}</b>${item.dense ? "" : `<code>${t.file}</code>`}
-              <span class="mini"><i style="width:${t.progress}%"></i></span>`;
-            const appearAt = 1480 + taskItems.indexOf(item) * 90;
-            later(() => el.classList.add("in"), appearAt);
-          }
-
-          if (item.kind === "chip") {
-            el.className = "node-task ghost chip";
-            el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px;height:${item.h}px`;
-            el.dataset.expand = String(item.stageIndex);
-            el.innerHTML = `<b>${item.title}</b><code>${item.note}</code>`;
-            later(() => el.classList.add("in"), 1480 + taskItems.length * 90 + 120);
-          }
-
-          if (item.kind === "other") {
-            el.className = "node-task ghost other";
-            el.style.cssText = `left:${item.x}px;top:${item.y}px;width:${item.w}px`;
-            el.innerHTML = `<b>${item.title}</b><code>${item.note}</code>`;
-            later(() => el.classList.add("in"), 1480 + TASKS.length * 90 + 120);
-          }
-
-          inner.appendChild(el);
-        });
-
-        plan.paths.forEach((d, i) => addPath(d, 260 + Math.min(i * 30, 900)));
+        // 树由 Vue 的 WorkbenchCanvas 根据 store 渲染；引擎只刷新顶部状态。
+        syncStore();
         updateHeader();
       }
 
