@@ -10,7 +10,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import AssistFile, AssistFinding, AssistProject
+from app.db.models import AssistFile, AssistFinding, AssistProject, AssistTestCase
 from app.db.session import SessionLocal
 from app.deps import get_current_user, get_db
 from app.domain.user import User
@@ -338,6 +338,130 @@ def update_finding(
     return {"ok": True}
 
 
+@router.get("/projects/{project_id}/tests")
+def list_tests(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    _owned(db, project_id, user)
+    rows = db.execute(
+        select(AssistTestCase).where(AssistTestCase.project_id == project_id).order_by(AssistTestCase.id)
+    ).scalars().all()
+    return {
+        "tests": [
+            {
+                "id": row.id,
+                "title": row.title,
+                "steps": row.steps or "",
+                "expected": row.expected or "",
+                "status": row.status,
+            }
+            for row in rows
+        ]
+    }
+
+
+@router.post("/projects/{project_id}/tests", status_code=201)
+def create_test(
+    project_id: str,
+    payload: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    _owned(db, project_id, user)
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="用例标题不能为空")
+    row = AssistTestCase(
+        project_id=project_id,
+        title=title[:200],
+        steps=str(payload.get("steps") or "")[:2000],
+        expected=str(payload.get("expected") or "")[:1000],
+        status="pending",
+        created_at=now_ms(),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "title": row.title, "steps": row.steps, "expected": row.expected, "status": row.status}
+
+
+@router.patch("/tests/{test_id}")
+def update_test(
+    test_id: int,
+    payload: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = db.get(AssistTestCase, test_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="test not found")
+    project = db.get(AssistProject, row.project_id)
+    if project is None or project.user_id != user.id:
+        raise HTTPException(status_code=404, detail="test not found")
+    if "status" in payload:
+        status = str(payload["status"])
+        if status not in {"pending", "pass", "fail"}:
+            raise HTTPException(status_code=400, detail="unknown status")
+        row.status = status
+    for field, limit in (("title", 200), ("steps", 2000), ("expected", 1000)):
+        if field in payload:
+            setattr(row, field, str(payload[field])[:limit])
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/tests/{test_id}")
+def delete_test(
+    test_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = db.get(AssistTestCase, test_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="test not found")
+    project = db.get(AssistProject, row.project_id)
+    if project is None or project.user_id != user.id:
+        raise HTTPException(status_code=404, detail="test not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/projects/{project_id}/deliverable")
+def deliverable(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    _owned(db, project_id, user)
+    files = db.execute(select(AssistFile).where(AssistFile.project_id == project_id)).scalars().all()
+    findings = db.execute(
+        select(AssistFinding).where(AssistFinding.project_id == project_id, AssistFinding.status == "open")
+    ).scalars().all()
+    tests = db.execute(select(AssistTestCase).where(AssistTestCase.project_id == project_id)).scalars().all()
+
+    paths = {item.path for item in files}
+    names = {item.path.rsplit("/", 1)[-1] for item in files}
+    entry = bool(paths & {"main.py", "app.py", "index.html", "api/main.py", "web/index.html"})
+    readme = any(name.lower().startswith("readme") for name in names)
+    deps = any(name in {"requirements.txt", "pyproject.toml", "package.json"} for name in names)
+    errors = [item for item in findings if item.severity == "error"]
+    secrets = [item for item in findings if "secret" in item.rule]
+
+    checks = [
+        {"name": "入口文件", "pass": entry, "detail": "main.py / app.py / index.html 至少一个" if entry else "还没有入口文件"},
+        {"name": "README", "pass": readme, "detail": "有说明文档" if readme else "建议补 README"},
+        {"name": "依赖声明", "pass": deps, "detail": "有依赖清单" if deps else "没有 requirements / package.json"},
+        {"name": "测试用例", "pass": len(tests) > 0, "detail": f"{len(tests)} 条" if tests else "还没有写测试用例"},
+        {"name": "无未处理错误", "pass": not errors, "detail": f"{len(errors)} 条 error" if errors else "没有 error 级问题"},
+        {"name": "无硬编码密钥", "pass": not secrets, "detail": f"{len(secrets)} 条疑似密钥" if secrets else "没有发现写死的密钥"},
+    ]
+    passed = sum(1 for item in checks if item["pass"])
+    return {"checks": checks, "passed": passed, "total": len(checks), "files": len(files), "openFindings": len(findings)}
+
+
 @router.post("/projects/{project_id}/apply")
 def apply_edit(
     project_id: str,
@@ -368,11 +492,13 @@ def apply_edit(
         except SyntaxError as error:
             raise HTTPException(status_code=422, detail=f"改完语法不通过：{error}")
 
-    row.content = content
-    row.updated_at = now_ms()
-    project.updated_at = now_ms()
-    db.commit()
-    return {"ok": True, "path": path, "content": content, "previous": previous, "note": note}
+    dry_run = bool(payload.get("dryRun"))
+    if not dry_run:
+        row.content = content
+        row.updated_at = now_ms()
+        project.updated_at = now_ms()
+        db.commit()
+    return {"ok": True, "path": path, "content": content, "previous": previous, "note": note, "dryRun": dry_run}
 
 
 @router.post("/projects/{project_id}/stage/ai")

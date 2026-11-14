@@ -287,3 +287,17 @@ class UsageRecord(Base):
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_cny: Mapped[float] = mapped_column(Numeric(12, 6), default=0)
     created_at: Mapped[int] = mapped_column(BigInteger)
+
+
+class AssistTestCase(Base):
+    __tablename__ = "assist_test_cases"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    project_id: Mapped[str] = mapped_column(
+        VARCHAR(26, **ASCII_KW), ForeignKey("assist_projects.id", ondelete="CASCADE")
+    )
+    title: Mapped[str] = mapped_column(String(200))
+    steps: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expected: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    created_at: Mapped[int] = mapped_column(BigInteger)

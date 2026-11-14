@@ -162,11 +162,39 @@
       });
     },
 
-    async applyAssist(id, path, instruction) {
+    async applyAssist(id, path, instruction, dryRun) {
       return request("/assist/projects/" + encodeURIComponent(id) + "/apply", {
         method: "POST",
-        body: JSON.stringify({ path, instruction }),
+        body: JSON.stringify({ path, instruction, dryRun: Boolean(dryRun) }),
       });
+    },
+
+    async assistTests(id) {
+      const result = await request("/assist/projects/" + encodeURIComponent(id) + "/tests");
+      return result.ok ? result.data.tests : null;
+    },
+
+    async createAssistTest(id, payload) {
+      return request("/assist/projects/" + encodeURIComponent(id) + "/tests", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async updateAssistTest(testId, patch) {
+      return request("/assist/tests/" + encodeURIComponent(testId), {
+        method: "PATCH",
+        body: JSON.stringify(patch || {}),
+      });
+    },
+
+    async deleteAssistTest(testId) {
+      return request("/assist/tests/" + encodeURIComponent(testId), { method: "DELETE" });
+    },
+
+    async assistDeliverable(id) {
+      const result = await request("/assist/projects/" + encodeURIComponent(id) + "/deliverable");
+      return result.ok ? result.data : null;
     },
 
     async assistCoach(id, message, stage, mode) {
