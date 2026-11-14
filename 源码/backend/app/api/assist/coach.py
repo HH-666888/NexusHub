@@ -85,6 +85,79 @@ def assist(db: Session, *, user: User, project: AssistProject, message: str, sta
     record_usage(db, user_id=user.id, project_id=project.id, kind="coach", reply=reply)
     return reply.content.strip(), citations
 
+def stream(db: Session, *, user: User, project: AssistProject, message: str, stage: str, mode: str = "chat"):
+    """和 assist 同样的上下文，但把模型输出逐段吐出来。"""
+    files = db.execute(select(AssistFile).where(AssistFile.project_id == project.id)).scalars().all()
+    findings = db.execute(
+        select(AssistFinding)
+        .where(AssistFinding.project_id == project.id, AssistFinding.status == "open")
+        .limit(12)
+    ).scalars().all()
+
+    key_row = db.get(Setting, {"user_id": user.id, "key": "apiKey"})
+    if key_row is not None and isinstance(key_row.value, str):
+        set_user_api_key(key_row.value)
+
+    memory_text, citations = memory_service.prompt_block(db, user.id)
+    mode_line = (
+        "纯对话——只解释概念、回答疑问，不主动展开改代码的方案。"
+        if mode == "chat"
+        else "协作建议——给出具体到文件/函数的改法，用户自己决定是否采纳。"
+    )
+    system = f"""你是 NexusHub 的辅助开发教练，按软件开发的六道工序陪用户一步一步做。
+
+原则：
+1. 用户自己写代码，你只给建议、解释、检查，不声称已经修改文件。
+   当前模式：{mode_line}
+2. 回答要短：先结论，再原因，最多 5 条建议。
+3. 结合当前阶段的任务，不要跳到别的阶段。
+4. 信息不足时，直接问一个最关键的问题。
+5. 不编造文件内容或检查结果。
+""" + (f"\n{memory_text}" if memory_text else "")
+
+    context = [
+        f"项目：{project.title}",
+        f"目标：{project.goal or '（未填写）'}",
+        f"当前阶段：{stage}（{STAGE_GUIDE.get(stage, '')}）",
+        "文件：" + (", ".join(item.path for item in files) if files else "还没有文件"),
+    ]
+    if findings:
+        context.append("未解决问题：")
+        context.extend(f"- [{item.severity}] {item.file_path}:{item.line} {item.message}" for item in findings)
+    context.append(f"用户的问题：{message}" if message else "用户没有具体问题，请给出当前阶段最该做的下一步。")
+
+    client = build_client("plan")
+    try:
+        stream = client.stream(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": "\n".join(context)},
+            ],
+            model_for("plan"),
+            max_tokens=700,
+            temperature=0.3,
+        )
+        for delta in stream:
+            yield {"delta": delta}
+        reply = stream.reply
+        if reply is None or not reply.content.strip():
+            yield {"error": "模型没有返回内容"}
+            return
+        amount = record_usage(db, user_id=user.id, project_id=project.id, kind="coach", reply=reply)
+        yield {
+            "done": True,
+            "citations": citations,
+            "model": reply.model,
+            "promptTokens": reply.prompt_tokens,
+            "completionTokens": reply.completion_tokens,
+            "costCny": amount,
+        }
+    except Exception as error:  # noqa: BLE001
+        yield {"error": f"AI 暂时不可用：{error}"}
+    finally:
+        client.close()
+
+
 def apply_edit(db: Session, *, user: User, project: AssistProject, path: str, content: str, instruction: str):
     """自动模式：让模型给出完整新文件内容，返回 (content, note)。"""
     memory_text, _ = memory_service.prompt_block(db, user.id)

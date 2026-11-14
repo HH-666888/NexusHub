@@ -62,6 +62,20 @@ class RecordedModelClient:
             )
         return reply
 
+    def stream(
+        self,
+        messages: list[dict],
+        model: str,
+        *,
+        max_tokens: int = 800,
+        temperature: float = 0.2,
+    ):
+        if self._mode == "replay":
+            raise ModelError("回放模式不支持流式")
+        if self._inner is None:
+            raise ModelError("录制/直连模式需要模型客户端")
+        return self._inner.stream(messages, model, max_tokens=max_tokens, temperature=temperature)
+
     def close(self) -> None:
         if self._inner is not None:
             self._inner.close()

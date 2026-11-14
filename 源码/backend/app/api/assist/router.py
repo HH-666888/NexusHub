@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -519,3 +521,29 @@ def stage_ai(
         mode=str(payload.get("mode") or "chat"),
     )
     return {"reply": reply, "citations": citations}
+
+@router.post("/projects/{project_id}/stage/ai/stream")
+def stage_ai_stream(
+    project_id: str,
+    payload: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    project = _owned(db, project_id, user)
+    message = str(payload.get("message") or "").strip()
+    stage = str(payload.get("stage") or project.stage)
+    mode = str(payload.get("mode") or "chat")
+
+    def events():
+        for item in coach.stream(db, user=user, project=project, message=message, stage=stage, mode=mode):
+            yield "data: " + json.dumps(item, ensure_ascii=False) + "\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

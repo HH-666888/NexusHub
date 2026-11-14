@@ -205,6 +205,60 @@
       return result.ok ? result.data : null;
     },
 
+    async assistCoachStream(id, message, stage, mode, onDelta) {
+      let response;
+      try {
+        response = await fetch(BASE + "/assist/projects/" + encodeURIComponent(id) + "/stage/ai/stream", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message, stage, mode }),
+        });
+      } catch (error) {
+        return null;
+      }
+      if (!response.ok || !response.body) return null;
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+      const result = { reply: "", citations: [], costCny: 0, model: "" };
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let cut;
+          while ((cut = buffer.indexOf("\n\n")) >= 0) {
+            const packet = buffer.slice(0, cut);
+            buffer = buffer.slice(cut + 2);
+            for (const line of packet.split("\n")) {
+              if (!line.startsWith("data:")) continue;
+              let payload;
+              try {
+                payload = JSON.parse(line.slice(5).trim());
+              } catch (error) {
+                continue;
+              }
+              if (payload.delta) {
+                result.reply += payload.delta;
+                if (onDelta) onDelta(payload.delta);
+              } else if (payload.error) {
+                throw new Error(payload.error);
+              } else if (payload.done) {
+                result.citations = payload.citations || [];
+                result.costCny = Number(payload.costCny || 0);
+                result.model = payload.model || "";
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      return result;
+    },
+
     // ── AI 记忆 ──
     async memory(days) {
       const result = await request("/memory?days=" + (days || 30));

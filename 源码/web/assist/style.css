@@ -351,3 +351,13 @@
 .deliver-row.fail b { color: #dc2626; }
 .deliver-row small { color: var(--text-3); font-size: 11.5px; }
 .extra-empty { padding: 8px 0; color: var(--text-3); font-size: 12px; }
+
+
+.coach-msg.streaming { min-height: 20px; }
+.coach-msg.streaming::after {
+  content: "▍";
+  margin-left: 2px;
+  color: var(--primary, #2563eb);
+  animation: coach-cursor 0.9s steps(2) infinite;
+}
+@keyframes coach-cursor { 0%, 45% { opacity: 1; } 50%, 100% { opacity: 0; } }
