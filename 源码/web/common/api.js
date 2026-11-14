@@ -259,6 +259,11 @@
       return result;
     },
 
+    async skills() {
+      const result = await request("/skills");
+      return result.ok ? result.data.skills : null;
+    },
+
     // ── AI 记忆 ──
     async memory(days) {
       const result = await request("/memory?days=" + (days || 30));

@@ -10,6 +10,7 @@ from app.domain.user import User
 from app.api.ai.factory import build_client, model_for, set_user_api_key
 from app.api.ai.cost.ledger import record_usage
 from app.api.assist import memory_service
+from app.api.skills.software import block as skill_block
 
 STAGE_GUIDE = {
     "plan": "帮用户把需求写清楚：目标、受众、场景、可测的验收标准。指出还缺什么。",
@@ -49,7 +50,7 @@ def assist(db: Session, *, user: User, project: AssistProject, message: str, sta
 3. 结合当前阶段的任务，不要跳到别的阶段。
 4. 信息不足时，直接问一个最关键的问题。
 5. 不编造文件内容或检查结果。
-""" + (f"\n{memory_text}" if memory_text else "")
+""" + ("\n\n" + skill_block(stage)) + (f"\n{memory_text}" if memory_text else "")
 
     context = [
         f"项目：{project.title}",
@@ -113,7 +114,7 @@ def stream(db: Session, *, user: User, project: AssistProject, message: str, sta
 3. 结合当前阶段的任务，不要跳到别的阶段。
 4. 信息不足时，直接问一个最关键的问题。
 5. 不编造文件内容或检查结果。
-""" + (f"\n{memory_text}" if memory_text else "")
+""" + ("\n\n" + skill_block(stage)) + (f"\n{memory_text}" if memory_text else "")
 
     context = [
         f"项目：{project.title}",
@@ -168,7 +169,7 @@ def apply_edit(db: Session, *, user: User, project: AssistProject, path: str, co
 2. 不要输出 JSON，不要 Markdown 围栏，不要解释。
 3. 只改与要求相关的部分，保持其余代码不变。
 4. 不要引入新的第三方依赖。
-""" + (f"\n{memory_text}" if memory_text else "")
+""" + ("\n\n" + skill_block("build")) + (f"\n{memory_text}" if memory_text else "")
     user_text = f"""项目：{project.title}
 文件：{path}
 要求：{instruction}

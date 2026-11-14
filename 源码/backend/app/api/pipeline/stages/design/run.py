@@ -19,6 +19,7 @@ from app.api.domain.models import ArchV2
 from app.api.pipeline import recorder
 from app.api.pipeline.context import RunContext
 from app.ai.rag.retrieve import prompt_block, retrieve
+from app.api.skills.software import block as skill_block
 from app.api.pipeline.errors import BudgetExceeded, StageFailed
 
 SYSTEM = """你是软件架构师。基于规格设计一个最小可运行的全栈应用。
@@ -143,7 +144,7 @@ def run(run_id: str, ctx: RunContext) -> ArchV2:
 
     client = build_client("design")
     model = model_for("design")
-    system = SYSTEM + ("\n\n" + prompt_block(hits) if hits else "")
+    system = SYSTEM + ("\n\n" + skill_block("design")) + ("\n\n" + prompt_block(hits) if hits else "")
     base_messages = [
         {"role": "system", "content": system},
         {

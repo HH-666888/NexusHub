@@ -16,6 +16,7 @@ from app.api.assist.router import router as assist_router
 from app.api.memory.router import router as memory_router
 from app.api.usage.router import router as usage_router
 from app.api.rag.router import router as rag_router
+from app.api.skills.router import router as skills_router
 from app.api.runs.router import router as runs_router
 from app.api.gate.router import router as gate_router
 
@@ -29,6 +30,7 @@ router.include_router(assist_router, prefix="/assist", tags=["assist"])
 router.include_router(memory_router, prefix="/memory", tags=["memory"])
 router.include_router(usage_router, prefix="/usage", tags=["usage"])
 router.include_router(rag_router, prefix="/rag", tags=["rag"])
+router.include_router(skills_router, prefix="/skills", tags=["skills"])
 
 
 @router.get("/health", tags=["health"])

@@ -18,6 +18,7 @@ from app.db.session import SessionLocal
 from app.config import get_settings
 from app.api.pipeline.context import RunContext
 from app.ai.rag.retrieve import prompt_block, retrieve
+from app.api.skills.software import block as skill_block
 from app.api.pipeline.errors import BudgetExceeded
 
 SYSTEM = """你是软件需求分析师。只做一件事：把用户的一句话变成可执行的软件规格。
@@ -83,7 +84,7 @@ def run(run_id: str, ctx: RunContext) -> SpecV2:
 
     client = build_client("plan")
     model = model_for("plan")
-    system = SYSTEM + ("\n\n" + prompt_block(hits) if hits else "")
+    system = SYSTEM + ("\n\n" + skill_block("plan")) + ("\n\n" + prompt_block(hits) if hits else "")
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": f"用户需求：{ctx.prompt}\n\n请输出规格 JSON。"},

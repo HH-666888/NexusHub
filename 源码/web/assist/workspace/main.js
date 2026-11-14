@@ -573,5 +573,12 @@
     }
     await loadProject();
     loadMemoryStats();
+    window.api.skills().then(function (items) {
+      const pill = document.getElementById("skill-pill");
+      if (pill && items && items.length) {
+        pill.textContent = "Skill " + items[0].version;
+        pill.title = items[0].name + " · " + (items[0].stages || []).length + " 道工序";
+      }
+    });
   })();
 })();
