@@ -21,7 +21,7 @@ STAGE_GUIDE = {
 }
 
 
-def assist(db: Session, *, user: User, project: AssistProject, message: str, stage: str) -> tuple[str, list[dict]]:
+def assist(db: Session, *, user: User, project: AssistProject, message: str, stage: str, mode: str = "chat") -> tuple[str, list[dict]]:
     files = db.execute(select(AssistFile).where(AssistFile.project_id == project.id)).scalars().all()
     findings = db.execute(
         select(AssistFinding)
@@ -35,10 +35,16 @@ def assist(db: Session, *, user: User, project: AssistProject, message: str, sta
 
     memory_text, citations = memory_service.prompt_block(db, user.id)
 
-    system = """你是 NexusHub 的辅助开发教练，按软件开发的六道工序陪用户一步一步做。
+    mode_line = (
+        "纯对话——只解释概念、回答疑问，不主动展开改代码的方案。"
+        if mode == "chat"
+        else "协作建议——给出具体到文件/函数的改法，用户自己决定是否采纳。"
+    )
+    system = f"""你是 NexusHub 的辅助开发教练，按软件开发的六道工序陪用户一步一步做。
 
 原则：
 1. 用户自己写代码，你只给建议、解释、检查，不声称已经修改文件。
+   当前模式：{mode_line}
 2. 回答要短：先结论，再原因，最多 5 条建议。
 3. 结合当前阶段的任务，不要跳到别的阶段。
 4. 信息不足时，直接问一个最关键的问题。

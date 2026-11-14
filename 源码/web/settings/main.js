@@ -63,7 +63,13 @@
       saveBtn.disabled = true;
       saveBtn.textContent = "保存中…";
       const key = keyInput ? keyInput.value.trim() : "";
-      const payload = key ? { apiKey: key } : {};
+      if (!key) {
+        saveBtn.textContent = "保存 API Key";
+        saveBtn.disabled = false;
+        if (savedAt) savedAt.textContent = "留空不修改；要保存请先填 Key";
+        return;
+      }
+      const payload = { apiKey: key };
 
       if (window.api) {
         const result = await window.api.saveSettings(payload);
@@ -80,7 +86,7 @@
       }
       saveBtn.textContent = "已保存";
       setTimeout(function () {
-        saveBtn.textContent = "保存更改";
+        saveBtn.textContent = "保存 API Key";
         saveBtn.disabled = false;
       }, 900);
     });

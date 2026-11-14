@@ -390,5 +390,6 @@ def stage_ai(
         project=project,
         message=message,
         stage=str(payload.get("stage") or project.stage),
+        mode=str(payload.get("mode") or "chat"),
     )
     return {"reply": reply, "citations": citations}

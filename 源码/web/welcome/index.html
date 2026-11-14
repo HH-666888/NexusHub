@@ -2,12 +2,13 @@
 <html lang="zh-CN" data-theme="light">
   <head>
     <meta charset="utf-8" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>NexusHub · 说一句话，造一个能跑起来的软件</title>
-    <link rel="stylesheet" href="../common/app.css?v=20261113x" />
-    <link rel="stylesheet" href="../common/glass.css?v=20261113x" />
-    <link rel="stylesheet" href="./welcome.css?v=20261113x" />
-    <link rel="stylesheet" href="./welcome-long.css?v=20261113x" />
+    <link rel="stylesheet" href="../common/app.css?v=20261114c" />
+    <link rel="stylesheet" href="../common/glass.css?v=20261114c" />
+    <link rel="stylesheet" href="./welcome.css?v=20261114c" />
+    <link rel="stylesheet" href="./welcome-long.css?v=20261114c" />
     <script>
       /* 刷新 → 回到顶部；浏览器后退/前进 → 保留原来的位置。
          必须在 <head> 里执行：等脚本加载完再滚，用户会先看到闪一下。 */
@@ -342,7 +343,7 @@
               <h2>自动测试</h2>
               <p class="lead">自己跑一遍，不过就不交付</p>
               <ul class="stage-points">
-                <li>七项自检：打开、交互、持久化</li>
+                <li>自检：打开、交互、持久化</li>
                 <li>失败自动回环，改了再跑</li>
                 <li>通过才进入交付，不糊弄</li>
               </ul>
@@ -396,8 +397,8 @@
               </div>
               <div class="deliver">
                 <div class="deliver-row">产物文件<b>6 个</b></div>
-                <div class="deliver-row">本次成本<b data-count="0.025" data-decimals="3" data-prefix="¥">¥0.000</b></div>
-                <div class="deliver-row">总耗时<b data-count="138" data-suffix=" 秒">0 秒</b></div>
+                <div class="deliver-row">本次成本<b>—</b></div>
+                <div class="deliver-row">总耗时<b>—</b></div>
                 <div class="deliver-cta">
                   <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden><path pathLength="1" d="M12 4v10M8 11l4 4 4-4M5 19h14" /></svg>
                   下载软件包
@@ -411,9 +412,9 @@
       <!-- ───────── 数字条 ───────── -->
       <section class="stats" id="stats">
         <div><b>6</b><span>道工序自动跑完</span></div>
-        <div><b>7</b><span>项自检通过才交付</span></div>
-        <div><b data-count="0.025" data-decimals="3" data-prefix="¥">¥0.000</b><span>一次生成的实际成本</span></div>
-        <div><b data-count="23" data-suffix=" KB">0 KB</b><span>单文件，零依赖</span></div>
+        <div><b>3</b><span>层验收：产物 / 接口 / 页面</span></div>
+        <div><b>实时</b><span>成本按实际 token 结算</span></div>
+        <div><b>真实</b><span>产物体积以交付为准</span></div>
       </section>
 
       <!-- ───────── 收尾 CTA ───────── -->
@@ -477,7 +478,7 @@
         });
       })();
     </script>
-    <script src="./welcome-long.js?v=20261113x" defer></script>
+    <script src="./welcome-long.js?v=20261114c" defer></script>
     <script>
       // 首页输入框：已登录（假登录）直接进工作台，未登录带上需求去登录页
       (function () {
@@ -497,7 +498,14 @@
               /* 问不到就沿用演示标记 */
             }
           }
-          location.href = loggedIn ? "../workbench/?run=new" + carry : "../login/?next=workbench" + carry;
+          if (loggedIn && text && window.api) {
+            const created = await window.api.createRun(text);
+            if (created.ok && created.data) {
+              location.href = "../workbench/?run=" + encodeURIComponent(created.data.id);
+              return;
+            }
+          }
+          location.href = loggedIn ? "../projects/" : "../login/?next=workbench" + carry;
         });
       })();
     </script>

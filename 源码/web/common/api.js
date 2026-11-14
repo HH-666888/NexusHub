@@ -169,10 +169,10 @@
       });
     },
 
-    async assistCoach(id, message, stage) {
+    async assistCoach(id, message, stage, mode) {
       const result = await request("/assist/projects/" + encodeURIComponent(id) + "/stage/ai", {
         method: "POST",
-        body: JSON.stringify({ message, stage }),
+        body: JSON.stringify({ message, stage, mode }),
       });
       return result.ok ? result.data : null;
     },

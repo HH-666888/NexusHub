@@ -698,3 +698,7 @@ body.is-blank .statusbar .cost { opacity: .35; }
 .t-sub[hidden] { display: none; }
 
 .t-sub .t-item { grid-template-columns: minmax(0, 1fr) auto; font-size: 12px; }
+
+/* 真实运行时不显示演示时间线控件 */
+body.is-live #replay,
+body.is-live #speed-pop { display: none; }
