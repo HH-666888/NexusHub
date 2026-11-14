@@ -455,15 +455,6 @@
   }
 
   function wireTabs() {
-    const head = document.querySelector(".code-head .tabs");
-    if (head) {
-      Array.from(head.children).forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          showTab(btn.textContent.trim());
-        });
-      });
-    }
-
     const bottom = document.querySelector(".statusbar .tabs");
     if (bottom) {
       Array.from(bottom.children).forEach(function (btn) {
