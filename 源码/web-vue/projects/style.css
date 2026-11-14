@@ -1,0 +1,88 @@
+.page { max-width: 1280px; padding-top: 28px; }
+
+      /* 顶部一句新的需求 */
+      .new-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 10px 10px 20px;
+        background: var(--card);
+        border: 1px solid var(--line-2);
+        border-radius: 14px;
+        box-shadow: var(--shadow-card);
+        margin-bottom: 26px;
+      }
+      .new-bar input {
+        flex: 1;
+        min-width: 0;
+        height: 42px;
+        border: none;
+        outline: none;
+        background: transparent;
+        font: inherit;
+        font-size: 14.5px;
+        color: var(--text);
+      }
+      .new-bar input::placeholder { color: var(--text-3); }
+      .new-bar .btn { height: 42px; padding: 0 22px; }
+
+      .head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+      .head h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; }
+      .count { font-size: 13px; font-weight: 500; color: var(--text-3); padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); }
+      .seg { display: flex; gap: 4px; padding: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 11px; }
+      .seg button { font: inherit; font-size: 13px; color: var(--text-2); background: none; border: none; padding: 6px 13px; border-radius: 8px; cursor: pointer; }
+      .seg button:hover { background: var(--card-2); color: var(--text); }
+      .seg button.is-on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+
+      .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+
+      .card {
+        display: flex; flex-direction: column;
+        background: var(--card); border: 1px solid var(--line);
+        border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow-card);
+        transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+      }
+      .card:hover { transform: translateY(-2px); border-color: var(--primary-line); box-shadow: var(--shadow-pop); }
+
+      .thumb { position: relative; height: 138px; background: var(--thumb-bg); border-bottom: 1px solid var(--line); overflow: hidden; }
+      .thumb::before { content: ""; position: absolute; inset: 14px 16px; border-radius: 9px; background: var(--card); border: 1px solid var(--line); }
+      .tl { position: absolute; height: 6px; border-radius: 3px; background: var(--line-2); left: 30px; }
+      .tl.a { top: 38px; width: 44%; }
+      .tl.b { top: 52px; width: 28%; opacity: .65; }
+      .tb { position: absolute; left: 30px; right: 30px; bottom: 26px; height: 26px; border-radius: 7px; background: var(--primary-soft); border: 1px dashed var(--primary-line); }
+      .tg { position: absolute; left: 30px; right: 30px; bottom: 26px; height: 26px; border-radius: 7px;
+        background: linear-gradient(to right, var(--line-2) 1px, transparent 1px) 0 0/20px 100%, linear-gradient(to bottom, var(--line-2) 1px, transparent 1px) 0 0/100% 13px; opacity: .6; }
+      .tr { position: absolute; left: 30px; right: 30px; bottom: 26px; height: 26px;
+        background: linear-gradient(to bottom, var(--line-2) 0 1px, transparent 1px 100%) 0 0/100% 9px; opacity: .8; }
+
+      .thumb .pill { position: absolute; left: 18px; bottom: 14px; }
+
+      .body { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 16px; flex: 1; }
+      .body h3 { margin: 0; font-size: 14px; line-height: 1.6; font-weight: 600; }
+      .meta { display: flex; gap: 14px; font-size: 12px; color: var(--text-3); }
+      .actions { display: flex; gap: 8px; margin-top: auto; padding-top: 4px; }
+
+      .card-new {
+        display: grid; place-items: center; gap: 10px;
+        min-height: 252px;
+        border: 1.5px dashed var(--line-2); border-radius: var(--r-lg);
+        color: var(--text-2); background: transparent;
+      }
+      .card-new:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+      .card-new .plus { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: var(--card); border: 1px solid var(--line-2); color: var(--text-3); }
+      .card-new .plus svg { width: 19px; height: 19px; stroke-width: 2; }
+      .card-new b { font-size: 14px; }
+      .card-new small { font-size: 12.5px; color: var(--text-3); }
+
+      @media (max-width: 1080px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+      @media (max-width: 720px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* 删除：平时低调，悬停变红，别跟主操作抢注意力 */
+.card-del {
+  color: var(--text-3);
+}
+.card-del:hover {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fef2f2;
+}

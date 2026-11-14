@@ -65,9 +65,15 @@ def create_app() -> FastAPI:
         return response
 
     # Vue 迁移页优先挂在原路径前；构建产物不存在时自动退回原生页面。
-    settings_dist = web_dir / "settings-dist" / "settings"
-    if settings_dist.is_dir():
-        app.mount("/settings", StaticFiles(directory=str(settings_dist), html=True), name="settings-vue")
+    vue_dist = web_dir / "vue-dist"
+    vue_assets = vue_dist / "vue-assets"
+    if vue_assets.is_dir():
+        app.mount("/vue-assets", StaticFiles(directory=str(vue_assets)), name="vue-assets")
+
+    for page in ("settings", "login", "register", "projects"):
+        page_dist = vue_dist / page
+        if page_dist.is_dir():
+            app.mount(f"/{page}", StaticFiles(directory=str(page_dist), html=True), name=f"{page}-vue")
 
     # 最后挂静态站："/" 会接管所有未命中的路径，/api 由上面的路由先匹配。
     if web_dir.is_dir():

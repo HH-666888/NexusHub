@@ -1,0 +1,1 @@
+function e(){try{return localStorage.getItem(`nexus-theme`)}catch{return null}}var t=new URLSearchParams(location.search);document.documentElement.dataset.theme=t.get(`theme`)||e()||`light`;
