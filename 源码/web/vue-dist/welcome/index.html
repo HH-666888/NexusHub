@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NexusHub · 说一句话，造一个能跑起来的软件</title>
+    <link rel="stylesheet" href="/common/app.css?v=20261114r" />
+    <link rel="stylesheet" href="/common/glass.css?v=20261114r" />
+    <script>
+/* 刷新 → 回到顶部；浏览器后退/前进 → 保留原来的位置。
+         必须在 <head> 里执行：等脚本加载完再滚，用户会先看到闪一下。 */
+      (function () {
+        var entries = performance.getEntriesByType && performance.getEntriesByType("navigation");
+        var type = entries && entries[0] && entries[0].type;
+        if (type !== "reload") return;
+
+        try {
+          history.scrollRestoration = "manual";
+        } catch (e) {
+          /* 忽略 */
+        }
+
+        // 刷新时把 #锚点 去掉，否则浏览器会跳到那一节
+        if (location.hash) {
+          history.replaceState(null, "", location.pathname + location.search);
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+          var root = document.documentElement;
+          var prev = root.style.scrollBehavior;
+          root.style.scrollBehavior = "auto"; // 关掉平滑滚动，避免"从下面滑上来"
+          window.scrollTo(0, 0);
+          requestAnimationFrame(function () {
+            window.scrollTo(0, 0);
+            root.style.scrollBehavior = prev;
+          });
+        });
+      })();
+    </script>
+    <script type="module" crossorigin src="/vue-assets/welcome-D4gpJJ67.js"></script>
+    <link rel="modulepreload" crossorigin href="/vue-assets/runtime-dom.esm-bundler-fl2t_XXy.js">
+    <link rel="stylesheet" crossorigin href="/vue-assets/welcome-C0EC_VUd.css">
+  </head>
+  <body>
+    <div id="welcome-app"></div>
+
+    <script>
+// file:// 下有些浏览器禁用 localStorage：读写都兜底，别把整段脚本带崩
+      function safeTheme() {
+        try { return localStorage.getItem("nexus-theme"); } catch (e) { return null; }
+      }
+      function saveTheme(value) {
+        try { localStorage.setItem("nexus-theme", value); } catch (e) { /* 忽略 */ }
+      }
+      (function () {
+        const param = new URLSearchParams(location.search).get("theme");
+        document.documentElement.dataset.theme = param || safeTheme() || "light";
+        document.documentElement.dataset.style = new URLSearchParams(location.search).get("style") || "";
+        document.addEventListener("click", function (event) {
+          if (!event.target.closest("#theme-toggle")) return;
+          const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+          document.documentElement.dataset.theme = next;
+          saveTheme(next);
+        });
+      })();
+    </script>
+    <script src="/common/api.js?v=20261114r"></script>
+  </body>
+</html>

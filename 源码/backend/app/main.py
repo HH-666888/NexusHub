@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -70,10 +71,17 @@ def create_app() -> FastAPI:
     if vue_assets.is_dir():
         app.mount("/vue-assets", StaticFiles(directory=str(vue_assets)), name="vue-assets")
 
-    for page in ("settings", "login", "register", "projects"):
+    for page in ("settings", "login", "register", "projects", "memory", "welcome"):
         page_dist = vue_dist / page
         if page_dist.is_dir():
             app.mount(f"/{page}", StaticFiles(directory=str(page_dist), html=True), name=f"{page}-vue")
+
+    # 辅助项目列表先只接管 /assist/；/assist/workspace/ 仍由原页面提供。
+    assist_page = vue_dist / "assist" / "index.html"
+    if assist_page.is_file():
+        @app.get("/assist/", include_in_schema=False)
+        async def assist_vue_page():
+            return FileResponse(assist_page)
 
     # 最后挂静态站："/" 会接管所有未命中的路径，/api 由上面的路由先匹配。
     if web_dir.is_dir():

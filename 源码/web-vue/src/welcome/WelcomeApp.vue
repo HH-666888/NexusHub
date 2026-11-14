@@ -1,0 +1,454 @@
+<script setup>
+import { onMounted } from "vue";
+
+const api = window.api;
+
+async function submitComposer(event) {
+  const form = event.currentTarget;
+  const input = form.querySelector("input");
+  const text = (input && input.value ? input.value : "").trim();
+  const carry = text ? "&prompt=" + encodeURIComponent(text) : "";
+
+  let loggedIn = false;
+  if (api) {
+    try {
+      loggedIn = Boolean(await api.me());
+    } catch (error) {
+      /* 问不到就当未登录，去登录页 */
+    }
+  }
+
+  if (loggedIn && text && api) {
+    const created = await api.createRun(text);
+    if (created.ok && created.data) {
+      location.href = "../workbench/?run=" + encodeURIComponent(created.data.id);
+      return;
+    }
+  }
+
+  location.href = loggedIn ? "../projects/" : "../login/?next=workbench" + carry;
+}
+
+onMounted(async () => {
+  // 长页滚动叙事是命令式脚本，必须在 Vue 渲染完 DOM 后再挂。
+  await import("./welcome-long.js");
+});
+</script>
+
+<template>
+    <header class="topbar">
+      <a class="brand" href="./">
+        <svg viewBox="0 0 24 24" aria-hidden><path class="brand-mark" d="M4 20V4h3.4l9.2 12V4H20v16h-3.4L7.4 8v12H4z" /></svg>
+        NexusHub
+      </a>
+
+      <div class="topbar-actions">
+        <button class="icon-btn" type="button" id="theme-toggle" aria-label="切换主题">
+          <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" /></svg>
+        </button>
+        <a class="btn btn-ghost" href="../login/">登录</a>
+        <a class="btn btn-primary" href="../register/?next=projects">注册</a>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="hero">
+        <div class="hero-copy">
+          <h1>输入一句话，<br />生成一个可运行的软件</h1>
+          <p class="hero-sub">
+            NexusHub 把需求拆成六道工序，由 AI 自主分析、开发、测试并交付，<br />
+            最后交给你一个能打开、能点、数据存得住的完整软件。
+          </p>
+
+          <form class="composer" id="composer" @submit.prevent="submitComposer">
+            <input type="text" aria-label="描述你的软件需求" placeholder="描述你的软件需求，例如：做一个番茄钟网页应用" />
+            <button class="btn btn-primary" type="submit">生成</button>
+          </form>
+        </div>
+
+        <aside class="flow-card" aria-label="六道工序">
+          <ol class="flow-row">
+            <li>
+              <span class="flow-icon">
+                <svg viewBox="0 0 24 24" aria-hidden><path d="M6 4h9l3 3v13H6z" /><path d="M9 11h6M9 15h4" /></svg>
+              </span>
+              <b>需求分析</b>
+            </li>
+            <li class="sep" aria-hidden></li>
+            <li>
+              <span class="flow-icon">
+                <svg viewBox="0 0 24 24" aria-hidden><rect x="4" y="5" width="16" height="5" rx="1.5" /><rect x="4" y="14" width="9" height="5" rx="1.5" /><path d="M17 14h3v5h-3z" /></svg>
+              </span>
+              <b>架构设计</b>
+            </li>
+            <li class="sep" aria-hidden></li>
+            <li>
+              <span class="flow-icon">
+                <svg viewBox="0 0 24 24" aria-hidden><path d="M4 18V6l6 3 4-3 6 3v9" /><path d="M4 18h16" /></svg>
+              </span>
+              <b>自主开发</b>
+            </li>
+            <li class="sep" aria-hidden></li>
+            <li>
+              <span class="flow-icon">
+                <svg viewBox="0 0 24 24" aria-hidden><rect x="7" y="3" width="10" height="7" rx="2" /><rect x="3" y="14" width="8" height="7" rx="2" /><rect x="13" y="14" width="8" height="7" rx="2" /></svg>
+              </span>
+              <b>集成装配</b>
+            </li>
+            <li class="sep" aria-hidden></li>
+            <li>
+              <span class="flow-icon">
+                <svg viewBox="0 0 24 24" aria-hidden><circle cx="11" cy="11" r="6" /><path d="M15.5 15.5L20 20" /></svg>
+              </span>
+              <b>自动测试</b>
+            </li>
+            <li class="sep" aria-hidden></li>
+            <li>
+              <span class="flow-icon">
+                <svg viewBox="0 0 24 24" aria-hidden><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M9 12l2 2 4-4" /></svg>
+              </span>
+              <b>验收交付</b>
+            </li>
+          </ol>
+        </aside>
+      </section>
+
+      <!-- 页面内的品牌字标：把首屏与六道工序之间的空白用起来 -->
+      <div class="brandmark" aria-hidden="true">NexusHub</div>
+
+<!-- ───────── 过渡句 ───────── -->
+      <section class="bridge" id="bridge">
+        <h2>
+          <span class="bridge-word" style="--i: 0">六</span><span class="bridge-word" style="--i: 1">道</span><span class="bridge-word" style="--i: 2">工</span><span class="bridge-word" style="--i: 3">序</span>
+        </h2>
+        <div class="bridge-line" aria-hidden></div>
+        <p>从一句话，到一个能点开的软件</p>
+      </section>
+
+      <!-- ───────── 吸顶工序导航 ───────── -->
+      <nav class="flow-nav" id="flow-nav" aria-label="六道工序">
+        <span class="nav-compact" id="nav-compact">01 / 06</span>
+        <a href="#s-spec" data-nav="0" style="--stage-hue: #0ea5a5"><b>01</b><span>需求分析</span></a>
+        <a href="#s-arch" data-nav="1" style="--stage-hue: #2f6fed"><b>02</b><span>架构设计</span></a>
+        <a href="#s-build" data-nav="2" style="--stage-hue: #7c4dff"><b>03</b><span>自主开发</span></a>
+        <a href="#s-assemble" data-nav="3" style="--stage-hue: #db2777"><b>04</b><span>集成装配</span></a>
+        <a href="#s-test" data-nav="4" style="--stage-hue: #a855f7"><b>05</b><span>自动测试</span></a>
+        <a href="#s-deliver" data-nav="5" style="--stage-hue: #10b981"><b>06</b><span>验收交付</span></a>
+        <span class="nav-track" id="nav-track" aria-hidden></span>
+      </nav>
+
+      <!-- ───────── 六道工序 ───────── -->
+      <div class="flow-wrap" id="flow-wrap">
+        <div class="ruler" aria-hidden>
+          <div class="ruler-fill" id="ruler-fill"></div>
+          <span class="ruler-dot" style="top: 8.3%" data-dot="0"></span>
+          <span class="ruler-dot" style="top: 25%" data-dot="1"></span>
+          <span class="ruler-dot" style="top: 41.6%" data-dot="2"></span>
+          <span class="ruler-dot" style="top: 58.3%" data-dot="3"></span>
+          <span class="ruler-dot" style="top: 75%" data-dot="4"></span>
+          <span class="ruler-dot" style="top: 91.6%" data-dot="5"></span>
+        </div>
+
+        <!-- 01 需求分析 -->
+        <section class="stage" id="s-spec" data-index="0" style="--stage-hue: #0ea5a5">
+          <span class="ghost" aria-hidden>01</span>
+          <div class="stage-inner">
+            <div class="stage-copy">
+              <div class="stage-head">
+                <span class="stage-no">01</span>
+                <span class="stage-ico">
+                  <svg viewBox="0 0 24 24" aria-hidden><path pathLength="1" d="M6 4h9l3 3v13H6z" /><path pathLength="1" d="M9 11h6M9 15h4" /></svg>
+                </span>
+              </div>
+              <h2>需求分析</h2>
+              <p class="lead">一句话，变成能验收的标准</p>
+              <ul class="stage-points">
+                <li>需求清单：要做什么、给谁用</li>
+                <li>边界：这一次明确不做的事</li>
+                <li>验收：做到什么程度才算完成</li>
+              </ul>
+              <span class="stage-file">spec.json</span>
+            </div>
+
+            <div class="stage-art">
+              <div class="art-head">
+                <span class="dots"><i></i><i></i><i></i></span>
+                spec.json
+                <span class="tag">已生成</span>
+              </div>
+              <div class="json-prompt">“做一个值班排班表，能拖拽换班，刷新后数据还在”</div>
+              <div class="json-body">
+                <div class="j-row"><span class="j-key">目标</span><span class="j-val">值班排班表</span></div>
+                <div class="j-row"><span class="j-key">范围</span><span class="j-val">本周排班 · 拖拽换班 · 本地保存</span></div>
+                <div class="j-row"><span class="j-key">不做</span><span class="j-val">登录 · 多团队 · 消息通知</span></div>
+                <div class="j-row"><span class="j-key">验收</span><span class="j-val">能拖 · 刷新还在 · 周末高亮</span></div>
+                <div class="j-row"><span class="j-key">门禁</span><span class="j-val">SPEC_GATE · 已通过</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 02 架构设计 -->
+        <section class="stage" id="s-arch" data-index="1" style="--stage-hue: #2f6fed">
+          <span class="ghost" aria-hidden>02</span>
+          <div class="stage-inner">
+            <div class="stage-copy">
+              <div class="stage-head">
+                <span class="stage-no">02</span>
+                <span class="stage-ico">
+                  <svg viewBox="0 0 24 24" aria-hidden><rect pathLength="1" x="4" y="5" width="16" height="5" rx="1.5" /><rect pathLength="1" x="4" y="14" width="9" height="5" rx="1.5" /><rect pathLength="1" x="17" y="14" width="3" height="5" rx="1.2" /></svg>
+                </span>
+              </div>
+              <h2>架构设计</h2>
+              <p class="lead">先定骨架，再写代码</p>
+              <ul class="stage-points">
+                <li>模块划分：边界清晰，互不牵连</li>
+                <li>技术选型：能用、能跑、能交付</li>
+                <li>数据流：谁存、谁读、谁展示</li>
+              </ul>
+              <span class="stage-file">arch.json</span>
+            </div>
+
+            <div class="stage-art">
+              <div class="art-head">
+                <span class="dots"><i></i><i></i><i></i></span>
+                arch.json
+                <span class="tag">4 个模块</span>
+              </div>
+              <ul class="tree">
+                <li class="tree-row is-dir" style="--d: 0"><i class="ti"></i>app/</li>
+                <li class="tree-row" style="--d: 1"><i class="ti"></i>db/schema.sql</li>
+                <li class="tree-row" style="--d: 1"><i class="ti"></i>api/main.py</li>
+                <li class="tree-row" style="--d: 1"><i class="ti"></i>web/index.html</li>
+                <li class="tree-row" style="--d: 0"><i class="ti"></i>manifest.json</li>
+                <li class="tree-row" style="--d: 1"><i class="ti"></i>entry · 启动命令</li>
+                <li class="tree-row" style="--d: 1"><i class="ti"></i>runtime · 端口 8000</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- 03 自主开发 -->
+        <section class="stage" id="s-build" data-index="2" style="--stage-hue: #7c4dff">
+          <span class="ghost" aria-hidden>03</span>
+          <div class="stage-inner">
+            <div class="stage-copy">
+              <div class="stage-head">
+                <span class="stage-no">03</span>
+                <span class="stage-ico">
+                  <svg viewBox="0 0 24 24" aria-hidden><path pathLength="1" d="M7 4v16M12 4v16M17 4v16" /></svg>
+                </span>
+              </div>
+              <h2>自主开发</h2>
+              <p class="lead">数据库、后端、前端，三路同时开工</p>
+              <ul class="stage-points">
+                <li>三条分支各自推进，互不阻塞</li>
+                <li>每条分支有独立进度与产物</li>
+                <li>按依赖决定先写哪个文件</li>
+              </ul>
+              <span class="stage-file">3 个文件 · 逐个写入</span>
+            </div>
+
+            <div class="stage-art">
+              <div class="art-head">
+                <span class="dots"><i></i><i></i><i></i></span>
+                三路同时写入
+                <span class="tag">自主</span>
+              </div>
+              <div class="build-cols">
+                <div class="build-col" data-file="db/schema.sql" data-speed="46">
+                  <header><i class="d"></i>schema.sql</header>
+                  <pre></pre>
+                  <div class="build-bar"><i style="--p: 100%"></i></div>
+                </div>
+                <div class="build-col" data-file="api/main.py" data-speed="58">
+                  <header><i class="d"></i>main.py</header>
+                  <pre></pre>
+                  <div class="build-bar"><i style="--p: 72%"></i></div>
+                </div>
+                <div class="build-col" data-file="web/index.html" data-speed="70">
+                  <header><i class="d"></i>index.html</header>
+                  <pre></pre>
+                  <div class="build-bar"><i style="--p: 38%"></i></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 04 集成装配 -->
+        <section class="stage" id="s-assemble" data-index="3" style="--stage-hue: #db2777">
+          <span class="ghost" aria-hidden>04</span>
+          <div class="stage-inner">
+            <div class="stage-copy">
+              <div class="stage-head">
+                <span class="stage-no">04</span>
+                <span class="stage-ico">
+                  <svg viewBox="0 0 24 24" aria-hidden><rect pathLength="1" x="7" y="3" width="10" height="7" rx="2" /><rect pathLength="1" x="3" y="14" width="8" height="7" rx="2" /><rect pathLength="1" x="13" y="14" width="8" height="7" rx="2" /></svg>
+                </span>
+              </div>
+              <h2>集成装配</h2>
+              <p class="lead">把零件装成能启动的东西</p>
+              <ul class="stage-points">
+                <li>入口、路由、配置一次接好</li>
+                <li>依赖对齐，不留死链</li>
+                <li>装完就能点，不是一堆文件</li>
+              </ul>
+              <span class="stage-file">manifest.json</span>
+            </div>
+
+            <div class="stage-art">
+              <div class="art-head">
+                <span class="dots"><i></i><i></i><i></i></span>
+                模块 → 入口
+                <span class="tag">已装配</span>
+              </div>
+              <div class="converge">
+                <svg viewBox="0 0 600 260" preserveAspectRatio="none" aria-hidden>
+                  <path pathLength="1" d="M120 34 C 300 34, 360 118, 496 124" />
+                  <path pathLength="1" d="M150 96 C 300 96, 380 120, 496 128" />
+                  <path pathLength="1" d="M120 168 C 300 168, 360 138, 496 132" />
+                  <path pathLength="1" d="M150 228 C 300 228, 380 140, 496 136" />
+                </svg>
+                <span class="chip" style="left: 2%; top: 4%">db/schema.sql</span>
+                <span class="chip" style="left: 14%; top: 28%">api/main.py</span>
+                <span class="chip" style="left: 2%; top: 58%">web/index.html</span>
+                <span class="chip" style="left: 14%; top: 82%">config.json</span>
+                <span class="entry">
+                  <b>app</b>
+                  entry · 8000
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 05 自动测试 -->
+        <section class="stage" id="s-test" data-index="4" style="--stage-hue: #a855f7">
+          <span class="ghost" aria-hidden>05</span>
+          <div class="stage-inner">
+            <div class="stage-copy">
+              <div class="stage-head">
+                <span class="stage-no">05</span>
+                <span class="stage-ico">
+                  <svg viewBox="0 0 24 24" aria-hidden><path pathLength="1" d="M11 4.5a6 6 0 1 0 0 12 6 6 0 0 0 0-12" /><path pathLength="1" d="M15.5 15.5L20 20" /></svg>
+                </span>
+              </div>
+              <h2>自动测试</h2>
+              <p class="lead">自己跑一遍，不过就不交付</p>
+              <ul class="stage-points">
+                <li>自检：打开、交互、持久化</li>
+                <li>失败自动回环，改了再跑</li>
+                <li>通过才进入交付，不糊弄</li>
+              </ul>
+              <span class="stage-file">7 项 · 全部通过</span>
+            </div>
+
+            <div class="stage-art">
+              <div class="art-head">
+                <span class="dots"><i></i><i></i><i></i></span>
+                checks · 6 / 6
+                <span class="tag">回环 1 次</span>
+              </div>
+              <ul class="checks" id="checks">
+                <li data-check><span class="mark">✓</span>页面能打开<span class="note">12ms</span></li>
+                <li data-check><span class="mark">✓</span>接口返回 200<span class="note">34ms</span></li>
+                <li data-check data-fix><span class="mark">✓</span>拖拽后刷新数据还在<span class="note">修复后通过</span></li>
+                <li data-check><span class="mark">✓</span>空状态有引导<span class="note">通过</span></li>
+                <li data-check><span class="mark">✓</span>手机端不横向滚动<span class="note">通过</span></li>
+                <li data-check><span class="mark">✓</span>控制台无报错<span class="note">通过</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- 06 验收交付 -->
+        <section class="stage" id="s-deliver" data-index="5" style="--stage-hue: #10b981">
+          <span class="ghost" aria-hidden>06</span>
+          <div class="stage-inner">
+            <div class="stage-copy">
+              <div class="stage-head">
+                <span class="stage-no">06</span>
+                <span class="stage-ico">
+                  <svg viewBox="0 0 24 24" aria-hidden><path pathLength="1" d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path pathLength="1" d="M9 12l2 2 4-4" /></svg>
+                </span>
+              </div>
+              <h2>验收交付</h2>
+              <p class="lead">交的不是压缩包，是能点的东西</p>
+              <ul class="stage-points">
+                <li>产物清单：每个文件都可查</li>
+                <li>成本与耗时：跑了多少一目了然</li>
+                <li>一键打开，或打包带走</li>
+              </ul>
+              <span class="stage-file">manifest.json</span>
+            </div>
+
+            <div class="stage-art">
+              <div class="art-head">
+                <span class="dots"><i></i><i></i><i></i></span>
+                manifest.json
+                <span class="tag">可交付</span>
+              </div>
+              <div class="deliver">
+                <div class="deliver-row">产物文件<b>6 个</b></div>
+                <div class="deliver-row">本次成本<b>—</b></div>
+                <div class="deliver-row">总耗时<b>—</b></div>
+                <div class="deliver-cta">
+                  <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden><path pathLength="1" d="M12 4v10M8 11l4 4 4-4M5 19h14" /></svg>
+                  下载软件包
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ───────── 数字条 ───────── -->
+      <section class="stats" id="stats">
+        <div><b>6</b><span>道工序自动跑完</span></div>
+        <div><b>3</b><span>层验收：产物 / 接口 / 页面</span></div>
+        <div><b>实时</b><span>成本按实际 token 结算</span></div>
+        <div><b>真实</b><span>产物体积以交付为准</span></div>
+      </section>
+
+      <!-- ───────── 收尾 CTA ───────── -->
+      <section class="cta-final">
+        <h2>准备好说第一句话了吗？</h2>
+        <p>不用配置、不用写代码。把想法说清楚，剩下的交给流水线。</p>
+        <div class="row">
+          <a class="btn btn-primary" href="../register/?next=projects">免费开始</a>
+          <a class="btn btn-ghost" href="../login/?next=projects">我有账号</a>
+        </div>
+      </section>
+
+      <section class="features">
+        <article>
+          <span class="f-icon">
+            <svg viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M8 12.5l2.5 2.5L16 9.5" /></svg>
+          </span>
+          <h3>可观测</h3>
+          <p>每一步都在你眼前：拆出了什么需求、写到了哪个文件、花了多少钱，逐条留痕。</p>
+        </article>
+        <article>
+          <span class="f-icon">
+            <svg viewBox="0 0 24 24" aria-hidden><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M8 10h8M8 14h5" /><circle cx="16.5" cy="16.5" r="1" /></svg>
+          </span>
+          <h3>可预算</h3>
+          <p>签下需求前就看到预估花费；单次与每日双上限，到顶即停，不会偷偷扣费。</p>
+        </article>
+        <article>
+          <span class="f-icon">
+            <svg viewBox="0 0 24 24" aria-hidden><path d="M4 6h9v5H4zM4 15h9v4H4z" /><path d="M17 7h3M17 17h3" /><circle cx="15" cy="6.5" r="1.6" /><circle cx="15" cy="16.5" r="1.6" /></svg>
+          </span>
+          <h3>可干预</h3>
+          <p>拿不准的地方它先停下来问你；答完继续，改主意就重跑，钱只花在真正跑的那次。</p>
+        </article>
+      </section>
+
+      <footer class="foot">
+        <span>NexusHub 0.9.4</span>
+        <span>本地部署 · 数据不出机器</span>
+        <span>工序与产物契约见文档 §5</span>
+      </footer>
+    </main>
+</template>
