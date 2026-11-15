@@ -27,6 +27,47 @@ const error = ref("");
 const fileInput = ref<HTMLInputElement | null>(null);
 const dragging = ref(false);
 const downloaded = ref(false);
+const draftRestored = ref(false);
+
+const DRAFT_KEY = "nexus-agent-draft-v1";
+
+interface AgentDraft {
+  prompt: string;
+  attachments: Attachment[];
+}
+
+function readDraft(): AgentDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as Partial<AgentDraft>;
+    if (typeof data.prompt !== "string" || !Array.isArray(data.attachments)) return null;
+    const docs = data.attachments.filter(
+      (item): item is Attachment =>
+        Boolean(item) && typeof item.name === "string" && typeof item.text === "string",
+    );
+    return { prompt: data.prompt, attachments: docs };
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft() {
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* 隐私模式不阻塞提交 */
+  }
+}
+
+function saveDraft() {
+  if (!props.open || props.readonly) return;
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ prompt: prompt.value, attachments: attachments.value }));
+  } catch {
+    /* 空间不足或隐私模式时，至少保证当前页面可用 */
+  }
+}
 
 const textExtensions = [
   "md", "markdown", "txt", "text", "csv", "json", "yaml", "yml", "xml",
@@ -103,11 +144,15 @@ watch(
       prompt.value = parsed.requirement;
       attachments.value = parsed.docs;
     } else {
-      prompt.value = props.initialPrompt || "";
-      attachments.value = [];
+      const draft = readDraft();
+      draftRestored.value = Boolean(draft && (draft.prompt.trim() || draft.attachments.length));
+      prompt.value = draft?.prompt || props.initialPrompt || "";
+      attachments.value = draft?.attachments || [];
     }
   },
 );
+
+watch([prompt, attachments], saveDraft, { deep: true });
 
 function extensionOf(name: string) {
   return name.split(".").pop()?.toLowerCase() || "";
@@ -215,6 +260,7 @@ async function submit() {
       error.value = result?.offline ? "后端没启动，创建不了。" : "创建失败，请稍后重试。";
       return;
     }
+    clearDraft();
     emit("created", result.data.id);
   } catch {
     error.value = "创建失败，请稍后重试。";
@@ -309,6 +355,15 @@ async function submit() {
       <p v-if="error" class="agent-error">{{ error }}</p>
 
       <footer>
+        <span class="agent-save-hint">
+          {{
+            readonly
+              ? "内容已写入这次运行的记录"
+              : draftRestored
+                ? "已恢复本机草稿；编辑会自动保存"
+                : "草稿自动保存在本机，提交后写入运行记录"
+          }}
+        </span>
         <button type="button" class="btn btn-sm btn-ghost" :disabled="creating" @click="close">
           {{ readonly ? "关闭" : "取消" }}
         </button>
@@ -616,5 +671,14 @@ async function submit() {
 }
 .agent-card footer {
   margin-top: 20px;
+}
+</style>
+
+<style scoped>
+.agent-save-hint {
+  margin-right: auto;
+  align-self: center;
+  color: var(--text-3);
+  font-size: 11.5px;
 }
 </style>
