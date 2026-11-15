@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref, watch } from "vue";
 
 interface Attachment {
@@ -26,11 +26,44 @@ const creating = ref(false);
 const error = ref("");
 const fileInput = ref<HTMLInputElement | null>(null);
 const dragging = ref(false);
+const downloaded = ref(false);
 
 const textExtensions = [
   "md", "markdown", "txt", "text", "csv", "json", "yaml", "yml", "xml",
   "html", "htm", "css", "js", "mjs", "ts", "tsx", "jsx", "py", "java", "sql", "log",
 ];
+
+const TEST_CASE_NAME = "NexusHub-全流程测试用例.md";
+const TEST_CASE = `# NexusHub 全流程测试用例
+
+## 背景
+这是一个用于验证「主控 Agent → 六道工序 → 真实交付」的最小 Web 应用。
+请实现一个可直接运行的「团队任务看板」，不要只写文档。
+
+## 功能要求
+1. 看板有三列：待办、进行中、已完成。
+2. 可以新建任务，字段包含标题和负责人。
+3. 任务可以在三列之间移动；刷新页面后数据还在。
+4. 可以删除任务。
+5. 页面顶部显示任务总数和已完成数量。
+
+## 技术约束
+- 后端使用 Python + FastAPI，数据存 SQLite。
+- 前端使用原生 HTML/CSS/JavaScript，不引入前端框架。
+- 提供 GET /api/tasks、POST /api/tasks、PATCH /api/tasks/{id}、DELETE /api/tasks/{id}。
+- 同一目录提供 README.md，写清启动命令和端口。
+
+## 验收标准
+- 空数据库启动后，页面能打开，三列都显示空态。
+- 新建任务后立即出现在「待办」，总数加一。
+- 把任务移动到「已完成」，已完成数量加一；刷新后状态不变。
+- 删除任务后列表和计数同步减少。
+- 后端对不存在的任务返回 404，表单缺标题返回 400。
+
+## 运行
+- 安装依赖后执行：uvicorn main:app --host 127.0.0.1 --port 8010
+- 打开 http://127.0.0.1:8010/ 验证。
+`;
 
 const totalChars = computed(() =>
   attachments.value.reduce((sum, item) => sum + item.text.length, 0),
@@ -63,6 +96,7 @@ watch(
     error.value = "";
     reading.value = false;
     creating.value = false;
+    downloaded.value = false;
     if (fileInput.value) fileInput.value.value = "";
     if (props.readonly) {
       const parsed = parsePrompt(props.initialPrompt || "");
@@ -134,6 +168,28 @@ function removeAttachment(index: number) {
   attachments.value.splice(index, 1);
 }
 
+function downloadTestCase() {
+  if (props.readonly) return;
+  const blob = new Blob([TEST_CASE], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = TEST_CASE_NAME;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  if (attachments.value.some((item) => item.name === TEST_CASE_NAME)) {
+    downloaded.value = true;
+    return;
+  }
+  if (totalChars.value + TEST_CASE.length > 120000) {
+    error.value = "文档正文合计超过 12 万字符，请先删掉一些再试。";
+    return;
+  }
+  attachments.value.push({ name: TEST_CASE_NAME, text: TEST_CASE });
+  downloaded.value = true;
+}
+
 function close() {
   if (creating.value) return;
   emit("close");
@@ -200,13 +256,24 @@ async function submit() {
       ></textarea>
 
       <template v-if="!readonly">
+        <div class="agent-testcase">
+          <div class="agent-testcase-copy">
+            <b>没有现成文档？</b>
+            <span>下载一份可直接跑通全流程的测试用例，下载后会自动加入下方文档列表。</span>
+          </div>
+          <button type="button" class="agent-testcase-btn" @click="downloadTestCase">
+            {{ downloaded ? "重新下载" : "下载测试用例" }}
+          </button>
+        </div>
+
         <div
           class="agent-attach"
-          :class="{ dragging }"
+          :class="{ dragging, reading }"
           @dragenter.prevent="dragging = true"
           @dragover.prevent="dragging = true"
           @dragleave.prevent="dragging = false"
           @drop.prevent="onDrop"
+          @click="chooseFiles"
         >
           <input
             ref="fileInput"
@@ -216,10 +283,11 @@ async function submit() {
             accept=".md,.markdown,.txt,.csv,.json,.yaml,.yml,.xml,.html,.css,.js,.ts,.tsx,.jsx,.py,.java,.sql,.log"
             @change="onFiles"
           />
-          <button type="button" class="btn btn-sm btn-ghost" :disabled="reading" @click="chooseFiles">
-            {{ reading ? "读取中…" : "＋ 上传开发文档" }}
-          </button>
-          <span class="agent-hint">可多选，也可以把文件拖到这里；最多 512KB / 个</span>
+          <span class="agent-upload-mark">＋</span>
+          <span class="agent-upload-copy">
+            <b>{{ reading ? "读取中…" : "上传开发文档" }}</b>
+            <small>可多选，也可以把文件拖到这里；最多 512KB / 个</small>
+          </span>
         </div>
       </template>
 
@@ -396,5 +464,157 @@ async function submit() {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 18px;
+}
+</style>
+<style scoped>
+.agent-card {
+  border-radius: 20px;
+  padding: 24px;
+  border-color: #e3eaf3;
+  box-shadow: 0 24px 70px -28px rgba(15, 23, 42, 0.38);
+}
+.agent-card h3 {
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+.agent-card p {
+  max-width: 560px;
+  line-height: 1.65;
+}
+.agent-label {
+  margin-top: 2px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.agent-card textarea {
+  min-height: 150px;
+  padding: 14px 16px;
+  border-color: #dbe4f0;
+  border-radius: 14px;
+  background: #fbfdff;
+  font-size: 13.5px;
+  line-height: 1.75;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.025);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+.agent-card textarea::placeholder {
+  color: #9aa8ba;
+}
+.agent-card textarea:focus {
+  outline: none;
+  border-color: #9cc2fb;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+.agent-card textarea.readonly {
+  background: #f7fafd;
+  border-color: #e5ebf4;
+  box-shadow: none;
+}
+.agent-testcase {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #e3ebf5;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f8fbff, #f4f8fe);
+}
+.agent-testcase-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.agent-testcase-copy b {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.agent-testcase-copy span {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.agent-testcase-btn {
+  flex: 0 0 auto;
+  padding: 7px 11px;
+  border: 1px solid #cfe0f6;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+.agent-testcase-btn:hover {
+  border-color: #9cc2fb;
+  background: #f4f9ff;
+}
+.agent-attach {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid #e3ebf5;
+  border-radius: 14px;
+  background: #fbfdff;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+.agent-attach:hover,
+.agent-attach.dragging {
+  border-color: #9cc2fb;
+  background: #f6faff;
+}
+.agent-attach.reading {
+  cursor: progress;
+  opacity: 0.7;
+}
+.agent-upload-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: #eaf3ff;
+  color: var(--primary);
+  font-size: 17px;
+  line-height: 1;
+}
+.agent-upload-copy {
+  display: grid;
+  gap: 2px;
+}
+.agent-upload-copy b {
+  font-size: 12.5px;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.agent-upload-copy small {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.agent-docs {
+  margin-top: 14px;
+}
+.agent-doc {
+  border-color: #e5ebf4;
+  border-radius: 12px;
+}
+.agent-doc summary {
+  padding: 9px 12px;
+  background: #fbfdff;
+}
+.agent-doc summary:hover {
+  background: #f6faff;
+}
+.agent-doc pre {
+  background: #f8fbfe;
+}
+.agent-card footer {
+  margin-top: 20px;
 }
 </style>
