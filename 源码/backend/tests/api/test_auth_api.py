@@ -1,4 +1,4 @@
-"""认证接口的集成测试（契约书 §5.1、§4.1）。
+﻿"""认证接口的集成测试（契约书 §5.1、§4.1）。
 
 走真实的 FastAPI 路由 + 真实的 MySQL repo：单测覆盖业务规则，这里覆盖
 "规则 → HTTP → 数据库" 这一整条链路，包括 cookie 属性与事务边界。
@@ -14,10 +14,10 @@ from app.shared.ids import hash_token
 
 pytestmark = pytest.mark.integration
 
-REGISTER = "/api/v1/auth/register"
-LOGIN = "/api/v1/auth/login"
-LOGOUT = "/api/v1/auth/logout"
-ME = "/api/v1/auth/me"
+REGISTER = "/api/auth/register"
+LOGIN = "/api/auth/login"
+LOGOUT = "/api/auth/logout"
+ME = "/api/auth/me"
 
 
 def register(client: TestClient, *, username: str = "alice", password: str = "abc123"):

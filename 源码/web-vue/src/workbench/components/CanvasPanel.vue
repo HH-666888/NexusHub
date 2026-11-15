@@ -90,21 +90,49 @@ function onResize() {
   offsetY.value = Math.max(0, Math.round((available - height.value) / 2));
 }
 
+function saveScroll() {
+  const canvas = inner.value?.parentElement;
+  if (!canvas) return;
+  try {
+    localStorage.setItem(scrollKey, JSON.stringify({ top: canvas.scrollTop, left: canvas.scrollLeft }));
+  } catch {
+    /* 隐私模式下忽略 */
+  }
+}
+
+function restoreScroll() {
+  const canvas = inner.value?.parentElement;
+  if (!canvas) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(scrollKey) || "null") as { top?: number; left?: number } | null;
+    if (!saved) return;
+    canvas.scrollTop = Number(saved.top) || 0;
+    canvas.scrollLeft = Number(saved.left) || 0;
+  } catch {
+    /* 忽略损坏的本地状态 */
+  }
+}
+
 onMounted(async () => {
   document.addEventListener("click", closeSpeed);
   observer = new ResizeObserver(onResize);
   if (inner.value) {
     observer.observe(inner.value);
-    if (inner.value.parentElement) observer.observe(inner.value.parentElement);
+    if (inner.value.parentElement) {
+      observer.observe(inner.value.parentElement);
+      inner.value.parentElement.addEventListener("scroll", saveScroll, { passive: true });
+    }
   }
   await nextTick();
   onResize();
   ready.value = true;
+  window.requestAnimationFrame(restoreScroll);
 });
 
 onBeforeUnmount(() => {
   observer?.disconnect();
   document.removeEventListener("click", closeSpeed);
+  inner.value?.parentElement?.removeEventListener("scroll", saveScroll);
 });
 
 watch(

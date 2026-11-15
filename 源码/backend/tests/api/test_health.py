@@ -1,4 +1,4 @@
-"""健康检查（契约书 §5.5）。
+﻿"""健康检查（契约书 §5.5）。
 
 两条断言：形状固定；数据库连不上时仍然是 200 + `db: "down"`。
 后者是关键 —— 探针判断的是"进程能不能答"，不是"数据库通不通"。
@@ -12,7 +12,7 @@ from app.main import create_app
 
 def test_health_shape() -> None:
     client = TestClient(create_app())
-    response = client.get("/api/v1/health")
+    response = client.get("/api/health")
 
     assert response.status_code == 200
     body = response.json()

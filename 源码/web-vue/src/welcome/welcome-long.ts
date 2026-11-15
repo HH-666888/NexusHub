@@ -155,7 +155,6 @@
     upAccum = down ? 0 : upAccum + Math.abs(y - lastY);
     lastY = y;
     const vh = window.innerHeight;
-    const mid = vh / 2;
     let activeIndexFound = -1;
 
     stages.forEach((s, i) => {

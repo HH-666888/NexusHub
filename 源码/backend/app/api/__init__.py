@@ -8,10 +8,14 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 from app.features.auth.router import router as auth_router
 from app.features.settings.router import router as settings_router
+from app.deps import get_db
+from app.domain.health import HealthStatus
+from app.shared.health import build_health
 from app.api.assist.router import router as assist_router
 from app.api.memory.router import router as memory_router
 from app.api.usage.router import router as usage_router
@@ -33,7 +37,7 @@ router.include_router(rag_router, prefix="/rag", tags=["rag"])
 router.include_router(skills_router, prefix="/skills", tags=["skills"])
 
 
-@router.get("/health", tags=["health"])
-def health() -> dict:
-    """健康检查：只报告事实，不做假数据。"""
-    return {"ok": True, "version": "1.0.0", "pipeline": "real"}
+@router.get("/health", tags=["health"], response_model=HealthStatus)
+def health(db: Session = Depends(get_db)) -> HealthStatus:
+    """健康检查：只报告事实，数据库连不上时返回 db=down。"""
+    return build_health(db)

@@ -322,7 +322,6 @@ export function useWorkbenchTree() {
     const paths: string[] = [];
     const ROOT_W = 240;
     const ROOT_H = 60;
-    const ROOT_X = Math.max(12, (width.value - ROOT_W) / 2);
     const STAGE_H = 64;
     const GAP = 16;
     const list = view.focus === null ? stages.value : [stages.value[view.focus]];
@@ -331,7 +330,7 @@ export function useWorkbenchTree() {
     const taskW = wide ? 132 : 118;
     const taskH = 52;
     const taskGap = 12;
-    const measure = (limit: number, sw: number, tw: number, gap: number) =>
+    const measure = (limit: number, sw: number, tw: number) =>
       list.map((stage, i) => {
         const index = view.focus === null ? i : view.focus;
         const kids = childrenOf(index, limit).map(cardOf);
@@ -349,10 +348,10 @@ export function useWorkbenchTree() {
       [1, 96, 104, 10],
       [1, 86, 96, 8],
     ];
-    let cols: TDCol[] = measure(4, stageW, taskW, GAP);
+    let cols: TDCol[] = measure(4, stageW, taskW);
     let usedGap = GAP;
     for (const [limit, sw, tw, gap] of attempts) {
-      const next = measure(limit, sw, tw, gap);
+      const next = measure(limit, sw, tw);
       cols = next;
       usedGap = gap;
       if (fits(next, gap)) break;

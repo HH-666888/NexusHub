@@ -1,4 +1,4 @@
-import { computed, nextTick, onBeforeUnmount, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, reactive, ref } from "vue";
 import type {
   AgentTool,
   AssistFinding,
