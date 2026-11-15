@@ -1,4 +1,4 @@
-﻿# NexusHub · 一个网页里的软件工厂
+# NexusHub · 一个网页里的软件工厂
 
 > 一句话进去，六道工序自己走完，最后交给你一个**能运行、被自动验收过的软件包**。
 > 全过程可见、可暂停、可确认，花了多少钱也摊在界面上。
@@ -144,31 +144,39 @@ NexusHub 把软件开发拆成六道**确定性工序**，每道工序内部由�
 ## 5. 目录结构
 
 ```text
-源码/
-├─ web/                  静态页面与构建产物
-│  ├─ vue-dist/          Vite 构建输出，由 FastAPI 托管
-│  └─ ...                原始静态资源 / 兼容页面
-├─ web-vue/              Vue 3 + TypeScript 源码
-│  ├─ src/
-│  │  ├─ workbench/      主工作台
-│  │  ├─ workspace/      辅助工作台
-│  │  ├─ components/     六个业务组件
-│  │  └─ types/          API / 工作台类型
-│  └─ vite.config.js
-├─ backend/
-│  ├─ app/api/           路由与业务接口
-│  ├─ app/api/pipeline/  六道工序编排
-│  ├─ app/api/ai/        模型、RAG、成本
-│  ├─ app/api/runtime/   产物进程运行时
-│  ├─ app/db/            SQLAlchemy 模型
-│  ├─ migrations/        Alembic 迁移
-│  ├─ data/cassettes/    模型录制回放
-│  ├─ mcp_server.py      MCP 占位（未实现）
-│  └─ .env.example
-├─ database/             MySQL 建表与管理员种子
-├─ RAG-knowledge/        RAG 语料
-├─ docs/                 设计、契约、验收记录
-└─ tools/                本地截图工具
+NexusHub/
+├─ 源码/                     # 所有代码、数据与运行配置
+│  ├─ backend/
+│  │  ├─ app/api/           路由与业务接口
+│  │  ├─ app/api/pipeline/  六道工序编排
+│  │  ├─ app/api/ai/        模型、RAG、成本
+│  │  ├─ app/api/runtime/   产物进程运行时
+│  │  ├─ app/db/            SQLAlchemy 模型
+│  │  ├─ migrations/        Alembic 迁移
+│  │  ├─ data/cassettes/    模型录制回放
+│  │  ├─ mcp_server.py      MCP 占位（未实现）
+│  │  └─ .env.example
+│  ├─ web/                  静态页面与构建产物
+│  │  ├─ vue-dist/          Vite 构建输出，由 FastAPI 托管
+│  │  └─ ...                原始静态资源 / 兼容页面
+│  ├─ web-vue/              Vue 3 + TypeScript 源码
+│  │  ├─ src/
+│  │  │  ├─ workbench/      主工作台
+│  │  │  ├─ workspace/      辅助工作台
+│  │  │  ├─ components/     六个业务组件
+│  │  │  └─ types/          API / 工作台类型
+│  │  └─ vite.config.js
+│  ├─ database/             MySQL 建表与管理员种子
+│  ├─ RAG-knowledge/        RAG 语料
+│  ├─ skills/               阶段技能说明
+│  ├─ docs/                 设计与契约文档
+│  └─ tools/                本地截图工具
+├─ 技术文档/                 # 源码之外的提交材料
+│  ├─ NexusHub-技术文档.pdf
+│  ├─ NexusHub-技术文档.docx
+│  ├─ 项目定位.txt
+│  └─ tech_doc_assets/      文档配图与构建脚本
+└─ 原型动画/                 # 早期原型，保留，不参与构建
 ```
 
 ---
@@ -270,7 +278,7 @@ pnpm build         # success
 4. **RAG 没有量化评测**：检索链路真实存在，但还没有 hit@3 / 召回率对比表。
 5. **主链路是顺序流水线**：按依赖逐个模块生成，不是并行 Multi-Agent；文案不把「阶段角色」说成「并行智能体」。
 6. **模型是单供应商**：默认 DeepSeek；`MODEL_DECIDE` / `MODEL_EXECUTE` 可配置，但没有真实双模型对比数据。
-7. **在线演示与提交材料**：公网部署与 5–8 分钟视频仍待补；≤30 页技术文档已生成，见 `源码/docs/NexusHub-技术文档.pdf`。
+7. **在线演示与提交材料**：公网部署与 5–8 分钟视频仍待补；≤30 页技术文档已生成，见 `技术文档/NexusHub-技术文档.pdf`。
 8. **后端测试**：`backend/tests` 还没有完整用例，当前以前端类型检查、构建、页面自动化检查和 API 冒烟为主。
 
 ---
@@ -308,7 +316,8 @@ pnpm build         # success
 
 | 文档 | 内容 |
 |---|---|
-| [`docs/NexusHub-技术文档.pdf`](源码/docs/NexusHub-技术文档.pdf) | 30 页参赛技术文档 |\n| [`docs/01-赛题分析与评分对照.md`](源码/docs/01-赛题分析与评分对照.md) | 赛题事实、评分表、风险 |
+| [`技术文档/NexusHub-技术文档.pdf`](技术文档/NexusHub-技术文档.pdf) | 30 页参赛技术文档 |
+| [`docs/01-赛题分析与评分对照.md`](源码/docs/01-赛题分析与评分对照.md) | 赛题事实、评分表、风险 |
 | [`docs/03-前后端分离契约书.md`](源码/docs/03-前后端分离契约书.md) | 接口、SSE、事件格式 |
 | [`docs/04-目录结构.md`](源码/docs/04-目录结构.md) | 目录与依赖方向 |
 | [`docs/05-数据库契约.md`](源码/docs/05-数据库契约.md) | 表结构与数据边界 |
