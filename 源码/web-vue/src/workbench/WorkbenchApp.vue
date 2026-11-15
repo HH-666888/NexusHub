@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { onMounted, ref } from "vue";
 import TaskPanel from "./components/TaskPanel.vue";
 import TaskDetail from "./components/TaskDetail.vue";
@@ -44,6 +44,7 @@ onMounted(async () => {
   <MainAgentDialog
     :open="agentOpen"
     :initial-prompt="workbenchStore.prompt"
+    :readonly="workbenchStore.started"
     @close="agentOpen = false"
     @created="openRun"
   />

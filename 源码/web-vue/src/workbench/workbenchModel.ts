@@ -38,6 +38,7 @@ export function setStage(index: number) {
 
 export function setPrompt(value: string) {
   store.prompt = value;
+  store.started = true;
 }
 
 export function setProgress(percent: number) {

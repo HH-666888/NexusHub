@@ -43,6 +43,7 @@ export interface WorkbenchSync {
   status?: string;
   stageIndex?: number;
   prompt?: string;
+  started?: boolean;
   files?: WorkbenchFile[];
   activePath?: string;
   livePath?: string;
@@ -61,6 +62,7 @@ export interface WorkbenchStoreApi {
   status: string;
   stageIndex: number;
   prompt: string;
+  started: boolean;
   files: WorkbenchFile[];
   activePath: string;
   livePath: string;
@@ -92,6 +94,7 @@ export const workbenchStore: WorkbenchStoreApi = reactive({
   status: "running",
   stageIndex: 0,
   prompt: "",
+  started: false as boolean,
   files: [] as WorkbenchFile[],
   activePath: "",
   livePath: "",
