@@ -9,10 +9,12 @@ import GateModal from "./components/GateModal.vue";
 import MainAgentDialog from "./components/MainAgentDialog.vue";
 import { workbenchStore } from "./useWorkbenchStore";
 import { useWorkbenchRun } from "./useWorkbenchRun";
+import { useWorkbenchUi } from "./useWorkbenchUi";
 import { initWorkbenchModel } from "./workbenchModel";
 
 initWorkbenchModel();
 const run = useWorkbenchRun();
+const ui = useWorkbenchUi();
 const agentOpen = ref(false);
 
 function openRun(runId: string) {
@@ -31,6 +33,7 @@ function bindChrome() {
 onMounted(async () => {
   bindChrome();
   await run.boot();
+  ui.restore();
 });
 </script>
 

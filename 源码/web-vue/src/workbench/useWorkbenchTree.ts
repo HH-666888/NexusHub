@@ -1,4 +1,4 @@
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { workbenchStore } from "./useWorkbenchStore";
 import type { WorkbenchStage, WorkbenchTask } from "../types/workbench-engine";
 
@@ -58,14 +58,57 @@ const ICONS: Record<string, string> = {
   "06": "M12 3l8 4.5v9L12 21l-8-4.5v-9z M9 12l2 2 4-4",
 };
 
+interface SavedTreeView {
+  layout?: "lr" | "td";
+  edges?: "curve" | "elbow";
+  focus?: number | null;
+  expanded?: number[];
+}
+
+function treeStorageKey() {
+  const runId = new URLSearchParams(location.search).get("run") || "new";
+  return "nexus-wb-tree:" + runId;
+}
+
+function readTreeView(): SavedTreeView | null {
+  try {
+    const raw = localStorage.getItem(treeStorageKey());
+    if (!raw) return null;
+    const data = JSON.parse(raw) as SavedTreeView;
+    return {
+      layout: data.layout === "td" ? "td" : "lr",
+      edges: data.edges === "elbow" ? "elbow" : "curve",
+      focus: typeof data.focus === "number" ? data.focus : null,
+      expanded: Array.isArray(data.expanded)
+        ? data.expanded.filter((value): value is number => typeof value === "number")
+        : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function useWorkbenchTree() {
+  const saved = readTreeView();
   const view = reactive({
-    layout: "lr" as "lr" | "td",
-    edges: "curve" as "curve" | "elbow",
-    focus: null as number | null,
-    expanded: [] as number[],
+    layout: saved?.layout || ("lr" as "lr" | "td"),
+    edges: saved?.edges || ("curve" as "curve" | "elbow"),
+    focus: saved?.focus ?? (null as number | null),
+    expanded: saved?.expanded || ([] as number[]),
   });
   const width = ref(720);
+
+  watch(
+    view,
+    () => {
+      try {
+        localStorage.setItem(treeStorageKey(), JSON.stringify(view));
+      } catch {
+        /* 隐私模式下仍保持当前页面状态 */
+      }
+    },
+    { deep: true },
+  );
 
   const stages = computed(() => workbenchStore.stages);
   const tasks = computed(() => workbenchStore.tasks);

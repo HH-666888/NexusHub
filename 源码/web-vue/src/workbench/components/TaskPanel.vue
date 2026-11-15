@@ -1,10 +1,33 @@
 ﻿<script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import { workbenchStore } from "../useWorkbenchStore";
 import type { WorkbenchStage, WorkbenchTask } from "../../types/workbench-engine";
 import { showTaskDetail } from "../workbenchModel";
 
 const store = workbenchStore;
+const scrollKey = "nexus-wb-task-scroll:" + (new URLSearchParams(location.search).get("run") || "new");
+
+onMounted(() => {
+  const list = document.getElementById("task-list");
+  if (!list) return;
+  try {
+    const saved = Number(localStorage.getItem(scrollKey));
+    if (Number.isFinite(saved)) list.scrollTop = saved;
+  } catch {
+    /* 忽略 */
+  }
+  list.addEventListener(
+    "scroll",
+    () => {
+      try {
+        localStorage.setItem(scrollKey, String(list.scrollTop));
+      } catch {
+        /* 忽略 */
+      }
+    },
+    { passive: true },
+  );
+});
 
 const progressLabel = computed(() => {
   if (!store.stages.length) return "等待开始";

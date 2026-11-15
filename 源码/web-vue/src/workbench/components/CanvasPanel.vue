@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useWorkbenchTree, type TreeNode } from "../useWorkbenchTree";
 import { workbenchStore } from "../useWorkbenchStore";
@@ -14,6 +14,7 @@ const inner = ref<HTMLElement | null>(null);
 const ready = ref(false);
 const speedOpen = ref(false);
 const offsetY = ref(0);
+const scrollKey = "nexus-wb-tree-scroll:" + (new URLSearchParams(location.search).get("run") || "new");
 let observer: ResizeObserver | null = null;
 
 const focusName = computed(() => {

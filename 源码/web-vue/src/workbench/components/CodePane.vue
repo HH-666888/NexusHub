@@ -1,5 +1,5 @@
-﻿<script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+<script setup lang="ts">
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { workbenchStore } from "../useWorkbenchStore";
 import { highlight } from "../highlight";
 import { showFile } from "../workbenchModel";
@@ -22,9 +22,23 @@ interface Verdict {
   layers?: VerdictLayer[];
 }
 
+type CodeTab = "代码" | "预览" | "验收";
+
 const store = workbenchStore;
 const body = ref<HTMLElement | null>(null);
-const activeTab = ref<"代码" | "预览" | "验收">("代码");
+const codeKey = "nexus-wb-code:" + (new URLSearchParams(location.search).get("run") || "new");
+
+function readTab(): CodeTab {
+  try {
+    const saved = localStorage.getItem(codeKey + ":tab");
+    if (saved === "预览" || saved === "验收") return saved;
+  } catch {
+    /* 忽略隐私模式 */
+  }
+  return "代码";
+}
+
+const activeTab = ref<CodeTab>(readTab());
 const previewUrl = ref("");
 const previewLoading = ref(false);
 const verdict = ref<Verdict | null>(null);
@@ -56,7 +70,7 @@ function openFile(path: string) {
   showFile(path);
 }
 
-async function selectTab(tab: "代码" | "预览" | "验收") {
+async function selectTab(tab: CodeTab) {
   activeTab.value = tab;
   if (tab === "预览" && !previewUrl.value && !previewLoading.value) {
     previewLoading.value = true;
@@ -98,12 +112,54 @@ async function scrollToBottom() {
   if (body.value) body.value.scrollTop = body.value.scrollHeight;
 }
 
+function saveCodeScroll() {
+  if (!body.value) return;
+  try {
+    localStorage.setItem(codeKey + ":scroll", String(body.value.scrollTop));
+  } catch {
+    /* 忽略隐私模式 */
+  }
+}
+
+function restoreCodeScroll() {
+  if (!body.value) return;
+  try {
+    const saved = Number(localStorage.getItem(codeKey + ":scroll"));
+    if (Number.isFinite(saved)) body.value.scrollTop = saved;
+  } catch {
+    /* 忽略 */
+  }
+}
+
+watch(activeTab, (tab) => {
+  try {
+    localStorage.setItem(codeKey + ":tab", tab);
+  } catch {
+    /* 忽略 */
+  }
+});
+
 watch(
   () => activeFile.value?.lines.length,
   () => {
     void scrollToBottom();
   },
 );
+
+watch(
+  () => store.activePath,
+  async () => {
+    await nextTick();
+    restoreCodeScroll();
+  },
+);
+
+onMounted(async () => {
+  body.value?.addEventListener("scroll", saveCodeScroll, { passive: true });
+  if (activeTab.value !== "代码") await selectTab(activeTab.value);
+  await nextTick();
+  restoreCodeScroll();
+});
 </script>
 
 <template>
