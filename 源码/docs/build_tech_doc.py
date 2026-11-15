@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """构建 NexusHub 参赛技术文档（含封面、目录、正文、图表）。"""
 
 from __future__ import annotations
@@ -843,12 +843,12 @@ def build():
 
     b.h2("5.4  辅助开发工作台")
     b.body("辅助开发面向“用户自己写代码，AI 陪跑”的场景。它有自己的六阶段、项目文件、代码检查、AI 教练、测试用例和记忆。AI 教练通过工具读取项目文件、检查语法、检索知识，再给出结论和下一步；工具轨迹在前端可见。")
-    b.image(DOCS / "screenshots" / "vue-migration" / "assist-workspace-vue-1440.png", 15.6, "图 4  辅助开发工作台：阶段、代码与 AI 教练")
+    b.image(ASSETS / "assist-workspace.png", 15.6, "图 4  辅助开发工作台：阶段、代码与 AI 教练")
     b.body("记忆只在辅助开发注入，不进入主工作流。这样做的原因是：主工作流的产物需要可复现，个人偏好不应悄悄改变规格；辅助开发更需要“记住上次的约定”。这是有意的产品边界，不是遗漏。")
 
     b.h2("5.5  主控 Agent 与多文档")
     b.body("点击主工作台的“主控 Agent”节点会打开新建任务对话框。用户可以输入需求、一次选择或拖入多份文本/代码文档；文档在浏览器内读取正文，按 ===== 文档：文件名 ===== 边界合并进 prompt。对话框还内置一份可下载的全流程测试用例，下载后自动加入文档列表。")
-    b.image(DOCS / "screenshots" / "vue-migration" / "main-agent-dialog.png", 15.6, "图 5  主控 Agent：需求、文档与内置测试用例")
+    b.image(ASSETS / "main-agent-dialog.png", 15.6, "图 5  主控 Agent：需求、文档与内置测试用例")
     b.body("任务开始后，主控对话框变为只读：只展示已提交的需求和文档，不允许编辑或再次创建。未提交的草稿写入 localStorage，刷新或关闭后可恢复；创建成功后清除草稿。已提交内容随 Run.prompt 落库。")
 
     b.h2("5.6  项目、记忆与设置")
