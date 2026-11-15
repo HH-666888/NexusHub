@@ -11,6 +11,7 @@ const { view, nodes, paths, height, width } = tree;
 const inner = ref<HTMLElement | null>(null);
 const ready = ref(false);
 const speedOpen = ref(false);
+const offsetY = ref(0);
 let observer: ResizeObserver | null = null;
 
 const focusName = computed(() => {
@@ -34,7 +35,7 @@ function compactName(stage: WorkbenchStage) {
 function nodeStyle(node: TreeNode) {
   return {
     left: node.x + "px",
-    top: node.y + "px",
+    top: node.y + offsetY.value + "px",
     width: node.w + "px",
     ...(node.kind === "stage" && node.compact ? { minHeight: node.h + "px" } : {}),
     ...(node.kind === "task" || node.kind === "chip" ? { height: node.h + "px" } : {}),
@@ -78,15 +79,23 @@ function showCode() {
 }
 
 function onResize() {
-  if (inner.value) width.value = inner.value.clientWidth || 720;
+  if (!inner.value) return;
+  width.value = inner.value.clientWidth || 720;
+  const canvas = inner.value.parentElement;
+  const head = canvas?.querySelector(".canvas-head");
+  const available = (canvas?.clientHeight || inner.value.clientHeight) - (head?.getBoundingClientRect().height || 0);
+  offsetY.value = Math.max(0, Math.round((available - height.value) / 2));
 }
 
 onMounted(async () => {
   document.addEventListener("click", closeSpeed);
-  onResize();
   observer = new ResizeObserver(onResize);
-  if (inner.value) observer.observe(inner.value);
+  if (inner.value) {
+    observer.observe(inner.value);
+    if (inner.value.parentElement) observer.observe(inner.value.parentElement);
+  }
   await nextTick();
+  onResize();
   ready.value = true;
 });
 
@@ -160,17 +169,19 @@ watch(
         class="tree-svg"
         id="tree-svg"
         aria-hidden
-        :viewBox="`0 0 ${width} ${height}`"
+        :viewBox="`0 0 ${width} ${height + offsetY}`"
         preserveAspectRatio="none"
-        :style="{ height: height + 'px' }"
+        :style="{ height: height + offsetY + 'px' }"
       >
-        <path
-          v-for="(path, index) in paths"
-          :key="index"
-          :d="path"
-          pathLength="1"
-          :class="{ draw: ready }"
-        />
+        <g :transform="`translate(0 ${offsetY})`">
+          <path
+            v-for="(path, index) in paths"
+            :key="index"
+            :d="path"
+            pathLength="1"
+            :class="{ draw: ready }"
+          />
+        </g>
       </svg>
 
       <template v-for="(node, index) in nodes" :key="index">

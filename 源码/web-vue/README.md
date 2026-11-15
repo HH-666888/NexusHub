@@ -18,7 +18,7 @@
 
 工作台拆成 TaskPanel、TaskDetail、CanvasPanel、CodePane、StatusBar、GateModal；任务、阶段、进度、文件、代码、树节点/SVG、门禁、参考依据、预览/验收都由 Vue 组件渲染，状态集中在 `useWorkbenchStore`。
 
-树布局是 `useWorkbenchTree` 的纯函数，SSE/run 数据层是 `useWorkbenchRun`，任务/文件模型是 `workbenchModel`。`engine/tree.js` 已删除，`window.__wb` 全局边界也已移除。
+树布局是 `useWorkbenchTree` 的纯函数，SSE/run 数据层是 `useWorkbenchRun`，任务/文件模型是 `workbenchModel`。`engine/tree.js` 已删除，`window.__wb` 全局边界也已移除。树内容在画布可用区域内垂直居中，根节点中心对齐画布中心。
 
 ## 开发
 
