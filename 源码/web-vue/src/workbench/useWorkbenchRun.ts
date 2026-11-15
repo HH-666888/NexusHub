@@ -1,4 +1,4 @@
-import { onBeforeUnmount } from "vue";
+﻿import { onBeforeUnmount } from "vue";
 import { workbenchStore } from "./useWorkbenchStore";
 import * as model from "./workbenchModel";
 import type { WorkbenchRun } from "../types/workbench-engine";
@@ -192,6 +192,7 @@ export function useWorkbenchRun() {
 
   function applyRun(run: WorkbenchRun) {
     state.run = run;
+    model.setPrompt(run.prompt || "");
     state.cost = Number(run.totalCostCny || 0);
     model.setCost(state.cost);
     const index = STAGE_OF[run.stage];

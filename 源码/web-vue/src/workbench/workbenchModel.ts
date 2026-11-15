@@ -1,4 +1,4 @@
-import { ref } from "vue";
+﻿import { ref } from "vue";
 import { workbenchStore } from "./useWorkbenchStore";
 import type { WorkbenchStage, WorkbenchTask } from "../types/workbench-engine";
 
@@ -34,6 +34,10 @@ export function setStage(index: number) {
     note: i < index && !/^\d/.test(stage.note) ? "完成" : stage.note,
   }));
   store.sync({ stageIndex: index });
+}
+
+export function setPrompt(value: string) {
+  store.prompt = value;
 }
 
 export function setProgress(percent: number) {

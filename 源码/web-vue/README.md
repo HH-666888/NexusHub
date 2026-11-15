@@ -20,6 +20,8 @@
 
 树布局是 `useWorkbenchTree` 的纯函数，SSE/run 数据层是 `useWorkbenchRun`，任务/文件模型是 `workbenchModel`。`engine/tree.js` 已删除，`window.__wb` 全局边界也已移除。树内容在画布可用区域内垂直居中，根节点中心对齐画布中心。
 
+点击根节点“主控 Agent”会打开新建任务对话框：填写开发需求、可选上传文本/代码文档，提交后把需求与文档正文合并成 prompt，调用真实 `POST /api/runs` 创建新运行。
+
 ## 开发
 
 ```bash
@@ -72,6 +74,8 @@ pnpm typecheck
 - Git 标签：`pre-vue-migration`
 
 ## 约束与已知边界
+
+- 主控对话框目前只读取纯文本/代码文档；PDF、Word 等二进制文档还没有解析，会明确提示不支持。
 
 - 不借迁移改视觉、文案和布局。
 - 只使用真实接口；空态只用 `— / 暂无 / 加载中…`。

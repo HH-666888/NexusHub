@@ -1,4 +1,4 @@
-import { reactive } from "vue";
+﻿import { reactive } from "vue";
 import type { WorkbenchFile, WorkbenchStage, WorkbenchTask } from "../types/workbench-engine";
 
 export interface GateQuestion {
@@ -42,6 +42,7 @@ export interface WorkbenchSync {
   calls?: number;
   status?: string;
   stageIndex?: number;
+  prompt?: string;
   files?: WorkbenchFile[];
   activePath?: string;
   livePath?: string;
@@ -59,6 +60,7 @@ export interface WorkbenchStoreApi {
   calls: number;
   status: string;
   stageIndex: number;
+  prompt: string;
   files: WorkbenchFile[];
   activePath: string;
   livePath: string;
@@ -89,6 +91,7 @@ export const workbenchStore: WorkbenchStoreApi = reactive({
   calls: 0,
   status: "running",
   stageIndex: 0,
+  prompt: "",
   files: [] as WorkbenchFile[],
   activePath: "",
   livePath: "",

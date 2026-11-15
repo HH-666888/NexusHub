@@ -6,6 +6,8 @@ import type { WorkbenchStage } from "../../types/workbench-engine";
 import type { TreeCard } from "../useWorkbenchTree";
 import { showTaskDetail, speed, setSpeed } from "../workbenchModel";
 
+const emit = defineEmits<{ openAgent: [] }>();
+
 const tree = useWorkbenchTree();
 const { view, nodes, paths, height, width } = tree;
 const inner = ref<HTMLElement | null>(null);
@@ -189,7 +191,8 @@ watch(
           v-if="node.kind === 'root'"
           class="node-root"
           :class="{ in: ready }"
-          :style="nodeStyle(node)"
+          :style="[nodeStyle(node), { cursor: 'pointer' }]"
+          @click="emit('openAgent')"
         >
           <b>{{ node.title }}</b><small>{{ node.note }}</small>
         </div>
