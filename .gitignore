@@ -15,6 +15,9 @@ build/
 *.tsbuildinfo
 next-env.d.ts
 
+# 后端 OpenAPI 快照由 tools/export_openapi.py 现场生成，不把旧快照带入提交
+源码/backend/openapi.json
+
 # ============================================================
 # 环境变量 —— 密钥绝不入库
 # 赛题硬性要求：API密钥等敏感信息不得出现在公开仓库中，须通过环境变量方式配置
@@ -122,3 +125,8 @@ design-preview/
 !源码/web/vue-dist/workbench/**
 !源码/web/vue-dist/assist/workspace/
 !源码/web/vue-dist/assist/workspace/**
+
+# ============================================================
+# 内部工作记录：不上公开仓库
+# ============================================================
+项目整体实际记忆.txt
