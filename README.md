@@ -151,6 +151,9 @@ NexusHub/
 │  │  ├─ app/api/pipeline/  六道工序编排
 │  │  ├─ app/api/ai/        模型、RAG、成本
 │  │  ├─ app/api/runtime/   产物进程运行时
+│  │  ├─ app/domain/        纯数据契约（Pydantic）
+│  │  ├─ app/features/      auth / settings
+│  │  ├─ app/shared/        错误、SSE、时间
 │  │  ├─ app/db/            SQLAlchemy 模型
 │  │  ├─ migrations/        Alembic 迁移
 │  │  ├─ data/cassettes/    模型录制回放
@@ -171,11 +174,10 @@ NexusHub/
 │  ├─ skills/               阶段技能说明
 │  ├─ docs/                 设计与契约文档
 │  └─ tools/                本地截图工具
-├─ 技术文档/                 # 源码之外的提交材料
-│  ├─ NexusHub-技术文档.pdf
-│  ├─ NexusHub-技术文档.docx
+├─ 技术文档/                 # 文档与配图资源
+│  ├─ NexusHub-技术文档-提交版.pdf # 参赛技术文档（28 页）
 │  ├─ 项目定位.txt
-│  └─ tech_doc_assets/      文档配图与构建脚本
+│  └─ tech_doc_assets/      文档配图
 └─ 原型动画/                 # 早期原型，保留，不参与构建
 ```
 
@@ -183,12 +185,42 @@ NexusHub/
 
 ## 6. 本地运行
 
-### 前置
+### 前置与依赖清单
 
-- Python 3.12+
-- MySQL 8
-- Node.js 20+（仅重新构建前端时需要）
-- pnpm
+| 组件 | 版本 | 用途 |
+|---|---|---|
+| Python | 3.12+ | 后端运行时 |
+| MySQL | 8.0 | 业务数据，以及每次运行独立的产物库 |
+| Node.js | 20+ | 仅重新构建前端时需要 |
+| pnpm | 10.x | 前端依赖，`pnpm-lock.yaml` 锁定版本 |
+
+后端依赖清单在 [`源码/backend/pyproject.toml`](源码/backend/pyproject.toml)：FastAPI、Uvicorn、SQLAlchemy 2、PyMySQL、Alembic、Pydantic 2、httpx、numpy，另有 esprima / javalang / tinycss2 / sqlparse 四个语法校验库；`[dev]` 组是 pytest、ruff、import-linter。
+
+前端依赖清单在 [`源码/web-vue/package.json`](源码/web-vue/package.json) 与 `pnpm-lock.yaml`：Vue 3.5、Vite 8、TypeScript 5.9、vue-tsc。
+
+### 环境变量
+
+模板在 [`源码/backend/.env.example`](源码/backend/.env.example)，复制成 `.env` 后填写。**最小可跑集合只有两项**：`DATABASE_URL` 与 `DEEPSEEK_API_KEY`。
+
+| 变量 | 必填 | 说明 | 默认 |
+|---|---|---|---|
+| `DATABASE_URL` | 是 | MySQL 连接串，要求 utf8mb4 | 本机 nexus / nexus |
+| `DEEPSEEK_API_KEY` | 是 | 模型密钥，只放本地 `.env` | 空 |
+| `DEEPSEEK_BASE_URL` | 否 | 供应商地址 | api.deepseek.com |
+| `MODEL_DECIDE` / `MODEL_EXECUTE` | 否 | 决策、执行阶段的模型名 | deepseek-chat |
+| `RUN_COST_LIMIT_CNY` | 否 | 单次运行费用上限（元） | 5 |
+| `PLAYBOOK_DIR` / `SKILL_DIR` | 否 | RAG 语料、阶段技能目录 | ../RAG-knowledge |
+| `COOKIE_SECURE` | 否 | http 调试必须为 false | false |
+| `ALLOWED_ORIGIN` | 否 | 同源部署留空 | 空 |
+| `RECORD_MODE` | 否 | off / record / replay | off |
+| `MAX_LOOPBACK` | 否 | 测试失败回环轮数 | 2 |
+| `ASK_MAX_QUESTIONS` / `ASK_MAX_ROUNDS` | 否 | 门禁提问上限，0 表示不限 | 0 |
+| `MEMORY_DAILY_LIMIT` | 否 | 记忆每日写入上限 | 3 |
+| `MYSQL_PROVISIONER_URL` | 否 | 建库供给账号 | 空，留空则供给接口 503 |
+| `MYSQL_PRODUCT_URL` | 否 | 产物库账号 | 空 |
+| `INTERNAL_TOKEN` | 否 | 运行时内部口令 | 空 |
+| `RUNTIME_WORKSPACE_DIR` | 否 | 产物工作区目录 | ./data/workspace |
+| `RUNTIME_RUNNER` | 否 | docker / process | docker |
 
 ### 1）建库
 
@@ -259,7 +291,16 @@ pnpm build
 cd 源码/web-vue
 pnpm typecheck     # 0 errors
 pnpm build         # success
+
+# 没有 pnpm 的环境用等价命令：
+npm run typecheck
+npm run build
+
+cd ../backend
+python -m compileall -q app   # 语法编译通过
 ```
+
+- 本次交付前用 npm 等价命令复跑：`typecheck` 0 错误，`build` 成功（397ms），产物写回 `web/vue-dist`。
 
 - 9 个页面控制台零异常、无 404/500（本地 headless Edge 检查）。
 - 迁移期 27 张截图同尺寸；26/27 字节级一致；唯一差异为欢迎页 1920 的卡片动画帧。
@@ -278,7 +319,7 @@ pnpm build         # success
 4. **RAG 没有量化评测**：检索链路真实存在，但还没有 hit@3 / 召回率对比表。
 5. **主链路是顺序流水线**：按依赖逐个模块生成，不是并行 Multi-Agent；文案不把「阶段角色」说成「并行智能体」。
 6. **模型是单供应商**：默认 DeepSeek；`MODEL_DECIDE` / `MODEL_EXECUTE` 可配置，但没有真实双模型对比数据。
-7. **在线演示与提交材料**：公网部署与 5–8 分钟视频仍待补；≤30 页技术文档已生成，见 `技术文档/NexusHub-技术文档.pdf`。
+7. **在线演示与演示视频**：公网部署与 5–8 分钟演示视频仍待补；技术文档已完成并导出 PDF（28 页），见 `技术文档/NexusHub-技术文档-提交版.pdf`。
 8. **后端测试**：`backend/tests` 还没有完整用例，当前以前端类型检查、构建、页面自动化检查和 API 冒烟为主。
 
 ---
@@ -302,13 +343,9 @@ pnpm build         # success
 
 ## 10. 团队信息
 
-| 角色 | 姓名 | 学校 | 联系方式 |
-|---|---|---|---|
-| 成员 | _待填写_ | _待填写_ | _待填写_ |
-| 成员 | _待填写_ | _待填写_ | _待填写_ |
-| 指导教师 | _待填写_ | _待填写_ | _待填写_ |
-
-> 按赛制要求，团队成员为同一所学校 1–3 名学生，指导教师不超过 2 名。
+| 项目 | 内容 |
+|---|---|
+| 团队名称 | 都不白来 |
 
 ---
 
@@ -316,7 +353,7 @@ pnpm build         # success
 
 | 文档 | 内容 |
 |---|---|
-| [`技术文档/NexusHub-技术文档.pdf`](技术文档/NexusHub-技术文档.pdf) | 30 页参赛技术文档 |
+| [`技术文档/NexusHub-技术文档-提交版.pdf`](技术文档/NexusHub-技术文档-提交版.pdf) | 参赛技术文档（28 页） |
 | [`docs/01-赛题分析与评分对照.md`](源码/docs/01-赛题分析与评分对照.md) | 赛题事实、评分表、风险 |
 | [`docs/03-前后端分离契约书.md`](源码/docs/03-前后端分离契约书.md) | 接口、SSE、事件格式 |
 | [`docs/04-目录结构.md`](源码/docs/04-目录结构.md) | 目录与依赖方向 |
@@ -330,3 +367,18 @@ pnpm build         # success
 - 项目保留完整 Git 提交历史，按阶段提交。
 - 未完成能力在代码和本文档中都显式标注，不用演示数据伪装真实结果。
 - API Key 只通过 `.env` 或用户设置注入，不进入仓库。
+
+---
+
+## 13. 提交材料对照
+
+| 材料 | 官方要求 | 本仓库对应 |
+|---|---|---|
+| 代码仓库 | GitHub / Gitee，须为 Public | 本仓库 |
+| 代码规范 | 结构清晰、有效注释、主流规范 | 分层目录 + 模块级说明；ruff 规则见 `pyproject.toml` |
+| README | 项目介绍、技术架构、安装运行、团队信息 | 本文第 1–6 节与第 10 节 |
+| Git 记录 | 完整历史，体现真实开发过程 | 自 2026-10-21 立项提交起按阶段提交 |
+| 环境配置 | 环境变量模板 + 依赖清单 | `源码/backend/.env.example`、`pyproject.toml`、`pnpm-lock.yaml` |
+| 演示视频 | 5–8 分钟、MP4、1080p | 待录制 |
+| 技术文档 | PDF，不超过 30 页 | `技术文档/NexusHub-技术文档-提交版.pdf`（28 页） |
+| 在线演示 | 公网可访问，可选加分项 | 待部署 |
