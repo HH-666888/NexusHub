@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -30,19 +31,38 @@ SYSTEM = """你是{role}工程师。只写一个文件。
 输出格式（严格遵守）：
 第一行：FILE: <文件路径>
 第二行开始：文件的完整内容，直到结尾。
-
+{web_ui}
 规则：
 1. 不要输出 JSON，不要 Markdown 代码围栏，不要解释。
 2. 技术栈：Python 3.12 + sqlite3；如需 Web 框架只能用 FastAPI。
-3. 文件必须自包含，不能 import 本工程之外的代码。
+3. 允许使用本工程内的其它文件（用相对导入或同目录 import），但不得引入第三方依赖。
 4. 必须实现列出的验收标准。
 5. 如果给了「上次错误」，必须修掉，不要重复同样写法。
-6. 不得出现 TODO、pass 占位、写死的示例数据。
+6. 不得出现 TODO、pass 占位、写死的示例数据；建表脚本也不要 INSERT 演示数据，空库启动。
 7. 代码里的标点必须是半角 ASCII：不要用全角括号、全角冒号、全角引号、全角竖线（｜）。
-8. 文件尽量不超过 150 行；只实现验收标准要求的最小功能，不要加额外的抽象层。
+8. 不设行数上限：按验收标准完整实现，该有的校验、错误处理、空状态、样式都写全；
+   不要为了省行数牺牲完整性，也不要加与需求无关的抽象层。
 9. 前端页面必须用 fetch 调用后端接口，不得只用 localStorage 假装持久化。
 10. 必须输出完整文件，不能中途省略或截断。
 11. 写 API 入口时必须定义 `app = FastAPI()`（变量名就是 app），装配阶段会 `from api.main import app`。
+12. API 入口不要定义 `GET /` 或任何返回 HTML 的路由。页面由 web 模块的 index.html 提供，
+    接口只负责 JSON；否则预览打开的是接口里那个简陋页面，真正设计好的页面永远不会被访问。
+13. 所有 @app.get/post/put/patch/delete 路由必须写在 api/main.py；其它 api/*.py 只放普通函数、
+    数据访问和校验逻辑，由 main.py 导入调用（前端要按 main.py 抽取真实路由清单）。
+14. SQLite 的 CHECK 约束里不能用 date('now')、datetime('now') 这类非确定函数，
+    否则 INSERT 会报 "non-deterministic use of date() in a CHECK constraint"；
+    “日期不能晚于今天”这类规则放应用层校验，CHECK 只做格式和非空/范围检查。
+"""
+
+WEB_UI = """
+界面质量要求（评委第一眼看到的就是界面，必须做到）：
+1. 面向用户的文案全部用中文：标题、按钮、表头、空状态、提示；变量名和接口字段保持英文。
+2. 用 :root 定义 4 到 6 个颜色变量（主色、页面底色、卡片底色、文字色、边框色），全站统一引用。样式可以内联，也可以拆到 web/style.css 等文件并在 html 里用相对路径引用。
+3. 布局用 grid 或 flex，内容区最大宽度 1100px 居中；卡片 16px 圆角、轻阴影、24px 内边距；控件高度统一 36px。
+4. 禁止裸控件：input、button、select 必须设置 padding、边框、圆角、字号，按钮要有 hover 与禁用状态。
+5. 必须有空状态文案、提交成功或失败的提示、必填项校验提示。
+6. 需求里出现的统计数字（总数、合计、占比）必须真的渲染出来，不能只放标题。
+7. 首屏要饱满：标题区、操作区、内容区层次分明，不能出现大片空白。
 """
 
 USER = """需求：{goal}
@@ -53,12 +73,36 @@ USER = """需求：{goal}
 同模块其它文件（只读参考，不要重复实现）：{siblings}
 已有契约（必须严格遵守字段名与路由）：
 {context}
+后端实际路由（前端必须逐字照抄，不要自造 /api/v1 之类的前缀）：
+{routes}
 上次错误：{error}
 上次输出（有错，供修复参考，最多 3000 字）：
 {previous}
 """
 
 ROLE = {"db": "数据库", "api": "后端", "web": "前端"}
+
+
+def _actual_routes(run_id: str) -> str:
+    """把已经写好的 api/main.py 里的真实路由抽出来，交给前端照抄。
+
+    设计阶段给的契约只是"计划"，后端真正落地时路径可能不同（比如少了一层 /v1）。
+    前端照着计划写，接口 404，页面就"加载失败"——测试阶段只测 OpenAPI 里的路由，
+    根本发现不了。所以这里以磁盘上的真实代码为准。
+    """
+    root = files.workspace_root(run_id)
+    text = ""
+    for name in ("api/main.py", "api/main.py".replace("/", "\\")):
+        path = root / name
+        if path.is_file():
+            text = path.read_text(encoding="utf-8", errors="replace")
+            break
+    if not text:
+        return "无（后端还没生成，先按契约写）"
+    paths = re.findall(r'@app\.(get|post|put|patch|delete)\(\s*["\']([^"\']+)["\']', text, re.I)
+    if not paths:
+        return "无"
+    return "\n".join(f"{method.upper()} {path}" for method, path in paths)
 
 
 class FileOutput(BaseModel):
@@ -94,11 +138,12 @@ def _sanitize(path: str, content: str) -> str:
 def _verify(path: str, content: str) -> str | None:
     if not content.strip():
         return "文件内容为空"
-    if "```" in content:
+    is_doc = path.lower().endswith((".md", ".txt"))
+    if not is_doc and "```" in content:
         return "输出里含 Markdown 代码围栏"
     import re
 
-    if re.search(r"(?im)^\s*(#|//|--|<!--|/\*)\s*TODO\s*[:：]", content):
+    if not is_doc and re.search(r"(?im)^\s*(#|//|--|<!--|/\*)\s*TODO\s*[:：]", content):
         return "代码里出现了 TODO: 占位注释"
     if path.endswith(".sql"):
         try:
@@ -112,6 +157,11 @@ def _verify(path: str, content: str) -> str | None:
             compile(content, path, "exec")
         except SyntaxError as error:
             return f"Python 语法错误：{error}"
+        if path == "api/main.py":
+            if "FastAPI(" not in content:
+                return "api/main.py 没有创建 FastAPI 实例"
+            if not any(token in content for token in ("@app.", "@router.", "add_api_route", "include_router")):
+                return "api/main.py 没有路由，疑似输出被截断"
         return None
     if path.endswith(".html"):
         if "<html" not in content.lower() and "<!doctype" not in content.lower():
@@ -139,7 +189,15 @@ def _parse_file_reply(text: str) -> tuple[str, str]:
     if len(lines) != 2 or not lines[0].upper().startswith("FILE:"):
         raise ValueError(f"首行不是 FILE:（实际：{lines[0][:60]!r}）")
     path = lines[0].split(":", 1)[1].strip().strip("`")
-    content = _strip_fence(lines[1])
+    content = lines[1]
+    # 模型经常在一个回复里顺手把后续文件也写出来；只取当前文件，
+    # 否则第二个 FILE: 之后的内容会被当成代码塞进当前文件，直接语法错误。
+    import re
+
+    next_file = re.search(r"(?m)^\s*FILE:\s*\S+", content)
+    if next_file:
+        content = content[: next_file.start()]
+    content = _strip_fence(content)
     if not content.strip():
         raise ValueError("文件内容为空")
     return path, content
@@ -195,7 +253,10 @@ def _build_file(
     previous = "无"
     content = ""
     for _attempt in range(3):
-        system_text = SYSTEM.format(role=ROLE.get(module.get("id"), "开发"))
+        system_text = SYSTEM.format(
+            role=ROLE.get(module.get("id"), "开发"),
+            web_ui=WEB_UI if module.get("id") == "web" else "",
+        )
         extra = skill_block("build")
         if extra:
             system_text += "\n\n" + extra
@@ -211,6 +272,7 @@ def _build_file(
                     file=path,
                     siblings=", ".join(siblings) or "无",
                     context=context or "无",
+                    routes=_actual_routes(run_id) if module.get("id") == "web" else "无",
                     error=last_error or "无",
                     previous=previous,
                 ),
@@ -320,17 +382,22 @@ def _run_one(run_id: str, ctx: RunContext, module: dict[str, Any], context: str 
     paths = module.get("files") or []
     if not paths:
         raise StageFailed(f"模块 {module_id} 没有声明文件")
+    # 入口文件最后写：main.py 要 import store/models/services，
+    # 先把被依赖文件生成出来，入口才看得到真实函数名。
+    main_paths = [p for p in paths if p.endswith("api/main.py")]
+    paths = [p for p in paths if p not in main_paths] + main_paths
 
     client = build_client("build")
     model = model_for("build")
     written: list[str] = []
     total_lines = 0
+    module_context = context
     try:
         for path in paths:
             task_id = _task_id(run_id, module_id, path)
-            title = f"写{module['name']}"
+            title = f"写{path.rsplit('/', 1)[-1]}"
             began = time.monotonic()
-            recorder.task(run_id, "started", task_id=task_id, stage="build", title=title, kind="code", file=path)
+            recorder.task(run_id, "started", task_id=task_id, stage="build", title=title, kind="code", file=path, group=module.get("name") or module_id)
             try:
                 _, content = _build_file(
                     client,
@@ -340,10 +407,13 @@ def _run_one(run_id: str, ctx: RunContext, module: dict[str, Any], context: str 
                     module=module,
                     path=path,
                     siblings=[p for p in paths if p != path],
-                    context=context,
+                    context=module_context,
                 )
                 files.write_file(run_id, path, content)
                 _emit_file(run_id, path, content)
+                # 同一模块内后面的文件必须看到前面文件的真实定义，
+                # 否则 main.py 会 import store.py 里根本不存在的函数。
+                module_context = (module_context + "\n\n" if module_context else "") + f"### {path}\n{content[:3000]}"
             except Exception as error:  # noqa: BLE001
                 recorder.task(
                     run_id,
@@ -397,9 +467,10 @@ def run(run_id: str, ctx: RunContext) -> list[BuildResult]:
                 "created",
                 task_id=_task_id(run_id, module["id"], path),
                 stage="build",
-                title=f"写{module['name']}",
+                title=f"写{path.rsplit('/', 1)[-1]}",
                 kind="code",
                 file=path,
+                group=module.get("name") or module["id"],
             )
 
     recorder.emit(

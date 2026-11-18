@@ -44,6 +44,19 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router, prefix=API_PREFIX)
 
+    @app.on_event("startup")
+    def _reconcile_runtimes() -> None:
+        """把上一条后端进程留下的预览进程收干净，状态同步成 stopped。"""
+        try:
+            from app.api.pipeline.stages.deliver.run import reconcile_runtimes
+
+            count = reconcile_runtimes()
+            if count:
+                print(f"[startup] 收回 {count} 条遗留预览记录")
+        except Exception as error:  # noqa: BLE001
+            # 清理失败不该拦住服务启动
+            print(f"[startup] 预览状态对齐失败：{error}")
+
     # 同源部署不需要 CORS；只有本地两端不同端口时才开
     if settings.allowed_origin:
         app.add_middleware(

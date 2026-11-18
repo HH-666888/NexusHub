@@ -36,6 +36,8 @@ def structured(
     try:
         return schema.model_validate(parse_json(reply.content)), reply
     except (json.JSONDecodeError, ValidationError) as error:
+        # 被长度截断时，原样再问一次只会再截断一次，第二次必须给更大的预算
+        budget = max_tokens * 2 if reply.finish_reason == "length" else max_tokens
         repair = list(messages) + [
             {"role": "assistant", "content": reply.content},
             {
@@ -44,7 +46,7 @@ def structured(
             },
         ]
         reply2 = client.complete(
-            repair, model, max_tokens=max_tokens, temperature=temperature, json_mode=True
+            repair, model, max_tokens=budget, temperature=temperature, json_mode=True
         )
         try:
             return schema.model_validate(parse_json(reply2.content)), reply2

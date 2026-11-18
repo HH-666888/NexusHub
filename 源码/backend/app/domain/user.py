@@ -41,11 +41,19 @@ def check_username(raw: str) -> FieldCheck:
 
 
 def check_password_strength(password: str) -> FieldCheck:
-    """只看长度。函数名保留，将来要加规则就在这里加，调用方不用改。"""
+    """长度之外，还要求字母和数字都出现。
+
+    只有长度的规则等于没有强度：`abcdef` 这类纯字母口令能直接过，
+    弱口令策略那一项就是空的。
+    """
     if len(password) < PASSWORD_MIN:
         return FieldCheck(ok=False, reason=f"密码至少 {PASSWORD_MIN} 位")
     if len(password) > PASSWORD_MAX:
         return FieldCheck(ok=False, reason=f"密码过长（最多 {PASSWORD_MAX} 位）")
+    if not any(ch.isalpha() for ch in password):
+        return FieldCheck(ok=False, reason="密码至少要包含一个字母")
+    if not any(ch.isdigit() for ch in password):
+        return FieldCheck(ok=False, reason="密码至少要包含一个数字")
     return FieldCheck(ok=True, value=password)
 
 

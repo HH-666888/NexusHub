@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 
 from app.db.session import SessionLocal
@@ -24,7 +25,12 @@ SYSTEM = """你是集成工程师。下面是各模块的真实代码，请生�
 2. 不要输出 JSON，不要 Markdown 围栏，不要解释。
 3. 启动时执行 db/schema.sql 建表（如果存在）。
 4. 如果 api/main.py 里定义了 FastAPI 实例（通常叫 app），导入它。
-5. 用 StaticFiles 把 web/ 目录挂到 /（放在 API 路由之后）。
+5. 用 StaticFiles 把 web/ 目录挂到 /，但必须先摘掉 API 模块自带的根路由，
+   否则预览显示的是接口里那个简陋页面，web/index.html 永远不会被访问：
+   在 app.mount 之前加这一段：
+       app.routes = [r for r in app.routes if getattr(r, "path", "") != "/"]
+       app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
+   （WEB_DIR 用 Path(__file__).resolve().parent / "web" 算出来，并判断存在再挂）
 6. 监听 0.0.0.0，端口从环境变量 PORT 读，默认 8000。
 7. 文件末尾：
    if __name__ == "__main__":
@@ -43,6 +49,31 @@ USER = """模块代码：
 
 def _task_id(run_id: str) -> str:
     return "task-assemble-" + hashlib.sha1(f"{run_id}:assemble".encode()).hexdigest()[:6]
+
+
+_MOUNT_ROOT = re.compile(r'(?m)^(\s*)app\.mount\("/",\s*StaticFiles')
+
+
+def _ensure_web_priority(text: str) -> str:
+    """保证预览打开的是 web/index.html，而不是 API 模块自带的根路由。
+
+    FastAPI 的普通路由优先于 mount，所以只要 api/main.py 里写了 `GET /`，
+    StaticFiles 挂上去也不会被命中 —— 预览就永远是一个简陋页面。
+    这里在 mount 之前插一行，把自带的根路由摘掉；插完再编译校验，坏了就还原。
+    """
+    if "StaticFiles" not in text or "getattr(r" in text:
+        return text
+    match = _MOUNT_ROOT.search(text)
+    if not match:
+        return text
+    indent = match.group(1)
+    patch = f'{indent}app.routes = [r for r in app.routes if getattr(r, "path", "") != "/"]\n'
+    patched = text[: match.start()] + patch + text[match.start():]
+    try:
+        compile(patched, "app.py", "exec")
+    except SyntaxError:
+        return text
+    return patched
 
 
 def _parse(text: str) -> str:
@@ -153,6 +184,8 @@ def run(run_id: str, ctx: RunContext) -> str:
             ms=int((time.monotonic() - began) * 1000),
         )
         raise StageFailed(last_error or "装配失败")
+
+    content = _ensure_web_priority(content)
 
     files.write_file(run_id, "app.py", content)
     offset = 0

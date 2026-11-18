@@ -28,7 +28,7 @@ PROMPTS = [
 
 def login() -> httpx.Client:
     client = httpx.Client(base_url=BASE, timeout=60)
-    response = client.post("/api/v1/auth/login", json={"username": "admin", "password": "123456"})
+    response = client.post("/api/auth/login", json={"username": "admin", "password": "123456"})
     response.raise_for_status()
     return client
 

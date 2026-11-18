@@ -23,6 +23,21 @@ from app.api.pipeline.stages import STAGES, StageNotReady
 
 _RUNNING: dict[str, threading.Thread] = {}
 _LOCK = threading.Lock()
+# 被删除的运行：线程可能还在某道工序里，到下个工序边界必须立刻退出，
+# 否则会继续写事件、甚至再起一个预览进程，留下孤儿端口和孤儿产物。
+_DELETED: set[str] = set()
+
+
+def cancel(run_id: str) -> None:
+    """标记一次运行已删除，流水线线程在下一个工序边界自行退出。"""
+    with _LOCK:
+        _DELETED.add(run_id)
+    recorder.mark_deleted(run_id)
+
+
+def is_deleted(run_id: str) -> bool:
+    with _LOCK:
+        return run_id in _DELETED
 
 
 def create_and_start(db: Session, *, user_id: int, prompt: str) -> Run:
@@ -72,6 +87,8 @@ def _guard(run_id: str, prompt: str) -> None:
     finally:
         with _LOCK:
             _RUNNING.pop(run_id, None)
+            _DELETED.discard(run_id)
+        recorder.forget(run_id)
 
 
 def _load_user_api_key(run_id: str) -> None:
@@ -93,6 +110,8 @@ def _loop(run_id: str, prompt: str) -> None:
     ctx = RunContext(run_id=run_id, prompt=prompt)
 
     for stage in STAGES:
+        if is_deleted(run_id):
+            return
         if recorder.status_of(run_id) in {"cancelled", "paused"}:
             if recorder.status_of(run_id) == "cancelled":
                 return
@@ -129,6 +148,11 @@ def _loop(run_id: str, prompt: str) -> None:
         if recorder.status_of(run_id) == "cancelled":
             return
 
+        if is_deleted(run_id):
+            return
+
+    if is_deleted(run_id):
+        return
     recorder.phase(run_id, "done", "完成")
     recorder.set_status(run_id, "done")
 

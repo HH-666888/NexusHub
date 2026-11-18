@@ -92,7 +92,7 @@ def run(run_id: str, ctx: RunContext) -> SpecV2:
 
     began = time.monotonic()
     try:
-        spec, reply = structured(client, messages, model, SpecV2, max_tokens=900, temperature=0.2)
+        spec, reply = structured(client, messages, model, SpecV2, max_tokens=2400, temperature=0.2)
     finally:
         client.close()
 

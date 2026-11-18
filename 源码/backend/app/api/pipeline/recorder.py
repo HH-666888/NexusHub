@@ -18,6 +18,25 @@ from app.shared.time import now_ms
 # 单进程内并发写事件时，seq 必须串行分配，否则会撞主键
 _EMIT_LOCK = threading.Lock()
 
+# 已被删除的运行：流水线线程可能还在工序里，任何写入都必须静默丢弃，
+# 否则会撞 run_events 的外键，把一次正常删除变成一串后台异常。
+_DELETED: set[str] = set()
+
+
+def mark_deleted(run_id: str) -> None:
+    with _EMIT_LOCK:
+        _DELETED.add(run_id)
+
+
+def is_deleted(run_id: str) -> bool:
+    with _EMIT_LOCK:
+        return run_id in _DELETED
+
+
+def forget(run_id: str) -> None:
+    with _EMIT_LOCK:
+        _DELETED.discard(run_id)
+
 
 def _next_seq(db, run_id: str) -> int:
     current = db.execute(
@@ -29,6 +48,8 @@ def _next_seq(db, run_id: str) -> int:
 def emit(run_id: str, kind: str, payload: dict[str, Any]) -> int:
     """写一条事件，返回 seq。payload 里必须自带 kind（与 SSE 帧一致）。"""
     with _EMIT_LOCK:
+        if run_id in _DELETED:
+            return 0
         db = SessionLocal()
         try:
             seq = _next_seq(db, run_id)
@@ -83,6 +104,7 @@ def task(
     kind: str,
     note: str = "",
     file: str = "",
+    group: str = "",
     reason: str = "",
     attempts: int = 1,
     ms: int | None = None,
@@ -99,6 +121,8 @@ def task(
         "file": file,
         "attempts": attempts,
     }
+    if group:
+        body["group"] = group
     if reason:
         body["reason"] = reason
     if ms is not None:
@@ -109,6 +133,8 @@ def task(
 
 
 def set_stage(run_id: str, stage: str) -> None:
+    if is_deleted(run_id):
+        return
     db = SessionLocal()
     try:
         run = db.get(Run, run_id)
@@ -121,6 +147,8 @@ def set_stage(run_id: str, stage: str) -> None:
 
 
 def set_status(run_id: str, status: str) -> None:
+    if is_deleted(run_id):
+        return
     db = SessionLocal()
     try:
         run = db.get(Run, run_id)
@@ -133,6 +161,8 @@ def set_status(run_id: str, status: str) -> None:
 
 
 def status_of(run_id: str) -> str:
+    if is_deleted(run_id):
+        return "cancelled"
     db = SessionLocal()
     try:
         run = db.get(Run, run_id)

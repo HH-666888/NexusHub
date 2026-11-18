@@ -25,6 +25,10 @@ router = APIRouter()
 
 RUN_PREFIX = "r-"
 
+# 需求 + 上传文档合并后的上限。DeepSeek 上下文 64k token，
+# 留出系统提示 / RAG / 输出的余量，2 万字以内是安全的。
+MAX_PROMPT_CHARS = 20000
+
 
 def _owned(db: Session, run_id: str, user: User) -> Run:
     run = db.get(Run, run_id)
@@ -66,6 +70,13 @@ def create_run(
     prompt = str(payload.get("prompt") or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="prompt 不能为空")
+    # 需求会连同上传文档正文一起拼进来。没有上限的话，长文档会先把上下文顶爆，
+    # 表现成模型输出截断、JSON 解析失败，跑一半才炸。这里提前拦。
+    if len(prompt) > MAX_PROMPT_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"需求太长了（{len(prompt)} 字），上限 {MAX_PROMPT_CHARS} 字。请把文档精简后再提交。",
+        )
     run = create_and_start(db, user_id=user.id, prompt=prompt)
     return run_to_dict(run)
 
@@ -95,6 +106,24 @@ def list_events(
     ]
 
 
+@router.delete("")
+def delete_all_runs(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """清空当前用户的全部运行。
+
+    前端「一键清除全部」用它：以数据库为准，不会因为页面列表是旧的而漏删，
+    也不受列表条数上限影响。
+    """
+    ids = list(db.execute(select(Run.id).where(Run.user_id == user.id)).scalars())
+    deleted = 0
+    for run_id in ids:
+        _delete_run_rows(db, run_id)
+        deleted += 1
+    return {"ok": True, "deleted": deleted}
+
+
 @router.delete("/{run_id}")
 def delete_run(
     run_id: str,
@@ -102,11 +131,53 @@ def delete_run(
     db: Session = Depends(get_db),
 ) -> dict:
     _owned(db, run_id, user)
+    _delete_run_rows(db, run_id)
+    return {"ok": True, "id": run_id}
+
+
+def _delete_run_rows(db: Session, run_id: str) -> None:
+    """收进程、打删除标记、删记录、删产物目录 —— 单条和批量共用这一份。"""
+    from app.api.pipeline.stages.deliver.run import stop_preview
+    from app.db.models import RunRuntime
+
+    # 先给流水线打删除标记：线程可能还在某道工序里，下个工序边界会自行退出，
+    # 否则它会在删完之后继续写事件、甚至再起一个预览进程。
+    orchestrator.cancel(run_id)
+    # 再收进程，最后删数据：反过来的话 PID 就丢了，进程会一直挂着占端口
+    stop_preview(run_id)
     db.execute(delete(RunEvent).where(RunEvent.run_id == run_id))
     db.execute(delete(Artifact).where(Artifact.run_id == run_id))
+    db.execute(delete(RunRuntime).where(RunRuntime.run_id == run_id))
     db.execute(delete(Run).where(Run.id == run_id))
     db.commit()
-    return {"ok": True, "id": run_id}
+    _remove_workspace(run_id)
+
+
+def _remove_workspace(run_id: str) -> None:
+    """删掉这次运行留下的产物目录；只删工作区直属子目录，越界一律不动。"""
+    import shutil
+    from pathlib import Path
+
+    from app.config import get_settings
+
+    base = Path(get_settings().runtime_workspace_dir).resolve()
+    target = (base / run_id).resolve()
+    if target.parent != base or not target.is_dir():
+        return
+    shutil.rmtree(target, ignore_errors=True)
+
+
+@router.post("/{run_id}/preview/stop")
+def stop_preview_endpoint(
+    run_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> dict:
+    """停掉这次运行的预览进程。前端「关闭预览」用。"""
+    _owned(db, run_id, user)
+    from app.api.pipeline.stages.deliver.run import stop_preview
+
+    stop_preview(run_id)
+    return {"ok": True, "status": "stopped"}
+
 
 @router.get("/{run_id}/stream")
 def stream_run(
@@ -136,7 +207,6 @@ def stream_run(
                 status = run.status if run is not None else "cancelled"
             finally:
                 session.close()
-
             if rows:
                 idle = 0.0
                 for row in rows:
@@ -180,6 +250,10 @@ def cancel_run(run_id: str, user: User = Depends(get_current_user), db: Session 
     run = _owned(db, run_id, user)
     run.status = "cancelled"
     db.commit()
+    # 取消就把预览一起收掉，别留一个没人管的进程在后台占端口
+    from app.api.pipeline.stages.deliver.run import stop_preview
+
+    stop_preview(run_id)
     return {"ok": True, "status": "cancelled"}
 
 
@@ -194,6 +268,20 @@ def get_runtime(
     from app.db.models import RunRuntime
 
     row = db.get(RunRuntime, run_id)
+    run = db.get(Run, run_id)
+    if (
+        run is not None
+        and run.status == "done"
+        and (row is None or row.status != "running" or not row.preview_url)
+    ):
+        # 已完成项目的预览不依赖流水线再跑一遍：打开预览时直接按产物目录起进程
+        from app.api.pipeline.stages.deliver.run import start_preview
+
+        try:
+            start_preview(run_id, "app.py")
+        except Exception:  # noqa: BLE001
+            pass
+        row = db.get(RunRuntime, run_id)
     if row is None:
         return {"runtime": None}
     return {
@@ -231,7 +319,11 @@ def list_artifacts(
     db: Session = Depends(get_db),
 ) -> dict:
     _owned(db, run_id, user)
-    rows = db.execute(select(Artifact).where(Artifact.run_id == run_id).order_by(Artifact.name)).scalars().all()
+    rows = (
+        db.execute(select(Artifact).where(Artifact.run_id == run_id).order_by(Artifact.name))
+        .scalars()
+        .all()
+    )
     return {
         "artifacts": [
             {"name": row.name, "kind": row.kind, "bytes": row.bytes, "sha256": row.sha256}
