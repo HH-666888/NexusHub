@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, nextTick, onMounted, watch } from "vue";
 import { workbenchStore } from "../useWorkbenchStore";
 import type { WorkbenchStage, WorkbenchTask } from "../../types/workbench-engine";
 import { showTaskDetail } from "../workbenchModel";
@@ -29,10 +29,59 @@ onMounted(() => {
   );
 });
 
+/** 只要某道工序已经有任务，默认展开，别让用户面对一排折叠箭头 */
+watch(
+  () => store.tasks.length,
+  () => {
+    for (const stage of store.stages) {
+      if (store.tasks.some((task) => task.stage === stage.id)) store.autoOpen(stage.id);
+    }
+  },
+  { immediate: true },
+);
+
+/** 工序切换时把当前位置滚进视野；只在运行中跟随，回看已完成任务时别乱跳 */
+watch(
+  () => store.stageIndex,
+  async () => {
+    if (store.status !== "running") return;
+    await nextTick();
+    const stage = store.stages[store.stageIndex];
+    if (!stage) return;
+    const row = document.querySelector<HTMLElement>(`.t-stage[data-stage="${stage.id}"] .t-stage-row`);
+    row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  },
+);
+
+const currentTask = computed(() => store.tasks.find((task) => task.state === "running") || null);
+
+/** 主控状态跟着真实运行状态走，不再永远显示"待命" */
+const masterState = computed(() => {
+  if (store.status === "running") {
+    // 还没开始（没输入需求、也没任务）就别谎报"运行中"
+    return store.started || store.tasks.length ? "运行中" : "待命";
+  }
+  if (store.status === "paused") return "已暂停";
+  if (store.status === "done") return "已完成";
+  if (store.status === "failed") return "失败";
+  if (store.status === "cancelled") return "已取消";
+  return "待命";
+});
+
 const progressLabel = computed(() => {
   if (!store.stages.length) return "等待开始";
   const stage = store.stages[store.stageIndex];
-  return stage ? `第 ${store.stageIndex + 1} 道 · ${stage.name}` : "等待开始";
+  const place = stage ? `第 ${store.stageIndex + 1} 道 · ${stage.name}` : "等待开始";
+  return currentTask.value ? place + " · " + currentTask.value.title : place;
+});
+
+/** 真实进度：按六道工序的状态算，已完成各算满，正在跑的那道算半道 */
+const runProgress = computed(() => {
+  const total = store.stages.length;
+  if (!total) return 0;
+  const done = store.stages.filter((stage) => stage.state === "done").length;
+  const half = store.stages.some((stage) => stage.state === "live") ? 0.5 : 0;
+  return Math.min(100, Math.round(((done + half) / total) * 100));
 });
 
 function stageState(stage: WorkbenchStage) {
@@ -75,17 +124,23 @@ function taskClass(task: WorkbenchTask) {
       </h2>
       <p>主控一边分析一边往下派活</p>
       <div class="stage-progress">
-        <div class="label"><span>{{ progressLabel }}</span><span id="pct">{{ store.progress }}%</span></div>
-        <div class="bar"><i id="bar" :style="{ width: store.progress + '%' }"></i></div>
+        <div class="label"><span>{{ progressLabel }}</span><span id="pct">{{ runProgress }}%</span></div>
+        <div class="bar"><i id="bar" :style="{ width: runProgress + '%' }"></i></div>
       </div>
     </div>
 
     <div class="task-list" id="task-list">
       <div class="t-group">
-        <button type="button" class="t-item t-master" id="t-master" @click="store.toggleAll()">
+        <button
+          type="button"
+          class="t-item t-master"
+          id="t-master"
+          :class="{ 'is-live': store.status === 'running' }"
+          @click="store.toggleAll()"
+        >
           <span class="no">L1</span>
           <span class="name">主控 Agent</span>
-          <span class="state">待命</span>
+          <span class="state">{{ masterState }}</span>
           <span class="chev">▾</span>
         </button>
       </div>

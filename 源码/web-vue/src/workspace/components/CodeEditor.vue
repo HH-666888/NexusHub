@@ -31,7 +31,7 @@ onMounted(() => {
     tabSize: 4,
     lineWrapping: false,
   });
-  editor.setSize(null, 420);
+  editor.setSize(null, "100%");
   editor.on("change", () => {
     if (!editor || applying) return;
     emit("update:modelValue", editor.getValue());

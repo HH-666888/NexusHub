@@ -20,6 +20,8 @@ const {
   isLastStage,
   currentPath,
   content,
+  dirty,
+  analyzing,
   findings,
   tests,
   testsLoaded,
@@ -97,6 +99,8 @@ onMounted(boot);
             :current-path="currentPath"
             :model-value="content"
             :hint="editorHint"
+            :dirty="dirty"
+            :analyzing="analyzing"
             @select="selectFile"
             @update:model-value="markDirty"
             @add="addFile"

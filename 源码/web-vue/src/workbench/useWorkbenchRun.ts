@@ -46,10 +46,8 @@ export function useWorkbenchRun() {
   const prompt = params.get("prompt") || "";
   const store = workbenchStore;
   const state: RunState = { events: [], run: null, cost: 0, lastSeq: 0, timer: null };
-  const queue: { items: QueuedEvent[]; timer: number | null } = { items: [], timer: null };
   let source: EventSource | null = null;
   let finished = false;
-
   function speed() {
     return model.getSpeed() || 1;
   }
@@ -61,30 +59,10 @@ export function useWorkbenchRun() {
   }
 
   function clearQueue() {
-    queue.items.length = 0;
-    if (queue.timer !== null) {
-      window.clearTimeout(queue.timer);
-      queue.timer = null;
+    if (state.timer !== null) {
+      window.clearTimeout(state.timer);
+      state.timer = null;
     }
-  }
-
-  function drain() {
-    queue.timer = null;
-    const item = queue.items.shift();
-    if (!item) return;
-    apply(item.kind, item.payload, item.at);
-    const next = queue.items[0];
-    const gap = next ? Math.max(24, next.at - item.at) : 120;
-    queue.timer = window.setTimeout(drain, Math.min(5000, gap / Math.max(0.1, speed())));
-  }
-
-  function enqueue(kind: string, payload: Record<string, any>, at: number) {
-    if (speed() >= 0.99) {
-      apply(kind, payload, at);
-      return;
-    }
-    queue.items.push({ kind, payload, at });
-    if (queue.timer === null) queue.timer = window.setTimeout(drain, 30);
   }
 
   function apply(kind: string, payload: Record<string, any>, at: number, record = true) {
@@ -150,10 +128,7 @@ export function useWorkbenchRun() {
         Boolean(payload.done),
         Boolean(payload.replace),
       );
-      if (payload.done) {
-        model.markBranchDone(payload.path);
-        model.setEvent(timeOf(at) + " · " + payload.path + " 写完");
-      }
+      if (payload.done) model.setEvent(timeOf(at) + " · " + payload.path + " 写完");
       return;
     }
 
@@ -227,7 +202,7 @@ export function useWorkbenchRun() {
         if (payload.seq <= state.lastSeq) return;
         state.lastSeq = payload.seq;
       }
-      enqueue(kind, payload, payload.at || Date.now());
+      apply(kind, payload, payload.at || Date.now());
       if (kind === "phase" && payload.phase === "done") {
         finished = true;
         model.setStatus("done");
@@ -318,7 +293,7 @@ export function useWorkbenchRun() {
 
   function replayAll() {
     stopReplay();
-    clearQueue();
+    model.setInstant(false);
     model.resetFiles();
     model.clearTasks();
     model.setStage(0);
@@ -343,6 +318,7 @@ export function useWorkbenchRun() {
 
   function replayFile() {
     stopReplay();
+    model.setInstant(false);
     const path = store.activePath;
     if (!path) return;
     const items = state.events.filter((item) => item.kind === "file" && item.payload?.path === path);
@@ -371,10 +347,11 @@ export function useWorkbenchRun() {
 
   function backToLive() {
     stopReplay();
-    clearQueue();
+    model.setInstant(true);
     model.resetFiles();
     model.clearTasks();
     state.events.forEach((item) => apply(item.kind, item.payload, item.at, false));
+    model.setInstant(false);
     if (state.run) applyRun(state.run);
   }
 
@@ -428,10 +405,13 @@ export function useWorkbenchRun() {
       seq?: number;
     }> | null;
     if (Array.isArray(events)) {
+      // 打开已存在的运行时先「一次性还原」，不要把历史内容重新逐字打一遍
+      model.setInstant(true);
       events.forEach((item) => {
         apply(item.kind, item.payload, item.createdAt || Date.now());
         if (item.seq) state.lastSeq = Math.max(state.lastSeq, item.seq);
       });
+      model.setInstant(false);
       applyRun(run);
     }
 

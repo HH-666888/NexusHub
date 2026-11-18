@@ -276,6 +276,7 @@ export function useWorkspace(projectId: string) {
   async function analyze() {
     if (!api || !currentPath.value || analyzing.value) return;
     analyzing.value = true;
+    const began = Date.now();
     try {
       if (dirty.value) await saveFile();
       const result = await api.analyzeAssist(projectId);
@@ -286,6 +287,9 @@ export function useWorkspace(projectId: string) {
       await loadFindings();
       await loadProject();
     } finally {
+      // 审查动画至少保留 1.2s，避免接口很快时看不到任何反馈
+      const left = 1200 - (Date.now() - began);
+      if (left > 0) await new Promise((resolve) => setTimeout(resolve, left));
       analyzing.value = false;
     }
   }

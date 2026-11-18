@@ -53,8 +53,12 @@ export function useWorkbenchUi() {
       const open = saved.openStages.filter((id) => validStages.has(id));
       if (open.length) workbenchStore.openStages = open;
     }
-    if (saved.activePath && workbenchStore.files.some((file) => file.path === saved.activePath)) {
-      showFile(saved.activePath);
+    // 已加载的任务所在工序一律保证展开，恢复旧折叠状态时也不留一排收起箭头
+    for (const stage of workbenchStore.stages) {
+      if (workbenchStore.tasks.some((task) => task.stage === stage.id)) workbenchStore.autoOpen(stage.id);
+    }
+    if (saved.activePath && !workbenchStore.activePath && workbenchStore.files.some((file) => file.path === saved.activePath)) {
+      showFile(saved.activePath, false, false);
     }
     enabled = true;
   }

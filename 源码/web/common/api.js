@@ -76,6 +76,11 @@
       return request("/runs/" + encodeURIComponent(id), { method: "DELETE" });
     },
 
+    /** 清空全部运行（以数据库为准，不依赖页面列表）。 */
+    async clearRuns() {
+      return request("/runs", { method: "DELETE" });
+    },
+
     async createRun(prompt, fast) {
       const path = fast ? "/runs?fast=1" : "/runs";
       return request(path, { method: "POST", body: JSON.stringify({ prompt }) });

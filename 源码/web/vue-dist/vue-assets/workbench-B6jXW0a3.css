@@ -58,12 +58,13 @@
         stroke-width: 2;
         stroke-linecap: round;
         stroke-linejoin: round;
-        shape-rendering: geometricPrecision; fill: none; stroke: var(--primary-line); stroke-width: 1.6; }
+        shape-rendering: geometricPrecision; fill: none; stroke: rgba(37, 99, 235, 0.42); stroke-width: 1.8;
+        /* 未描绘的连线先藏起来，等对应节点入场时再跑 draw */
+        stroke-dasharray: 1; stroke-dashoffset: 1; }
       /* pathLength="1" 之后，dash 用 0~1 的归一化长度，彻底躲开 getTotalLength 的取整误差 */
       .tree-svg path.draw {
-        stroke-dasharray: 1;
+        animation: draw var(--edge-dur, 0.5s) ease forwards;
         stroke-dashoffset: 1;
-        animation: draw 0.5s ease forwards;
       }
       @keyframes draw { to { stroke-dashoffset: 0; } }
 
@@ -106,9 +107,17 @@
       .tasks-head p { margin: 0; font-size: 12px; color: var(--text-3); }
 
       .stage-progress { display: grid; gap: 8px; margin-top: 12px; }
-      .stage-progress .label { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-3); }
+      .stage-progress .label { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--text-3); }
+      .stage-progress .label span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .stage-progress .label span:last-child { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
       .bar { height: 5px; border-radius: 999px; background: var(--card-3); overflow: hidden; }
-      .bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #2563eb, #38bdf8); }
+      .bar i {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #2563eb, #38bdf8);
+        transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      }
 
       .task-list { flex: 1; min-height: 0; overflow: auto; padding: 8px 8px 14px; }
       .t-group { margin-bottom: 4px; }
@@ -127,6 +136,19 @@
       }
       @keyframes item-in { to { opacity: 1; transform: none; } }
       .t-item.is-live { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+      .t-item.is-live .state { color: var(--primary); }
+      .t-item.is-live .state::before {
+        content: "";
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        margin-right: 4px;
+        vertical-align: 1px;
+        border-radius: 50%;
+        background: currentColor;
+        animation: nexus-pulse 1.1s ease-in-out infinite;
+      }
+      @keyframes nexus-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
       .t-item .no { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); }
       .t-item.is-live .no { color: var(--primary); }
       .t-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -148,17 +170,19 @@
 
       .node-root,
       .node-stage,
+      .node-group,
       .node-task {
         position: absolute;
         opacity: 0;
         transform: translateY(-8px) scale(0.98);
-        transition: opacity var(--node-dur, 0.28s) ease, transform var(--node-dur, 0.28s) ease;
+        transition: opacity var(--node-dur, 0.28s) ease, transform var(--node-dur, 0.28s) ease,
+          left var(--node-dur, 0.28s) ease, top var(--node-dur, 0.28s) ease;
         background: rgba(255, 255, 255, 0.86);
         backdrop-filter: blur(8px);
         border: 1px solid var(--line-2);
         box-shadow: 0 10px 24px -18px rgba(15, 23, 42, 0.5);
       }
-      .node-root.in, .node-stage.in, .node-task.in { opacity: 1; transform: none; }
+      .node-root.in, .node-stage.in, .node-group.in, .node-task.in { opacity: 1; transform: none; }
 
       /* 竖向树：左对齐、编号在最左，一眼看出第几道 */
       .node-root {
@@ -173,6 +197,20 @@
       .node-root b { font-size: 13.5px; }
       .node-root small { font-size: 11.5px; color: var(--text-3); }
 
+      /* 第四层：架构模块分组（模块 → 文件） */
+      .node-group {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 0 10px;
+        border-radius: 9px;
+        border-left: 3px solid var(--primary);
+        background: rgba(37, 99, 235, 0.06);
+      }
+      .node-group b { font-size: 11.5px; color: var(--primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .node-group small { flex: 0 0 auto; font-size: 10px; color: var(--text-3); font-family: var(--mono); }
+
       .node-stage {
         left: 84px;
         width: 232px;
@@ -181,8 +219,7 @@
         display: grid;
         grid-template-columns: 20px 20px minmax(0, 1fr);
         gap: 10px;
-        align-items: center;
-      }
+        align-items: center;      }
       .node-stage .no {
         font-family: var(--mono);
         font-size: 10.5px;
@@ -270,6 +307,18 @@
       .code-file .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
       .code-file .grow { flex: 1; }
       .code-file .stream { color: var(--text-3); }
+      .code-file .follow-btn {
+        padding: 2px 7px;
+        border: 1px solid var(--primary-line);
+        border-radius: 999px;
+        background: var(--primary-soft);
+        color: var(--primary);
+        font: inherit;
+        font-size: 10.5px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .code-file .follow-btn:hover { border-color: var(--primary); }
 
       .code-body {
         flex: 1;
@@ -343,8 +392,28 @@
         overflow: hidden;
         margin-top: 2px;
       }
-      .node-task .mini i { display: block; height: 100%; border-radius: 999px; background: var(--primary); }
-      .node-task.done .mini i { background: var(--ok); }
+      /* 进度条宽度只由状态决定：等待为空、完成铺满、失败停在红色。
+         宽度走 transition，避免 0 → 100 硬跳；运行中走扫光，不假装百分比。 */
+      .node-task .mini i {
+        display: block;
+        height: 100%;
+        width: 0;
+        border-radius: 999px;
+        background: var(--primary);
+        transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
+      }
+      .node-task.done .mini i { width: 100%; background: var(--ok); }
+      .node-task.fail .mini i { width: 100%; background: #dc2626; }
+      /* 这道工序正在跑，但总时长无法预知：用一段来回扫的光表示"在推进" */
+      .node-task.live .mini i {
+        width: 38%;
+        background: linear-gradient(90deg, var(--primary-soft) 0%, var(--primary) 55%, var(--primary-soft) 100%);
+        animation: mini-sweep 1.35s cubic-bezier(0.55, 0, 0.45, 1) infinite;
+      }
+      @keyframes mini-sweep {
+        0% { transform: translateX(-105%); }
+        100% { transform: translateX(270%); }
+      }
       .node-task.parallel::after {
         content: "并行";
         position: absolute;
@@ -558,7 +627,7 @@
 .task-card .is-fail { color: #b91c1c; font-weight: 600; }
 .task-card #tc-open { margin-top: 10px; }
 
-/* 播放速度：默认收起成一个「1×」，点开才出滑杆，避免挤占顶栏 */
+/* 播放速度：默认收起成一个「1×」，点开才出四个档位，避免挤占顶栏 */
 .speed-pop { position: relative; }
 .speed-btn {
   min-width: 46px;
@@ -577,7 +646,7 @@
   position: absolute;
   right: 0;
   top: calc(100% + 8px);
-  width: 210px;
+  width: 268px;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -586,8 +655,25 @@
   z-index: 40;
 }
 .speed-pop.open .speed-menu { display: block; }
-.speed-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-3); }
-.speed-row input[type="range"] { flex: 1; accent-color: var(--primary); }
+.speed-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.speed-opt {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.speed-opt:hover { border-color: var(--primary-line); color: var(--primary); }
+.speed-opt.is-on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
 .speed-menu p { margin: 6px 0 0; font-size: 11px; color: var(--text-3); }
 
 /* 顶栏东西多：窄屏先把提示语收起来，保证按钮一行放下 */
@@ -700,8 +786,7 @@ body.is-blank .statusbar .cost { opacity: .35; }
 .t-sub .t-item { grid-template-columns: minmax(0, 1fr) auto; font-size: 12px; }
 
 /* 真实运行时不显示演示时间线控件 */
-body.is-live #replay,
-body.is-live #speed-pop { display: none; }
+body.is-live #replay { display: none; }
 
 
 /* 参考依据：RAG 命中的真实来源 */
@@ -725,6 +810,72 @@ body.is-live #speed-pop { display: none; }
 .evidence-row b { font-size: 11px; font-weight: 500; color: var(--text-2); }
 .evidence-row small { font-size: 10.5px; color: var(--text-3); line-height: 1.4; }
 
+/* 预览面板：默认铺满右栏，全屏时去掉圆角和内边距，让产物真正占满屏幕 */
+.preview-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel, #fff);
+}
+.preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--text-3);
+}
+.preview-state { display: inline-flex; align-items: center; gap: 6px; }
+.preview-state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok, #10b981);
+}
+.preview-bar .spacer { flex: 1; }
+.preview-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .18s, border-color .18s, color .18s;
+}
+.preview-btn:hover { background: var(--hover, rgba(0,0,0,.04)); color: var(--text-1); }
+.preview-btn.is-main { border-color: var(--accent, #4f46e5); color: var(--accent, #4f46e5); }
+.preview-body {
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+}
+.preview-empty { color: var(--text-3); font-size: 13px; margin: 0; }
+.preview-frame {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  display: block;
+}
+.preview-wrap:fullscreen {
+  background: #0b0b0f;
+  padding: 0;
+}
+.preview-wrap:fullscreen .preview-bar {
+  border-bottom-color: rgba(255, 255, 255, .14);
+  color: #a1a1aa;
+}
+.preview-wrap:fullscreen .preview-body { padding: 0; }
+.preview-wrap:fullscreen .preview-frame {
+  border: 0;
+  border-radius: 0;
+  height: 100%;
+}
 .agent-modal[data-v-08f5ac9e] {
   position: fixed;
   inset: 0;

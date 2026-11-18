@@ -1,21 +1,26 @@
 ﻿<script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useWorkbenchTree, type TreeNode } from "../useWorkbenchTree";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { useWorkbenchTree, type TreeNode, type TreePath } from "../useWorkbenchTree";
 import { workbenchStore } from "../useWorkbenchStore";
 import type { WorkbenchStage } from "../../types/workbench-engine";
 import type { TreeCard } from "../useWorkbenchTree";
-import { showTaskDetail, speed, setSpeed } from "../workbenchModel";
+import { SPEEDS, showTaskDetail, speed, setSpeed, speedLabel } from "../workbenchModel";
 
 const emit = defineEmits<{ openAgent: [] }>();
 
 const tree = useWorkbenchTree();
 const { view, nodes, paths, height, width } = tree;
 const inner = ref<HTMLElement | null>(null);
-const ready = ref(false);
 const speedOpen = ref(false);
 const offsetY = ref(0);
 const scrollKey = "nexus-wb-tree-scroll:" + (new URLSearchParams(location.search).get("run") || "new");
 let observer: ResizeObserver | null = null;
+
+/** 已入场的节点 / 已描绘的连线。新来的节点先不挂 in，下一拍再挂，过渡才会重放 */
+const revealedNodes = reactive(new Set<string>());
+const revealedPaths = reactive(new Set<string>());
+const pendingReveal: string[] = [];
+let revealTimer: number | null = null;
 
 const focusName = computed(() => {
   if (view.focus === null) return "—";
@@ -41,8 +46,59 @@ function nodeStyle(node: TreeNode) {
     top: node.y + offsetY.value + "px",
     width: node.w + "px",
     ...(node.kind === "stage" && node.compact ? { minHeight: node.h + "px" } : {}),
-    ...(node.kind === "task" || node.kind === "chip" ? { height: node.h + "px" } : {}),
+    ...(node.kind === "task" || node.kind === "chip" || node.kind === "group" ? { height: node.h + "px" } : {}),
   };
+}
+
+/** 稳定的节点身份：节点增删时只让新来的播动画，老节点不动 */
+function nodeKey(node: TreeNode) {
+  if (node.kind === "root") return "root";
+  if (node.kind === "stage") return "stage:" + node.stageIndex;
+  if (node.kind === "group") return "group:" + node.stageIndex + ":" + node.title;
+  if (node.kind === "task") return "task:" + (node.data as TreeCard).id;
+  if (node.kind === "chip") return "chip:" + node.stageIndex;
+  return "other";
+}
+
+function isIn(node: TreeNode) {
+  return revealedNodes.has(nodeKey(node));
+}
+
+function isDrawn(path: TreePath) {
+  return revealedPaths.has(path.to);
+}
+
+function pumpReveal() {
+  if (revealTimer !== null) return;
+  const step = () => {
+    revealTimer = null;
+    const next = pendingReveal.shift();
+    if (next === undefined) return;
+    revealedNodes.add(next);
+    // 指向这个节点的所有连线同步开始描绘
+    paths.value.forEach((path) => {
+      if (path.to === next) revealedPaths.add(path.to);
+    });
+    if (pendingReveal.length) {
+      const gap = Math.max(18, Math.round(55 / Math.max(0.1, speed.value)));
+      revealTimer = window.setTimeout(step, gap);
+    }
+  };
+  revealTimer = window.setTimeout(step, 0);
+}
+
+function syncReveal() {
+  const fresh: string[] = [];
+  nodes.value.forEach((node) => {
+    const key = nodeKey(node);
+    if (!revealedNodes.has(key) && !pendingReveal.includes(key)) fresh.push(key);
+  });
+  fresh.forEach((key) => pendingReveal.push(key));
+  // 已经入场节点对应的新连线（比如切换布局后重算出来的）直接显示
+  paths.value.forEach((path) => {
+    if (revealedNodes.has(path.to)) revealedPaths.add(path.to);
+  });
+  pumpReveal();
 }
 
 function stageClass(node: TreeNode) {
@@ -125,7 +181,7 @@ onMounted(async () => {
   }
   await nextTick();
   onResize();
-  ready.value = true;
+  syncReveal();
   window.requestAnimationFrame(restoreScroll);
 });
 
@@ -133,7 +189,13 @@ onBeforeUnmount(() => {
   observer?.disconnect();
   document.removeEventListener("click", closeSpeed);
   inner.value?.parentElement?.removeEventListener("scroll", saveScroll);
+  if (revealTimer !== null) window.clearTimeout(revealTimer);
 });
+
+watch(
+  () => nodes.value.map(nodeKey).join("|"),
+  () => syncReveal(),
+);
 
 watch(
   () => view.focus,
@@ -163,24 +225,23 @@ watch(
       </button>
       <button class="btn btn-sm btn-ghost show-code" type="button" id="show-code" @click="showCode">显示代码</button>
       <div class="speed-pop" id="speed-pop" :class="{ open: speedOpen }">
-        <button type="button" class="speed-btn" id="speed-btn" title="播放速度（1 是真实速度）" @click.stop="speedOpen = !speedOpen">
-          {{ speed === 1 ? "1" : speed.toFixed(1) }}×
+        <button type="button" class="speed-btn" id="speed-btn" title="播放速度（1× 是真实速度）" @click.stop="speedOpen = !speedOpen">
+          速度 {{ speedLabel(speed) }}×
         </button>
         <div class="speed-menu" id="speed-menu" @click.stop>
-          <div class="speed-row">
-            <span>0.1×</span>
-            <input
-              type="range"
-              id="speed"
-              min="0.1"
-              max="1"
-              step="0.1"
-              :value="speed"
-              @input="setSpeed(Number(($event.target as HTMLInputElement).value))"
-            />
-            <span>1×</span>
+          <div class="speed-row" role="group" aria-label="播放速度">
+            <button
+              v-for="item in SPEEDS"
+              :key="item"
+              type="button"
+              class="speed-opt"
+              :class="{ 'is-on': speed === item }"
+              @click="setSpeed(item)"
+            >
+              {{ item === 1 ? "1× 原速" : speedLabel(item) + "×" }}
+            </button>
           </div>
-          <p>只影响呈现，不影响后端与花费</p>
+          <p>只影响呈现节奏，不影响后端与花费</p>
         </div>
       </div>
       <button class="btn btn-sm btn-ghost" type="button" id="replay">
@@ -206,20 +267,20 @@ watch(
       >
         <g :transform="`translate(0 ${offsetY})`">
           <path
-            v-for="(path, index) in paths"
-            :key="index"
-            :d="path"
+            v-for="path in paths"
+            :key="path.id"
+            :d="path.d"
             pathLength="1"
-            :class="{ draw: ready }"
+            :class="{ draw: isDrawn(path) }"
           />
         </g>
       </svg>
 
-      <template v-for="(node, index) in nodes" :key="index">
+      <template v-for="node in nodes" :key="nodeKey(node)">
         <div
           v-if="node.kind === 'root'"
           class="node-root"
-          :class="{ in: ready }"
+          :class="{ in: isIn(node) }"
           :style="[nodeStyle(node), { cursor: 'pointer' }]"
           @click="emit('openAgent')"
         >
@@ -228,7 +289,7 @@ watch(
 
         <div
           v-else-if="node.kind === 'stage'"
-          :class="[...stageClass(node), { in: ready }]"
+          :class="[...stageClass(node), { in: isIn(node) }]"
           :style="[nodeStyle(node), { gridTemplateColumns: stageGrid(node) }]"
           :data-stage="node.stageIndex"
           @click="focusStage(node.stageIndex)"
@@ -245,21 +306,31 @@ watch(
         </div>
 
         <div
+          v-else-if="node.kind === 'group'"
+          class="node-group"
+          :class="{ in: isIn(node) }"
+          :style="nodeStyle(node)"
+        >
+          <b>{{ node.title }}</b>
+          <small>{{ node.note }}</small>
+        </div>
+
+        <div
           v-else-if="node.kind === 'task'"
-          :class="[...taskClass(node), { in: ready }]"
+          :class="[...taskClass(node), { in: isIn(node) }]"
           :style="nodeStyle(node)"
           :data-task="taskOf(node).id"
           @click="showTaskDetail(taskOf(node).id)"
         >
           <b>{{ taskOf(node).title }}</b>
           <code v-if="!node.dense">{{ taskOf(node).file }}</code>
-          <span class="mini"><i :style="{ width: (taskOf(node).state === 'done' ? 100 : taskOf(node).state === 'running' ? 45 : 0) + '%' }"></i></span>
+          <span class="mini"><i></i></span>
         </div>
 
         <div
           v-else-if="node.kind === 'chip'"
           class="node-task ghost chip"
-          :class="{ in: ready }"
+          :class="{ in: isIn(node) }"
           :style="nodeStyle(node)"
           :data-expand="node.stageIndex"
           @click="expandStage(node.stageIndex)"
@@ -270,7 +341,7 @@ watch(
         <div
           v-else-if="node.kind === 'other'"
           class="node-task ghost other"
-          :class="{ in: ready }"
+          :class="{ in: isIn(node) }"
           :style="nodeStyle(node)"
         >
           <b>{{ node.title }}</b><code>{{ node.note }}</code>

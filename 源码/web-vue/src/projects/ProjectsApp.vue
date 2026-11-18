@@ -12,6 +12,14 @@ const prompt = ref("");
 const creating = ref(false);
 const deletingId = ref("");
 const loaded = ref(false);
+const selecting = ref(false);
+const selected = ref<string[]>([]);
+const busy = ref(false);
+
+const selectedSet = computed(() => new Set(selected.value));
+const allSelected = computed(
+  () => filteredRuns.value.length > 0 && filteredRuns.value.every((run) => selectedSet.value.has(run.id)),
+);
 
 const stageLabel: Record<string, string> = {
   plan: "需求分析",
@@ -128,6 +136,95 @@ async function removeRun(run: Run) {
   updateChrome();
 }
 
+function toggleSelectMode() {
+  selecting.value = !selecting.value;
+  selected.value = [];
+}
+
+function toggleSelected(run: Run) {
+  if (selectedSet.value.has(run.id)) {
+    selected.value = selected.value.filter((id) => id !== run.id);
+  } else {
+    selected.value = [...selected.value, run.id];
+  }
+}
+
+function toggleAll() {
+  selected.value = allSelected.value ? [] : filteredRuns.value.map((run) => run.id);
+}
+
+function onCardClick(run: Run) {
+  if (selecting.value) {
+    toggleSelected(run);
+    return;
+  }
+  openRun(run);
+}
+
+async function deleteMany(ids: string[]) {
+  if (!api || !ids.length) return 0;
+  busy.value = true;
+  let removed = 0;
+  try {
+    for (const id of ids) {
+      const result = await api.deleteRun(id);
+      if (result.ok) {
+        runs.value = runs.value.filter((item) => item.id !== id);
+        selected.value = selected.value.filter((sid) => sid !== id);
+        removed += 1;
+      }
+    }
+  } finally {
+    busy.value = false;
+    updateChrome();
+  }
+  return removed;
+}
+
+async function removeSelected() {
+  if (!selected.value.length) return;
+  if (!window.confirm("删除选中的 " + selected.value.length + " 个项目？删除后不能恢复。")) return;
+  const total = selected.value.length;
+  const removed = await deleteMany([...selected.value]);
+  if (removed < total) alert("有 " + (total - removed) + " 个项目没删掉，请重试");
+  if (removed) selecting.value = false;
+}
+
+async function clearAll() {
+  if (!api) {
+    alert("后端没启动，删不了");
+    return;
+  }
+  if (!window.confirm("清空全部项目？所有产物和记录都会删除，不能恢复。")) return;
+  busy.value = true;
+  try {
+    // 浏览器可能缓存着旧版 api.js，没有 clearRuns 时退回逐个删除（列表现取，避免用旧数据）
+    const withClear = api as unknown as { clearRuns?: () => Promise<ApiResult<{ deleted: number }>> };
+    if (typeof withClear.clearRuns === "function") {
+      const result = await withClear.clearRuns();
+      if (!result.ok) {
+        alert(result.offline ? "后端没启动，删不了" : "清除失败，请重试");
+        return;
+      }
+    } else {
+      const fresh = (await api.runs(100)) || [];
+      const removed = await deleteMany(fresh.map((run) => run.id));
+      if (removed < fresh.length) {
+        alert("有 " + (fresh.length - removed) + " 个项目没删掉，请重试");
+        return;
+      }
+    }
+    runs.value = [];
+    selected.value = [];
+    selecting.value = false;
+  } finally {
+    busy.value = false;
+    updateChrome();
+  }
+  await load();
+  updateChrome();
+}
+
 function updateChrome() {
   const pill = document.querySelector(".appbar-right .pill-plain");
   if (pill) pill.textContent = "今日估算 ¥" + money(todayCost.value);
@@ -136,7 +233,7 @@ function updateChrome() {
 async function load() {
   if (!api) return;
 
-  const data = await api.runs(24);
+  const data = await api.runs(100);
   if (!Array.isArray(data)) return;
 
   runs.value = data;
@@ -211,6 +308,33 @@ void load();
     </div>
   </div>
 
+  <div class="tools">
+    <button class="btn btn-sm btn-ghost" type="button" @click="toggleSelectMode">
+      {{ selecting ? "退出多选" : "多选" }}
+    </button>
+    <template v-if="selecting">
+      <button class="btn btn-sm btn-ghost" type="button" @click="toggleAll">
+        {{ allSelected ? "取消全选" : "全选" }}
+      </button>
+      <button
+        class="btn btn-sm btn-ghost tools-danger"
+        type="button"
+        :disabled="busy || !selected.length"
+        @click="removeSelected"
+      >
+        删除所选 {{ selected.length ? "(" + selected.length + ")" : "" }}
+      </button>
+    </template>
+    <button
+      class="btn btn-sm btn-ghost tools-danger"
+      type="button"
+      :disabled="busy || !runs.length"
+      @click="clearAll"
+    >
+      一键清除全部
+    </button>
+  </div>
+
   <div class="grid">
     <a class="card-new" href="../workbench/?run=new">
       <span class="plus">
@@ -226,24 +350,30 @@ void load();
       v-for="run in filteredRuns"
       :key="run.id"
       class="card"
+      :class="{ 'is-selected': selecting && selectedSet.has(run.id), 'is-selecting': selecting }"
       :data-run="run.id"
       style="cursor: pointer;"
-      @click="openRun(run)"
+      @click="onCardClick(run)"
     >
       <div class="thumb">
         <span class="tl a"></span>
         <span class="tl b"></span>
         <span class="tb"></span>
+        <span v-if="selecting" class="card-check" :class="{ 'is-on': selectedSet.has(run.id) }">
+          <svg viewBox="0 0 24 24" aria-hidden>
+            <path d="M5 13l4 4L19 7" />
+          </svg>
+        </span>
         <span class="pill" :class="pillClass(run.status)">{{ statusText(run.status) }}</span>
       </div>
       <div class="body">
-        <h3>{{ run.prompt }}</h3>
+        <h3 :title="run.prompt">{{ run.prompt }}</h3>
         <div class="meta">
           <span>{{ stageText(run.stage) }}</span>
           <span>¥{{ (run.totalCostCny || 0).toFixed(2) }}</span>
           <span>{{ fmtTime(run.createdAt) }}</span>
         </div>
-        <div class="actions">
+        <div v-if="!selecting" class="actions">
           <button class="btn btn-sm btn-ghost" type="button" data-open @click.stop="openRun(run)">
             看产线
           </button>
@@ -251,11 +381,14 @@ void load();
             class="btn btn-sm btn-ghost card-del"
             type="button"
             data-del
-            :disabled="deletingId === run.id"
+            :disabled="deletingId === run.id || busy"
             @click.stop="removeRun(run)"
           >
             {{ deletingId === run.id ? "删除中…" : "删除" }}
           </button>
+        </div>
+        <div v-else class="actions actions-select">
+          <span>点击{{ selectedSet.has(run.id) ? "取消选择" : "选中" }}</span>
         </div>
       </div>
     </article>

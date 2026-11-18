@@ -47,6 +47,7 @@ export interface WorkbenchSync {
   files?: WorkbenchFile[];
   activePath?: string;
   livePath?: string;
+  follow?: boolean;
   reviewMode?: boolean;
   reviewText?: string;
   dotWarn?: boolean;
@@ -66,6 +67,8 @@ export interface WorkbenchStoreApi {
   files: WorkbenchFile[];
   activePath: string;
   livePath: string;
+  /** 是否自动跟随最新写入的文件；手动点过文件页签后为 false */
+  follow: boolean;
   reviewMode: boolean;
   reviewText: string;
   dotWarn: boolean;
@@ -73,6 +76,8 @@ export interface WorkbenchStoreApi {
   gate: WorkbenchGate;
   evidence: EvidenceHit[];
   openStages: string[];
+  /** 用户手动折叠过的工序：自动展开时尊重它，不再强行拉开 */
+  manualClosed: string[];
   setEvidence(hits: EvidenceHit[]): void;
   showGate(gate: { round?: number; questions?: GateQuestion[] }): void;
   hideGate(): void;
@@ -82,6 +87,7 @@ export interface WorkbenchStoreApi {
   isOpen(stageId: string): boolean;
   toggleStage(stageId: string): void;
   toggleAll(): void;
+  autoOpen(stageId: string): void;
 }
 
 export const workbenchStore: WorkbenchStoreApi = reactive({
@@ -98,6 +104,7 @@ export const workbenchStore: WorkbenchStoreApi = reactive({
   files: [] as WorkbenchFile[],
   activePath: "",
   livePath: "",
+  follow: true as boolean,
   reviewMode: false as boolean,
   reviewText: "",
   dotWarn: false as boolean,
@@ -141,6 +148,7 @@ export const workbenchStore: WorkbenchStoreApi = reactive({
     this.evidence = hits.map((hit) => ({ source: hit.source, snippet: hit.snippet }));
   },
   openStages: [] as string[],
+  manualClosed: [] as string[],
   sync(payload: WorkbenchSync) {
     if (payload.stages) this.stages = payload.stages.map((stage) => ({ ...stage }));
     if (payload.tasks) this.tasks = payload.tasks.map((task) => ({ ...task }));
@@ -154,25 +162,40 @@ export const workbenchStore: WorkbenchStoreApi = reactive({
     }
     if (typeof payload.activePath === "string") this.activePath = payload.activePath;
     if (typeof payload.livePath === "string") this.livePath = payload.livePath;
+    if (typeof payload.follow === "boolean") this.follow = payload.follow;
     if (typeof payload.reviewMode === "boolean") this.reviewMode = payload.reviewMode;
     if (typeof payload.reviewText === "string") this.reviewText = payload.reviewText;
     if (typeof payload.dotWarn === "boolean") this.dotWarn = payload.dotWarn;
     if (typeof payload.stageIndex === "number") {
       this.stageIndex = payload.stageIndex;
       const current = this.stages[payload.stageIndex];
-      this.openStages = current ? [current.id] : [];
+      if (current) this.autoOpen(current.id);
     }
   },
   isOpen(stageId: string) {
     return this.openStages.includes(stageId);
   },
+  autoOpen(stageId: string) {
+    if (!stageId || this.manualClosed.includes(stageId)) return;
+    if (!this.openStages.includes(stageId)) this.openStages.push(stageId);
+  },
   toggleStage(stageId: string) {
     const index = this.openStages.indexOf(stageId);
-    if (index >= 0) this.openStages.splice(index, 1);
-    else this.openStages.push(stageId);
+    if (index >= 0) {
+      this.openStages.splice(index, 1);
+      if (!this.manualClosed.includes(stageId)) this.manualClosed.push(stageId);
+    } else {
+      this.openStages.push(stageId);
+      this.manualClosed = this.manualClosed.filter((id) => id !== stageId);
+    }
   },
   toggleAll() {
-    if (this.openStages.length) this.openStages.splice(0);
-    else this.openStages = this.stages.map((stage) => stage.id);
+    if (this.openStages.length) {
+      this.manualClosed = this.stages.map((stage) => stage.id);
+      this.openStages.splice(0);
+    } else {
+      this.manualClosed = [];
+      this.openStages = this.stages.map((stage) => stage.id);
+    }
   },
 });

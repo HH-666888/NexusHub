@@ -184,6 +184,7 @@ export interface NexusApi {
   logout(): Promise<ApiResult<null>>;
   runs(limit?: number): Promise<Run[] | null>;
   deleteRun(id: string): Promise<ApiResult<null>>;
+  clearRuns(): Promise<ApiResult<{ deleted: number }>>;
   createRun(prompt: string, fast?: boolean): Promise<ApiResult<{ id: string }>>;
   run(runId: string): Promise<unknown | null>;
   gate(runId: string): Promise<unknown | null>;

@@ -28,6 +28,8 @@ export interface WorkbenchFile {
   lang: string;
   state: string;
   lines: string[];
+  /** 正在逐字写入、尚未换行的那一小段文本；用于流式光标 */
+  partial?: string;
   written?: number;
 }
 
@@ -37,6 +39,7 @@ export interface WorkbenchTask {
   stage: string;
   state: string;
   file?: string;
+  group?: string;
   note?: string;
   reason?: string;
   progress?: number;

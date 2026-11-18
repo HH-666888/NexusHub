@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { workbenchStore } from "../useWorkbenchStore";
 import { highlight } from "../highlight";
-import { showFile } from "../workbenchModel";
+import { followLatest, showFile } from "../workbenchModel";
 
 interface VerdictCheck {
   name: string;
@@ -41,14 +41,53 @@ function readTab(): CodeTab {
 const activeTab = ref<CodeTab>(readTab());
 const previewUrl = ref("");
 const previewLoading = ref(false);
+const previewWrap = ref<HTMLElement | null>(null);
+const previewFull = ref(false);
 const verdict = ref<Verdict | null>(null);
 const verdictLoading = ref(false);
+
+function onFullscreenChange() {
+  previewFull.value = document.fullscreenElement === previewWrap.value;
+}
+
+async function toggleFullscreen() {
+  const element = previewWrap.value;
+  if (!element) return;
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await element.requestFullscreen();
+  } catch {
+    /* 浏览器拒绝时保持原样，不弹窗打扰 */
+  }
+}
+
+function openInNewWindow() {
+  if (previewUrl.value) window.open(previewUrl.value, "_blank", "noopener");
+}
 
 const activeFile = computed(() => store.files.find((file) => file.path === store.activePath) || null);
 const streaming = computed(() => Boolean(activeFile.value && activeFile.value.state === "live"));
 
+/** 完整行 + 正在逐字写入的半行；半行让「流式输出」真的看得见 */
+const displayLines = computed(() => {
+  const file = activeFile.value;
+  if (!file) return [] as string[];
+  const lines = file.lines.slice();
+  if (file.state === "live") lines.push(file.partial || "");
+  return lines;
+});
+
 function activeLines() {
-  return store.files.find((file) => file.path === store.activePath)?.lines || [];
+  return displayLines.value;
+}
+
+function lineHtml(index: number) {
+  const line = displayLines.value[index] ?? "";
+  const body = highlight(line);
+  if (streaming.value && index === displayLines.value.length - 1) {
+    return body + '<span class="caret"></span>';
+  }
+  return body;
 }
 
 function baseName(path: string) {
@@ -72,7 +111,8 @@ function openFile(path: string) {
 
 async function selectTab(tab: CodeTab) {
   activeTab.value = tab;
-  if (tab === "预览" && !previewUrl.value && !previewLoading.value) {
+  if (tab === "预览" && !previewLoading.value) {
+    // 每次都重新取一次：预览进程重启后端口可能变了，缓存旧地址只会显示白页
     previewLoading.value = true;
     try {
       const response = await fetch("/api/runs/" + runId() + "/runtime", { credentials: "include" });
@@ -82,7 +122,7 @@ async function selectTab(tab: CodeTab) {
         previewUrl.value = runtime?.previewUrl || "";
       }
     } catch {
-      previewUrl.value = "";
+      // 网络抖动时保留上一次的地址，不把还能用的预览清成白页
     } finally {
       previewLoading.value = false;
     }
@@ -113,22 +153,27 @@ async function scrollToBottom() {
 }
 
 function saveCodeScroll() {
-  if (!body.value) return;
+  if (!body.value || !store.activePath) return;
   try {
-    localStorage.setItem(codeKey + ":scroll", String(body.value.scrollTop));
+    localStorage.setItem(codeKey + ":scroll:" + store.activePath, String(body.value.scrollTop));
   } catch {
     /* 忽略隐私模式 */
   }
 }
 
-function restoreCodeScroll() {
-  if (!body.value) return;
+function restoreCodeScroll(path = store.activePath) {
+  if (!body.value || !path) return;
   try {
-    const saved = Number(localStorage.getItem(codeKey + ":scroll"));
+    const saved = Number(localStorage.getItem(codeKey + ":scroll:" + path));
     if (Number.isFinite(saved)) body.value.scrollTop = saved;
   } catch {
     /* 忽略 */
   }
+}
+
+function follow() {
+  followLatest();
+  void scrollToBottom();
 }
 
 watch(activeTab, (tab) => {
@@ -140,9 +185,9 @@ watch(activeTab, (tab) => {
 });
 
 watch(
-  () => activeFile.value?.lines.length,
+  () => [activeFile.value?.lines.length, activeFile.value?.partial?.length],
   () => {
-    void scrollToBottom();
+    if (store.follow) void scrollToBottom();
   },
 );
 
@@ -150,15 +195,22 @@ watch(
   () => store.activePath,
   async () => {
     await nextTick();
-    restoreCodeScroll();
+    if (store.follow && activeFile.value?.state === "live") await scrollToBottom();
+    else restoreCodeScroll(store.activePath);
   },
 );
 
 onMounted(async () => {
+  document.addEventListener("fullscreenchange", onFullscreenChange);
   body.value?.addEventListener("scroll", saveCodeScroll, { passive: true });
   if (activeTab.value !== "代码") await selectTab(activeTab.value);
   await nextTick();
-  restoreCodeScroll();
+  if (store.follow && activeFile.value?.state === "live") await scrollToBottom();
+  else restoreCodeScroll();
+});
+
+onUnmounted(() => {
+  document.removeEventListener("fullscreenchange", onFullscreenChange);
 });
 </script>
 
@@ -196,6 +248,7 @@ onMounted(async () => {
     <div v-show="activeTab === '代码'" class="code-file">
       <span class="dot" id="file-dot" :style="{ background: store.dotWarn ? 'var(--warn)' : 'var(--ok)' }"></span>
       <span id="file-name">{{ store.activePath || "—" }}</span>
+      <button v-if="!store.follow" type="button" class="follow-btn" @click="follow">跟随最新</button>
       <span class="grow"></span>
       <span class="stream" id="stream-state">
         <template v-if="activeFile">
@@ -212,22 +265,30 @@ onMounted(async () => {
     </div>
 
     <div v-show="activeTab === '代码'" class="code-body" id="code-body" ref="body">
-      <div v-for="(line, index) in activeLines()" :key="index" class="code-line">
+      <div v-for="(line, index) in activeLines()" :key="store.activePath + ':' + index" class="code-line">
         <span class="ln">{{ index + 1 }}</span>
-        <pre v-html="highlight(line)"></pre>
+        <pre v-html="lineHtml(index)"></pre>
       </div>
     </div>
 
-    <div v-if="activeTab === '预览'" style="flex: 1; min-height: 0; overflow: auto; padding: 12px;">
-      <p v-if="previewLoading" style="color: var(--text-3); font-size: 13px;">正在启动预览…</p>
-      <iframe
-        v-else-if="previewUrl"
-        :src="previewUrl"
-        style="width: 100%; height: 100%; border: 1px solid var(--line); border-radius: 12px; background: #fff;"
-      ></iframe>
-      <p v-else style="color: var(--text-3); font-size: 13px;">
-        预览还没有启动：流程走到“验收交付”后会在这里打开真实产物。
-      </p>
+    <div v-if="activeTab === '预览'" ref="previewWrap" class="preview-wrap">
+      <div class="preview-bar">
+        <span class="preview-state">
+          {{ previewUrl ? "真实运行中" : previewLoading ? "启动中…" : "未启动" }}
+        </span>
+        <span class="spacer"></span>
+        <button v-if="previewUrl" type="button" class="preview-btn" @click="openInNewWindow">新窗口</button>
+        <button v-if="previewUrl" type="button" class="preview-btn is-main" @click="toggleFullscreen">
+          {{ previewFull ? "退出全屏" : "全屏" }}
+        </button>
+      </div>
+      <div class="preview-body">
+        <p v-if="previewLoading" class="preview-empty">正在启动预览…</p>
+        <iframe v-else-if="previewUrl" :src="previewUrl" class="preview-frame"></iframe>
+        <p v-else class="preview-empty">
+          预览还没有启动：流程走到“验收交付”后会在这里打开真实产物。
+        </p>
+      </div>
     </div>
 
     <div v-if="activeTab === '验收'" style="flex: 1; min-height: 0; overflow: auto; padding: 12px;">
